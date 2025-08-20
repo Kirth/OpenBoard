@@ -1,0 +1,59 @@
+@page "/"
+@using WhiteboardApp.Services
+@inject BoardService BoardService
+@inject NavigationManager Navigation
+
+<PageTitle>Whiteboard App</PageTitle>
+
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h1 class="card-title">Whiteboard App</h1>
+                    <p class="card-text">Create or join a collaborative whiteboard</p>
+                    
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-primary btn-lg" @onclick="CreateNewBoard">
+                            Create New Board
+                        </button>
+                        
+                        <button class="btn btn-secondary btn-lg" @onclick="JoinDefaultBoard">
+                            Join Default Board
+                        </button>
+                    </div>
+                    
+                    <div class="mt-4">
+                        <div class="input-group">
+                            <input type="text" class="form-control" placeholder="Board ID" @bind="boardId" />
+                            <button class="btn btn-outline-primary" @onclick="JoinBoard">Join</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string boardId = "";
+
+    private async Task CreateNewBoard()
+    {
+        var board = await BoardService.CreateBoardAsync($"Board {DateTime.Now:HH:mm:ss}");
+        Navigation.NavigateTo($"/board/{board.Id}");
+    }
+
+    private void JoinDefaultBoard()
+    {
+        Navigation.NavigateTo("/board/11111111-1111-1111-1111-111111111111");
+    }
+
+    private void JoinBoard()
+    {
+        if (!string.IsNullOrEmpty(boardId))
+        {
+            Navigation.NavigateTo($"/board/{boardId}");
+        }
+    }
+}

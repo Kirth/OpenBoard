@@ -1,0 +1,10 @@
+FROM mcr.microsoft.com/dotnet/sdk:8.0
+WORKDIR /app
+
+# Install additional tools for development
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Keep container running
+CMD ["sleep", "infinity"]
