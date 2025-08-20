@@ -9,6 +9,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
 builder.Services.AddSignalR();
+builder.Services.AddControllers();
 
 // Add Entity Framework
 builder.Services.AddDbContext<WhiteboardContext>(options =>
@@ -17,6 +18,7 @@ builder.Services.AddDbContext<WhiteboardContext>(options =>
 // Add application services
 builder.Services.AddScoped<BoardService>();
 builder.Services.AddScoped<ElementService>();
+builder.Services.AddScoped<ImageService>();
 
 var app = builder.Build();
 
@@ -33,6 +35,7 @@ app.UseRouting();
 
 app.MapRazorPages();
 app.MapBlazorHub();
+app.MapControllers();
 app.MapFallbackToPage("/_Host");
 app.MapHub<CollaborationHub>("/collaborationhub");
 

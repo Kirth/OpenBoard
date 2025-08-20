@@ -57,4 +57,22 @@ public class ElementService
         await _context.SaveChangesAsync();
         return true;
     }
+
+    public async Task<int> GetMaxZIndexAsync(Guid boardId)
+    {
+        var maxZIndex = await _context.BoardElements
+            .Where(e => e.BoardId == boardId)
+            .MaxAsync(e => (int?)e.ZIndex);
+        
+        return maxZIndex ?? 0;
+    }
+
+    public async Task<int> GetMinZIndexAsync(Guid boardId)
+    {
+        var minZIndex = await _context.BoardElements
+            .Where(e => e.BoardId == boardId)
+            .MinAsync(e => (int?)e.ZIndex);
+        
+        return minZIndex ?? 0;
+    }
 }

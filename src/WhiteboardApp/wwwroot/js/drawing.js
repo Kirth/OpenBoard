@@ -10,12 +10,48 @@ let selectedElementId = null;
 let editingElement = null;
 let editInput = null;
 let currentBoardId = null;
-let currentTool = 'pen';
+let currentTool = 'select';
 let isDrawing = false;
 let currentPath = [];
 let startX = 0, startY = 0;
 let isDragging = false;
 let dragOffsetX = 0, dragOffsetY = 0;
+let hasMoved = false;
+let pendingImagePosition = null;
+let isResizing = false;
+let activeResizeHandle = null;
+let resizeStartBounds = null;
+let hasResized = false;
+let blazorReference = null;
+// Viewport state for infinite canvas
+let viewportX = 0;
+let viewportY = 0;
+let zoomLevel = 1;
+let isPanning = false;
+let lastPanX = 0;
+let lastPanY = 0;
+// Minimap state
+let minimapCanvas = null;
+let minimapCtx = null;
+let minimapViewport = null;
+let isMinimapDragging = false;
+let minimapDragStart = { x: 0, y: 0 };
+let minimapHasDragged = false;
+// Smooth camera movement
+let targetViewportX = 0;
+let targetViewportY = 0;
+let cameraAnimationId = null;
+// Minimap performance optimization
+let minimapUpdateQueued = false;
+let lastMinimapUpdate = 0;
+const minimapUpdateThrottle = 16; // ~60fps
+// Undo/Redo system
+let undoStack = [];
+let redoStack = [];
+let maxUndoSteps = 50;
+let isUndoRedoOperation = false;
+// Copy/Paste system
+let copiedElement = null;
 
 window.initializeCanvas = () => {
     canvas = document.getElementById('drawingCanvas');
@@ -26,6 +62,22 @@ window.initializeCanvas = () => {
         canvas.addEventListener('mousemove', handleMouseMove);
         canvas.addEventListener('mouseup', handleMouseUp);
         canvas.addEventListener('mouseleave', handleMouseUp);
+        canvas.addEventListener('contextmenu', handleCanvasRightClick);
+        canvas.addEventListener('wheel', handleMouseWheel);
+        
+        // Setup image upload handling
+        setupImageUpload();
+        
+        // Setup keyboard event listeners
+        setupKeyboardHandlers();
+        
+        // Initialize minimap
+        initializeMinimap();
+        
+        // Set up canvas sizing
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+        
         ctx = canvas.getContext('2d');
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
@@ -48,6 +100,738 @@ window.initializeCanvas = () => {
         tempCtx.lineJoin = 'round';
     }
 };
+
+// Coordinate transformation functions for infinite canvas
+function screenToWorld(screenX, screenY) {
+    return {
+        x: (screenX - viewportX) / zoomLevel,
+        y: (screenY - viewportY) / zoomLevel
+    };
+}
+
+function worldToScreen(worldX, worldY) {
+    return {
+        x: worldX * zoomLevel + viewportX,
+        y: worldY * zoomLevel + viewportY
+    };
+}
+
+// Apply viewport transformation to canvas context
+function applyViewportTransform() {
+    if (!ctx) return;
+    ctx.setTransform(zoomLevel, 0, 0, zoomLevel, viewportX, viewportY);
+}
+
+// Reset canvas transform
+function resetCanvasTransform() {
+    if (!ctx) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+}
+
+// Resize canvas to match container
+function resizeCanvas() {
+    if (!canvas) return;
+    
+    const container = canvas.parentElement;
+    if (!container) return;
+    
+    const rect = container.getBoundingClientRect();
+    const devicePixelRatio = window.devicePixelRatio || 1;
+    
+    // Set canvas internal size (actual pixels)
+    canvas.width = rect.width * devicePixelRatio;
+    canvas.height = rect.height * devicePixelRatio;
+    
+    // Scale the canvas back down using CSS
+    canvas.style.width = rect.width + 'px';
+    canvas.style.height = rect.height + 'px';
+    
+    // Scale the context to match device pixel ratio
+    if (ctx) {
+        ctx.scale(devicePixelRatio, devicePixelRatio);
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#000000';
+    }
+    
+    // Update temp canvas too
+    if (tempCanvas) {
+        tempCanvas.width = canvas.width;
+        tempCanvas.height = canvas.height;
+        tempCanvas.style.width = rect.width + 'px';
+        tempCanvas.style.height = rect.height + 'px';
+        
+        if (tempCtx) {
+            tempCtx.scale(devicePixelRatio, devicePixelRatio);
+            tempCtx.lineCap = 'round';
+            tempCtx.lineJoin = 'round';
+        }
+    }
+    
+    // Redraw everything
+    redrawCanvas();
+}
+
+// Minimap functionality
+function initializeMinimap() {
+    minimapCanvas = document.getElementById('minimapCanvas');
+    minimapViewport = document.querySelector('.minimap-viewport');
+    
+    if (minimapCanvas) {
+        minimapCtx = minimapCanvas.getContext('2d');
+        
+        // Add mouse event handlers for minimap interaction
+        minimapCanvas.addEventListener('mousedown', handleMinimapMouseDown);
+        minimapCanvas.addEventListener('mousemove', handleMinimapMouseMove);
+        minimapCanvas.addEventListener('mouseup', handleMinimapMouseUp);
+        minimapCanvas.addEventListener('mouseleave', handleMinimapMouseUp);
+        minimapCanvas.addEventListener('click', handleMinimapClick);
+        
+        // Initial minimap render
+        updateMinimapImmediate();
+    }
+}
+
+function handleMinimapMouseDown(event) {
+    event.preventDefault();
+    isMinimapDragging = true;
+    minimapHasDragged = false;
+    
+    const rect = minimapCanvas.getBoundingClientRect();
+    minimapDragStart.x = event.clientX - rect.left;
+    minimapDragStart.y = event.clientY - rect.top;
+    
+    minimapCanvas.style.cursor = 'grabbing';
+}
+
+function handleMinimapMouseMove(event) {
+    if (!isMinimapDragging) return;
+    
+    event.preventDefault();
+    
+    const rect = minimapCanvas.getBoundingClientRect();
+    const currentX = event.clientX - rect.left;
+    const currentY = event.clientY - rect.top;
+    
+    const deltaX = currentX - minimapDragStart.x;
+    const deltaY = currentY - minimapDragStart.y;
+    
+    // Calculate world bounds
+    const bounds = getWorldBounds();
+    const worldWidth = bounds.maxX - bounds.minX;
+    const worldHeight = bounds.maxY - bounds.minY;
+    
+    // Convert minimap pixel movement to world coordinate movement
+    const worldDeltaX = (deltaX / minimapCanvas.clientWidth) * worldWidth;
+    const worldDeltaY = (deltaY / minimapCanvas.clientHeight) * worldHeight;
+    
+    // Mark as dragged if there's significant movement
+    if (Math.abs(deltaX) > 2 || Math.abs(deltaY) > 2) {
+        minimapHasDragged = true;
+    }
+    
+    // Update viewport position immediately for dragging (responsive feel)
+    viewportX -= worldDeltaX * zoomLevel;
+    viewportY -= worldDeltaY * zoomLevel;
+    
+    // Update drag start for next movement
+    minimapDragStart.x = currentX;
+    minimapDragStart.y = currentY;
+    
+    redrawCanvas();
+    updateMinimapThrottled();
+}
+
+function handleMinimapMouseUp(event) {
+    if (isMinimapDragging) {
+        isMinimapDragging = false;
+        minimapCanvas.style.cursor = 'grab';
+    }
+}
+
+function handleMinimapClick(event) {
+    // Don't trigger click if we were dragging
+    if (minimapHasDragged) return;
+    
+    const rect = minimapCanvas.getBoundingClientRect();
+    const clickX = (event.clientX - rect.left) / rect.width;
+    const clickY = (event.clientY - rect.top) / rect.height;
+    
+    // Calculate world bounds
+    const bounds = getWorldBounds();
+    const worldWidth = bounds.maxX - bounds.minX;
+    const worldHeight = bounds.maxY - bounds.minY;
+    
+    // Calculate new viewport position
+    const newWorldX = bounds.minX + clickX * worldWidth;
+    const newWorldY = bounds.minY + clickY * worldHeight;
+    
+    // Set target positions for smooth animation
+    targetViewportX = canvas.width / 2 - newWorldX * zoomLevel;
+    targetViewportY = canvas.height / 2 - newWorldY * zoomLevel;
+    
+    animateToTargetViewport();
+}
+
+function animateToTargetViewport() {
+    if (cameraAnimationId) {
+        cancelAnimationFrame(cameraAnimationId);
+    }
+    
+    const animationSpeed = 0.15; // Higher = faster animation
+    const threshold = 1; // Stop animation when close enough
+    
+    function animate() {
+        const deltaX = targetViewportX - viewportX;
+        const deltaY = targetViewportY - viewportY;
+        
+        if (Math.abs(deltaX) < threshold && Math.abs(deltaY) < threshold) {
+            // Animation complete
+            viewportX = targetViewportX;
+            viewportY = targetViewportY;
+            redrawCanvas();
+            updateMinimapImmediate();
+            cameraAnimationId = null;
+            return;
+        }
+        
+        // Smooth interpolation
+        viewportX += deltaX * animationSpeed;
+        viewportY += deltaY * animationSpeed;
+        
+        redrawCanvas();
+        updateMinimapImmediate();
+        
+        cameraAnimationId = requestAnimationFrame(animate);
+    }
+    
+    animate();
+}
+
+function getWorldBounds() {
+    let minX = -canvas.width / (2 * zoomLevel);
+    let minY = -canvas.height / (2 * zoomLevel);
+    let maxX = canvas.width / (2 * zoomLevel);
+    let maxY = canvas.height / (2 * zoomLevel);
+    
+    // Expand bounds to include all elements
+    for (const [id, element] of elements.entries()) {
+        minX = Math.min(minX, element.x);
+        minY = Math.min(minY, element.y);
+        maxX = Math.max(maxX, element.x + (element.width || 0));
+        maxY = Math.max(maxY, element.y + (element.height || 0));
+    }
+    
+    // Add padding
+    const padding = 100;
+    return {
+        minX: minX - padding,
+        minY: minY - padding,
+        maxX: maxX + padding,
+        maxY: maxY + padding
+    };
+}
+
+function updateMinimapThrottled() {
+    if (minimapUpdateQueued) return;
+    
+    const now = Date.now();
+    if (now - lastMinimapUpdate < minimapUpdateThrottle) {
+        minimapUpdateQueued = true;
+        setTimeout(() => {
+            minimapUpdateQueued = false;
+            updateMinimapActual();
+        }, minimapUpdateThrottle - (now - lastMinimapUpdate));
+        return;
+    }
+    
+    updateMinimapActual();
+}
+
+function updateMinimapActual() {
+    if (!minimapCtx || !minimapCanvas || !minimapViewport) return;
+    
+    lastMinimapUpdate = Date.now();
+    
+    const bounds = getWorldBounds();
+    const worldWidth = bounds.maxX - bounds.minX;
+    const worldHeight = bounds.maxY - bounds.minY;
+    
+    // Clear minimap
+    minimapCtx.clearRect(0, 0, minimapCanvas.width, minimapCanvas.height);
+    
+    // Draw white background
+    minimapCtx.fillStyle = '#ffffff';
+    minimapCtx.fillRect(0, 0, minimapCanvas.width, minimapCanvas.height);
+    
+    // Calculate scale to fit world in minimap
+    const scaleX = minimapCanvas.width / worldWidth;
+    const scaleY = minimapCanvas.height / worldHeight;
+    const scale = Math.min(scaleX, scaleY);
+    
+    // Draw actual elements
+    minimapCtx.save();
+    minimapCtx.scale(scale, scale);
+    minimapCtx.translate(-bounds.minX, -bounds.minY);
+    
+    // Sort elements by z-index and render them
+    const sortedElements = Array.from(elements.entries())
+        .sort(([,a], [,b]) => (a.zIndex || 0) - (b.zIndex || 0));
+    
+    for (const [id, element] of sortedElements) {
+        renderElementToMinimap(element, minimapCtx);
+    }
+    
+    minimapCtx.restore();
+    
+    // Update viewport indicator
+    const viewportWorldBounds = {
+        x: (-viewportX) / zoomLevel,
+        y: (-viewportY) / zoomLevel,
+        width: canvas.width / zoomLevel,
+        height: canvas.height / zoomLevel
+    };
+    
+    const viewportX_minimap = ((viewportWorldBounds.x - bounds.minX) / worldWidth) * minimapCanvas.clientWidth;
+    const viewportY_minimap = ((viewportWorldBounds.y - bounds.minY) / worldHeight) * minimapCanvas.clientHeight;
+    const viewportWidth_minimap = (viewportWorldBounds.width / worldWidth) * minimapCanvas.clientWidth;
+    const viewportHeight_minimap = (viewportWorldBounds.height / worldHeight) * minimapCanvas.clientHeight;
+    
+    minimapViewport.style.left = viewportX_minimap + 'px';
+    minimapViewport.style.top = viewportY_minimap + 'px';
+    minimapViewport.style.width = viewportWidth_minimap + 'px';
+    minimapViewport.style.height = viewportHeight_minimap + 'px';
+}
+
+// Public interface - use throttled version by default
+window.updateMinimap = updateMinimapThrottled;
+
+// Immediate version for when throttling is not desired
+window.updateMinimapImmediate = updateMinimapActual;
+
+function renderElementToMinimap(element, ctx) {
+    if (!element || !element.data) return;
+    
+    // Skip elements that are outside reasonable bounds for performance
+    const bounds = getWorldBounds();
+    if (element.x > bounds.maxX + 1000 || element.y > bounds.maxY + 1000 || 
+        element.x + (element.width || 0) < bounds.minX - 1000 || 
+        element.y + (element.height || 0) < bounds.minY - 1000) {
+        return;
+    }
+    
+    ctx.save();
+    
+    switch (element.type) {
+        case 'Text':
+            if (element.data.content) {
+                ctx.fillStyle = element.data.color || '#000000';
+                ctx.font = `${Math.max(1, (element.data.fontSize || 16) * 0.5)}px ${element.data.fontFamily || 'Arial'}`;
+                ctx.fillText(element.data.content.substring(0, 20), element.x, element.y + (element.data.fontSize || 16));
+            }
+            break;
+            
+        case 'Shape':
+            ctx.strokeStyle = element.data.strokeColor || '#000000';
+            ctx.fillStyle = element.data.fillColor || 'transparent';
+            ctx.lineWidth = Math.max(0.5, (element.data.strokeWidth || 2) * 0.5);
+            
+            if (element.data.shapeType === 'circle') {
+                const centerX = element.x + element.width / 2;
+                const centerY = element.y + element.height / 2;
+                const radius = Math.min(element.width, element.height) / 2;
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+                if (element.data.fillColor && element.data.fillColor !== 'transparent') {
+                    ctx.fill();
+                }
+                ctx.stroke();
+            } else {
+                // Rectangle
+                if (element.data.fillColor && element.data.fillColor !== 'transparent') {
+                    ctx.fillRect(element.x, element.y, element.width, element.height);
+                }
+                ctx.strokeRect(element.x, element.y, element.width, element.height);
+            }
+            break;
+            
+        case 'StickyNote':
+            ctx.fillStyle = element.data.color || '#ffff88';
+            ctx.fillRect(element.x, element.y, element.width, element.height);
+            ctx.strokeStyle = '#cccc00';
+            ctx.lineWidth = 0.5;
+            ctx.strokeRect(element.x, element.y, element.width, element.height);
+            
+            if (element.data.content) {
+                ctx.fillStyle = '#000000';
+                ctx.font = `${Math.max(1, (element.data.fontSize || 14) * 0.4)}px Arial`;
+                const lines = element.data.content.split('\n');
+                for (let i = 0; i < Math.min(3, lines.length); i++) {
+                    ctx.fillText(lines[i].substring(0, 15), element.x + 2, element.y + 8 + i * 6);
+                }
+            }
+            break;
+            
+        case 'Image':
+            // Draw a simple image placeholder
+            ctx.fillStyle = '#e0e0e0';
+            ctx.fillRect(element.x, element.y, element.width, element.height);
+            ctx.strokeStyle = '#999999';
+            ctx.lineWidth = 0.5;
+            ctx.strokeRect(element.x, element.y, element.width, element.height);
+            
+            // Draw a simple image icon
+            ctx.fillStyle = '#666666';
+            const iconSize = Math.min(element.width, element.height) * 0.3;
+            const iconX = element.x + (element.width - iconSize) / 2;
+            const iconY = element.y + (element.height - iconSize) / 2;
+            ctx.fillRect(iconX, iconY, iconSize, iconSize);
+            break;
+            
+        case 'Drawing':
+            if (element.data.paths) {
+                ctx.strokeStyle = '#000000';
+                ctx.lineWidth = 0.5;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                
+                for (const path of element.data.paths) {
+                    if (path.points && path.points.length > 1) {
+                        ctx.beginPath();
+                        ctx.moveTo(path.points[0].x, path.points[0].y);
+                        for (let i = 1; i < path.points.length; i++) {
+                            ctx.lineTo(path.points[i].x, path.points[i].y);
+                        }
+                        ctx.stroke();
+                    }
+                }
+            }
+            break;
+            
+        default:
+            // Fallback: draw a simple rectangle
+            ctx.fillStyle = '#cccccc';
+            ctx.fillRect(element.x, element.y, element.width || 10, element.height || 10);
+            break;
+    }
+    
+    ctx.restore();
+}
+
+// Undo/Redo system
+function saveCanvasState(action = 'unknown') {
+    if (isUndoRedoOperation) return; // Don't save state during undo/redo
+    
+    const state = {
+        elements: new Map(elements),
+        action: action,
+        timestamp: Date.now()
+    };
+    
+    undoStack.push(state);
+    
+    // Limit undo stack size
+    if (undoStack.length > maxUndoSteps) {
+        undoStack.shift();
+    }
+    
+    // Clear redo stack when new action is performed
+    redoStack = [];
+    
+    console.log(`Canvas state saved: ${action} (undo stack: ${undoStack.length})`);
+}
+
+function undo() {
+    if (undoStack.length === 0) {
+        console.log('Nothing to undo');
+        return;
+    }
+    
+    console.log('Performing undo...');
+    isUndoRedoOperation = true;
+    
+    // Save current state to redo stack
+    const currentState = {
+        elements: new Map(elements),
+        action: 'redo_point',
+        timestamp: Date.now()
+    };
+    redoStack.push(currentState);
+    
+    // Restore previous state
+    const previousState = undoStack.pop();
+    elements = new Map(previousState.elements);
+    
+    // Clear selection
+    selectedElementId = null;
+    
+    // Redraw canvas
+    redrawCanvas();
+    
+    isUndoRedoOperation = false;
+    console.log(`Undid: ${previousState.action} (undo stack: ${undoStack.length}, redo stack: ${redoStack.length})`);
+}
+
+function redo() {
+    if (redoStack.length === 0) {
+        console.log('Nothing to redo');
+        return;
+    }
+    
+    console.log('Performing redo...');
+    isUndoRedoOperation = true;
+    
+    // Save current state to undo stack
+    const currentState = {
+        elements: new Map(elements),
+        action: 'undo_point',
+        timestamp: Date.now()
+    };
+    undoStack.push(currentState);
+    
+    // Restore redo state
+    const redoState = redoStack.pop();
+    elements = new Map(redoState.elements);
+    
+    // Clear selection
+    selectedElementId = null;
+    
+    // Redraw canvas
+    redrawCanvas();
+    
+    isUndoRedoOperation = false;
+    console.log(`Redid action (undo stack: ${undoStack.length}, redo stack: ${redoStack.length})`);
+}
+
+window.undo = undo;
+window.redo = redo;
+
+// Copy/Paste system
+function copySelectedElement() {
+    if (!selectedElementId) {
+        console.log('No element selected to copy');
+        return;
+    }
+    
+    const element = elements.get(selectedElementId);
+    if (element) {
+        // Create a deep copy of the element
+        copiedElement = {
+            type: element.type,
+            x: element.x,
+            y: element.y,
+            width: element.width,
+            height: element.height,
+            data: JSON.parse(JSON.stringify(element.data)), // Deep copy
+            zIndex: element.zIndex
+        };
+        console.log('Element copied:', copiedElement);
+        showNotification('Element copied');
+    }
+}
+
+async function pasteElement() {
+    try {
+        // First try to read from system clipboard
+        const clipboardItems = await navigator.clipboard.read();
+        
+        for (const clipboardItem of clipboardItems) {
+            // Check for images
+            for (const type of clipboardItem.types) {
+                if (type.startsWith('image/')) {
+                    console.log('Image found in clipboard');
+                    const blob = await clipboardItem.getType(type);
+                    await pasteImageFromClipboard(blob);
+                    return;
+                }
+            }
+            
+            // Check for text
+            if (clipboardItem.types.includes('text/plain')) {
+                console.log('Text found in clipboard');
+                const blob = await clipboardItem.getType('text/plain');
+                const text = await blob.text();
+                if (text.trim()) {
+                    pasteTextFromClipboard(text.trim());
+                    return;
+                }
+            }
+        }
+        
+        // If no external content, paste copied element
+        if (copiedElement) {
+            pasteCopiedElement();
+        } else {
+            console.log('Nothing to paste');
+        }
+        
+    } catch (error) {
+        console.log('Clipboard access failed, trying fallback methods:', error);
+        
+        // Fallback: try text-only clipboard access
+        try {
+            const text = await navigator.clipboard.readText();
+            if (text.trim()) {
+                pasteTextFromClipboard(text.trim());
+                return;
+            }
+        } catch (textError) {
+            console.log('Text clipboard access also failed:', textError);
+        }
+        
+        // Final fallback: paste copied element if available
+        if (copiedElement) {
+            pasteCopiedElement();
+        } else {
+            console.log('No clipboard access and nothing copied');
+        }
+    }
+}
+
+function pasteCopiedElement() {
+    if (!copiedElement) return;
+    
+    saveCanvasState('paste element');
+    
+    // Calculate paste position (offset from original)
+    const offsetX = 20;
+    const offsetY = 20;
+    const newX = copiedElement.x + offsetX;
+    const newY = copiedElement.y + offsetY;
+    
+    // Create the pasted element
+    sendElement(currentBoardId, {
+        type: copiedElement.type,
+        x: newX,
+        y: newY,
+        width: copiedElement.width,
+        height: copiedElement.height,
+        data: copiedElement.data
+    });
+    
+    console.log('Element pasted at:', newX, newY);
+    showNotification('Element pasted');
+}
+
+function pasteTextFromClipboard(text) {
+    saveCanvasState('paste text');
+    
+    // Calculate paste position (center of current viewport)
+    const centerX = (-viewportX + canvas.width / 2) / zoomLevel;
+    const centerY = (-viewportY + canvas.height / 2) / zoomLevel;
+    
+    const textData = {
+        content: text,
+        fontSize: 16,
+        fontFamily: 'Arial',
+        color: '#000000',
+        bold: false,
+        italic: false,
+        isEditing: false
+    };
+    
+    sendElement(currentBoardId, {
+        type: 'Text',
+        x: centerX,
+        y: centerY,
+        width: 0,
+        height: 0,
+        data: textData
+    });
+    
+    console.log('Text pasted:', text);
+    showNotification('Text pasted');
+}
+
+async function pasteImageFromClipboard(blob) {
+    try {
+        saveCanvasState('paste image');
+        
+        // Convert blob to File object
+        const file = new File([blob], 'pasted-image.png', { type: blob.type });
+        
+        // Upload the image using existing image upload functionality
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        const response = await fetch('/api/image/upload', {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (response.ok) {
+            const result = await response.json();
+            
+            // Calculate paste position (center of current viewport)
+            const centerX = (-viewportX + canvas.width / 2) / zoomLevel;
+            const centerY = (-viewportY + canvas.height / 2) / zoomLevel;
+            
+            const imageData = {
+                fileName: result.fileName,
+                filePath: result.filePath,
+                width: result.width,
+                height: result.height,
+                aspectRatio: result.width / result.height
+            };
+            
+            // Calculate display size (max 300px while maintaining aspect ratio)
+            const maxSize = 300;
+            let displayWidth = result.width;
+            let displayHeight = result.height;
+            
+            if (displayWidth > maxSize || displayHeight > maxSize) {
+                if (displayWidth > displayHeight) {
+                    displayHeight = (displayHeight * maxSize) / displayWidth;
+                    displayWidth = maxSize;
+                } else {
+                    displayWidth = (displayWidth * maxSize) / displayHeight;
+                    displayHeight = maxSize;
+                }
+            }
+            
+            sendElement(currentBoardId, {
+                type: 'Image',
+                x: centerX - displayWidth / 2,
+                y: centerY - displayHeight / 2,
+                width: displayWidth,
+                height: displayHeight,
+                data: imageData
+            });
+            
+            console.log('Image pasted successfully');
+            showNotification('Image pasted');
+        } else {
+            console.error('Failed to upload pasted image');
+        }
+    } catch (error) {
+        console.error('Error pasting image:', error);
+    }
+}
+
+// Notification system
+function showNotification(message) {
+    // Remove existing notification if any
+    const existingNotification = document.querySelector('.copy-paste-notification');
+    if (existingNotification) {
+        existingNotification.remove();
+    }
+    
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = 'copy-paste-notification';
+    notification.textContent = message;
+    
+    // Add to document
+    document.body.appendChild(notification);
+    
+    // Auto-remove after 2 seconds
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.remove();
+        }
+    }, 2000);
+}
 
 window.startNewPath = (x, y) => {
     if (!ctx) return;
@@ -128,8 +912,10 @@ window.drawElement = (id, x, y, type, data, width, height) => {
     
     console.log("Drawing element:", { id, x, y, type, data, width, height });
     
-    // Store element info for selection
-    elements.set(id, { x, y, width, height, type, data });
+    // Only store if element doesn't exist (for backwards compatibility)
+    if (!elements.has(id)) {
+        elements.set(id, { x, y, width, height, type, data, zIndex: 0 });
+    }
     
     switch (type) {
         case "Drawing":
@@ -229,6 +1015,18 @@ window.drawElement = (id, x, y, type, data, width, height) => {
             }
             ctx.restore();
             break;
+            
+        case "Image":
+            if (data.src) {
+                const img = new Image();
+                img.onload = function() {
+                    ctx.save();
+                    ctx.drawImage(img, x, y, width || data.originalWidth || img.width, height || data.originalHeight || img.height);
+                    ctx.restore();
+                };
+                img.src = data.src;
+            }
+            break;
     }
 };
 
@@ -251,7 +1049,8 @@ window.renderExistingElement = (elementData) => {
             width: elementData.width, 
             height: elementData.height, 
             type: elementData.type, 
-            data: data 
+            data: data,
+            zIndex: elementData.zIndex || 0
         });
         
         drawElement(elementData.id, elementData.x, elementData.y, elementData.type, data, elementData.width, elementData.height);
@@ -299,7 +1098,18 @@ window.initializeSignalR = async (boardId) => {
 
         signalRConnection.on("ElementAdded", (elementData) => {
             console.log("ElementAdded received:", elementData);
-            drawElement(elementData.id, elementData.x, elementData.y, elementData.type, elementData.data, elementData.width, elementData.height);
+            // Store element with proper z-index
+            elements.set(elementData.id, {
+                x: elementData.x,
+                y: elementData.y,
+                width: elementData.width,
+                height: elementData.height,
+                type: elementData.type,
+                data: elementData.data,
+                zIndex: elementData.zIndex || 0
+            });
+            // Redraw entire canvas to maintain proper z-order
+            redrawCanvas();
         });
 
         signalRConnection.on("CursorUpdated", (connectionId, x, y) => {
@@ -327,6 +1137,61 @@ window.initializeSignalR = async (boardId) => {
             const element = elements.get(elementId);
             if (element) {
                 element.data = updatedData;
+                redrawCanvas();
+            }
+        });
+        
+        signalRConnection.on("ElementSelected", (elementId, userName, connectionId) => {
+            // Show element selection by other users
+            showElementSelection(elementId, userName, connectionId);
+        });
+        
+        signalRConnection.on("ElementDeselected", (elementId, connectionId) => {
+            // Hide element selection
+            hideElementSelection(elementId, connectionId);
+        });
+        
+        signalRConnection.on("ElementZIndexUpdated", (elementId, newZIndex) => {
+            console.log('ElementZIndexUpdated received:', elementId, newZIndex);
+            console.log('Current elements map:', Array.from(elements.entries()).map(([id, el]) => ({id, zIndex: el.zIndex})));
+            const element = elements.get(elementId);
+            if (element) {
+                console.log('Updating element zIndex from', element.zIndex, 'to', newZIndex);
+                element.zIndex = newZIndex;
+                console.log('After update, element zIndex is:', element.zIndex);
+                redrawCanvas();
+                console.log('Canvas redrawn, elements now:', Array.from(elements.entries()).map(([id, el]) => ({id, zIndex: el.zIndex})));
+            } else {
+                console.log('Element not found in local map:', elementId);
+                console.log('Available elements:', Array.from(elements.keys()));
+            }
+        });
+
+        signalRConnection.on("ElementDeleted", (elementId) => {
+            console.log('ElementDeleted received:', elementId);
+            // Remove element from local map
+            elements.delete(elementId);
+            
+            // Clear selection if deleted element was selected
+            if (selectedElementId === elementId) {
+                selectedElementId = null;
+            }
+            
+            // Hide context menu
+            hideContextMenu();
+            
+            // Redraw canvas
+            redrawCanvas();
+        });
+
+        signalRConnection.on("ElementResized", (elementId, x, y, width, height) => {
+            console.log('ElementResized received:', elementId, x, y, width, height);
+            const element = elements.get(elementId);
+            if (element) {
+                element.x = x;
+                element.y = y;
+                element.width = width;
+                element.height = height;
                 redrawCanvas();
             }
         });
@@ -462,12 +1327,20 @@ window.highlightElement = (id) => {
         height = element.data.fontSize || 16;
     }
     
-    ctx.strokeRect(
-        element.x - padding,
-        element.y - padding,
-        width + (2 * padding),
-        height + (2 * padding)
-    );
+    // Draw selection rectangle
+    const selectionRect = {
+        x: element.x - padding,
+        y: element.y - padding,
+        width: width + (2 * padding),
+        height: height + (2 * padding)
+    };
+    
+    ctx.strokeRect(selectionRect.x, selectionRect.y, selectionRect.width, selectionRect.height);
+    
+    // Draw resize handles (only for resizable elements)
+    if (isElementResizable(element)) {
+        drawResizeHandles(selectionRect);
+    }
     
     ctx.restore();
 };
@@ -476,6 +1349,93 @@ window.clearSelection = () => {
     selectedElementId = null;
     redrawCanvas();
 };
+
+// Check if element is resizable
+function isElementResizable(element) {
+    // Text elements and drawing paths are not resizable
+    return element.type !== 'Text' && element.type !== 'Drawing';
+}
+
+// Draw resize handles around the selection rectangle
+function drawResizeHandles(selectionRect) {
+    const handleSize = 8;
+    const handleOffset = handleSize / 2;
+    
+    ctx.save();
+    ctx.fillStyle = '#007bff';
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([]);
+    
+    // Calculate handle positions
+    const handles = [
+        // Top-left
+        { x: selectionRect.x - handleOffset, y: selectionRect.y - handleOffset, cursor: 'nw-resize' },
+        // Top-center
+        { x: selectionRect.x + selectionRect.width/2 - handleOffset, y: selectionRect.y - handleOffset, cursor: 'n-resize' },
+        // Top-right
+        { x: selectionRect.x + selectionRect.width - handleOffset, y: selectionRect.y - handleOffset, cursor: 'ne-resize' },
+        // Middle-left
+        { x: selectionRect.x - handleOffset, y: selectionRect.y + selectionRect.height/2 - handleOffset, cursor: 'w-resize' },
+        // Middle-right
+        { x: selectionRect.x + selectionRect.width - handleOffset, y: selectionRect.y + selectionRect.height/2 - handleOffset, cursor: 'e-resize' },
+        // Bottom-left
+        { x: selectionRect.x - handleOffset, y: selectionRect.y + selectionRect.height - handleOffset, cursor: 'sw-resize' },
+        // Bottom-center
+        { x: selectionRect.x + selectionRect.width/2 - handleOffset, y: selectionRect.y + selectionRect.height - handleOffset, cursor: 's-resize' },
+        // Bottom-right
+        { x: selectionRect.x + selectionRect.width - handleOffset, y: selectionRect.y + selectionRect.height - handleOffset, cursor: 'se-resize' }
+    ];
+    
+    // Draw each handle
+    handles.forEach(handle => {
+        ctx.fillRect(handle.x, handle.y, handleSize, handleSize);
+        ctx.strokeRect(handle.x, handle.y, handleSize, handleSize);
+    });
+    
+    ctx.restore();
+    
+    // Store handles for hit testing
+    window.resizeHandles = handles;
+}
+
+// Check if point is on a resize handle
+function getResizeHandleAt(x, y) {
+    if (!window.resizeHandles || !selectedElementId) return null;
+    
+    const handleSize = 8;
+    for (let i = 0; i < window.resizeHandles.length; i++) {
+        const handle = window.resizeHandles[i];
+        if (x >= handle.x && x <= handle.x + handleSize &&
+            y >= handle.y && y <= handle.y + handleSize) {
+            return { index: i, handle: handle };
+        }
+    }
+    return null;
+}
+
+// Start resizing operation
+function startResize(resizeHandle) {
+    isResizing = true;
+    activeResizeHandle = resizeHandle;
+    hasResized = false; // Reset resize flag
+    
+    const element = elements.get(selectedElementId);
+    if (element) {
+        // Store original bounds for resize calculations
+        resizeStartBounds = {
+            x: element.x,
+            y: element.y,
+            width: element.width || 0,
+            height: element.height || 0
+        };
+        
+        // Set cursor style
+        if (canvas) {
+            canvas.style.cursor = resizeHandle.handle.cursor;
+        }
+    }
+}
 
 window.updateElementPosition = (id, newX, newY) => {
     const element = elements.get(id);
@@ -502,6 +1462,53 @@ window.sendElementMove = async (boardId, elementId, newX, newY) => {
         }
     }
 };
+
+function sendElementSelect(elementId) {
+    if (signalRConnection && signalRConnection.state === signalR.HubConnectionState.Connected) {
+        signalRConnection.invoke("SelectElement", currentBoardId, elementId)
+            .catch(error => console.log("Failed to send element select:", error));
+    }
+}
+
+function sendElementDeselect(elementId) {
+    if (signalRConnection && signalRConnection.state === signalR.HubConnectionState.Connected) {
+        signalRConnection.invoke("DeselectElement", currentBoardId, elementId)
+            .catch(error => console.log("Failed to send element deselect:", error));
+    }
+}
+
+function bringElementToFront(elementId) {
+    console.log('bringElementToFront called for element:', elementId, 'boardId:', currentBoardId);
+    if (signalRConnection && signalRConnection.state === signalR.HubConnectionState.Connected) {
+        console.log('SignalR connected, sending BringToFront');
+        signalRConnection.invoke("BringToFront", currentBoardId, elementId)
+            .then(() => console.log('BringToFront sent successfully'))
+            .catch(error => console.log("Failed to bring element to front:", error));
+    } else {
+        console.log('SignalR not connected, state:', signalRConnection?.state);
+    }
+}
+
+function sendElementToBack(elementId) {
+    console.log('sendElementToBack called for element:', elementId, 'boardId:', currentBoardId);
+    if (signalRConnection && signalRConnection.state === signalR.HubConnectionState.Connected) {
+        console.log('SignalR connected, sending SendToBack');
+        signalRConnection.invoke("SendToBack", currentBoardId, elementId)
+            .then(() => console.log('SendToBack sent successfully'))
+            .catch(error => console.log("Failed to send element to back:", error));
+    } else {
+        console.log('SignalR not connected, state:', signalRConnection?.state);
+    }
+}
+
+async function sendElementResize(boardId, elementId, x, y, width, height) {
+    if (signalRConnection && signalRConnection.state === signalR.HubConnectionState.Connected) {
+        console.log('SignalR connected, sending element resize');
+        await signalRConnection.invoke("ResizeElement", boardId, elementId, x, y, width, height);
+    } else {
+        console.log('SignalR not connected, state:', signalRConnection?.state);
+    }
+}
 
 // Handle double-click on canvas for editing text elements and sticky notes
 function handleCanvasDoubleClick(event) {
@@ -725,11 +1732,32 @@ function updateStickyNoteContent(elementId, newContent) {
 function redrawCanvas() {
     if (!ctx || !canvas) return;
     
+    // Reset transform and clear canvas
+    resetCanvasTransform();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Redraw all elements
-    for (const [id, element] of elements.entries()) {
+    // Apply viewport transformation
+    applyViewportTransform();
+    
+    // Sort elements by z-index and redraw them
+    const sortedElements = Array.from(elements.entries())
+        .sort(([,a], [,b]) => (a.zIndex || 0) - (b.zIndex || 0));
+    
+    for (const [id, element] of sortedElements) {
         drawElement(id, element.x, element.y, element.type, element.data, element.width, element.height);
+    }
+    
+    // Redraw collaborative selections
+    drawCollaborativeSelections();
+    
+    // Redraw current user's selection highlight
+    if (selectedElementId) {
+        highlightElement(selectedElementId);
+    }
+    
+    // Update minimap
+    if (window.updateMinimap) {
+        window.updateMinimap();
     }
 }
 
@@ -743,6 +1771,7 @@ window.setCurrentTool = (tool) => {
                        tool === 'text' ? 'text' :
                        (tool === 'rectangle' || tool === 'circle') ? 'crosshair' :
                        tool === 'sticky' ? 'pointer' :
+                       tool === 'image' ? 'crosshair' :
                        tool === 'select' ? 'default' : 'default';
     
     if (canvas) {
@@ -751,10 +1780,44 @@ window.setCurrentTool = (tool) => {
 };
 
 // Mouse event handlers
+function handleMouseWheel(event) {
+    event.preventDefault();
+    
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = event.clientX - rect.left;
+    const mouseY = event.clientY - rect.top;
+    
+    // Get world coordinates before zoom
+    const worldPos = screenToWorld(mouseX, mouseY);
+    
+    // Apply zoom
+    const zoomFactor = event.deltaY > 0 ? 0.9 : 1.1;
+    const newZoom = Math.max(0.1, Math.min(5, zoomLevel * zoomFactor));
+    
+    if (newZoom !== zoomLevel) {
+        zoomLevel = newZoom;
+        
+        // Adjust viewport to keep mouse position stable
+        const newScreenPos = worldToScreen(worldPos.x, worldPos.y);
+        viewportX += mouseX - newScreenPos.x;
+        viewportY += mouseY - newScreenPos.y;
+        
+        redrawCanvas();
+        
+        // Update minimap if it exists
+        if (window.updateMinimap) {
+            window.updateMinimap();
+        }
+    }
+}
+
 function handleMouseDown(event) {
     const rect = canvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
+    const screenX = event.clientX - rect.left;
+    const screenY = event.clientY - rect.top;
+    const worldPos = screenToWorld(screenX, screenY);
+    const x = worldPos.x;
+    const y = worldPos.y;
     
     startX = x;
     startY = y;
@@ -776,6 +1839,10 @@ function handleMouseDown(event) {
             createStickyNote(x, y);
             break;
             
+        case 'image':
+            triggerImageUpload(x, y);
+            break;
+            
         case 'rectangle':
         case 'circle':
             isDrawing = true;
@@ -790,8 +1857,28 @@ function handleMouseDown(event) {
 
 function handleMouseMove(event) {
     const rect = canvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
+    const screenX = event.clientX - rect.left;
+    const screenY = event.clientY - rect.top;
+    const worldPos = screenToWorld(screenX, screenY);
+    const x = worldPos.x;
+    const y = worldPos.y;
+    
+    // Handle panning first
+    if (isPanning) {
+        const deltaX = x - lastPanX;
+        const deltaY = y - lastPanY;
+        
+        viewportX += deltaX * zoomLevel;
+        viewportY += deltaY * zoomLevel;
+        
+        redrawCanvas();
+        
+        // Update minimap if it exists
+        if (window.updateMinimap) {
+            window.updateMinimap();
+        }
+        return;
+    }
     
     if (isDrawing) {
         switch (currentTool) {
@@ -807,9 +1894,17 @@ function handleMouseMove(event) {
         }
     }
     
-    // Handle select tool dragging separately (doesn't use isDrawing)
-    if (currentTool === 'select' && isDragging && selectedElementId) {
+    // Handle resizing
+    if (isResizing && activeResizeHandle && selectedElementId) {
+        handleElementResize(screenX, screenY);
+    }
+    // Handle select tool dragging separately (doesn't use isDrawing)  
+    else if (currentTool === 'select' && isDragging && selectedElementId) {
         handleElementDrag(x, y);
+    }
+    // Update cursor for resize handles when not dragging/resizing
+    else if (currentTool === 'select' && selectedElementId && !isDragging && !isResizing) {
+        updateCursorForResizeHandles(screenX, screenY);
     }
     
     // Send cursor updates
@@ -831,6 +1926,8 @@ function handleMouseUp(event) {
         switch (currentTool) {
         case 'pen':
             if (currentPath.length > 0) {
+                saveCanvasState('create drawing');
+                
                 const pathData = {
                     paths: [{
                         points: currentPath.map(p => ({ x: p.x, y: p.y })),
@@ -854,8 +1951,19 @@ function handleMouseUp(event) {
         }
     }
     
+    // Handle pan end
+    if (isPanning) {
+        console.log('Finishing pan');
+        isPanning = false;
+        canvas.style.cursor = 'default';
+    }
+    // Handle resize end
+    else if (isResizing) {
+        console.log('Finishing element resize');
+        finishElementResize();
+    }
     // Handle select tool drag end separately (doesn't use isDrawing)
-    if (currentTool === 'select' && isDragging) {
+    else if (currentTool === 'select' && isDragging) {
         console.log('Finishing element drag');
         finishElementDrag();
     }
@@ -865,6 +1973,8 @@ function handleMouseUp(event) {
 function createTextElement(x, y) {
     const text = prompt('Enter text:');
     if (text && text.trim()) {
+        saveCanvasState('create text element');
+        
         const textData = {
             content: text.trim(),
             fontSize: 16,
@@ -889,6 +1999,8 @@ function createTextElement(x, y) {
 function createStickyNote(x, y) {
     const text = prompt('Enter sticky note text:');
     if (text && text.trim()) {
+        saveCanvasState('create sticky note');
+        
         const stickyData = {
             content: text.trim(),
             color: '#ffff88',
@@ -908,6 +2020,8 @@ function createStickyNote(x, y) {
 }
 
 function createShapeElement(startX, startY, endX, endY) {
+    saveCanvasState('create shape');
+    
     const width = Math.abs(endX - startX);
     const height = Math.abs(endY - startY);
     const x = Math.min(startX, endX);
@@ -933,28 +2047,54 @@ function createShapeElement(startX, startY, endX, endY) {
 // Selection functions
 function handleSelectClick(x, y) {
     console.log('handleSelectClick called:', x, y);
+    
+    // First check if clicking on a resize handle of selected element
+    if (selectedElementId) {
+        const resizeHandle = getResizeHandleAt(x, y);
+        if (resizeHandle) {
+            console.log('Resize handle clicked:', resizeHandle.index);
+            startResize(resizeHandle);
+            return;
+        }
+    }
+    
     const elementId = getElementAtPoint(x, y);
     const element = elementId ? elements.get(elementId) : null;
     
     console.log('Element found for selection:', elementId, element);
     
     if (element) {
+        // Deselect previous element if any
+        if (selectedElementId && selectedElementId !== elementId) {
+            sendElementDeselect(selectedElementId);
+        }
+        
         selectedElementId = elementId;
         isDragging = true;
+        hasMoved = false; // Reset move flag
         
         dragOffsetX = x - element.x;
         dragOffsetY = y - element.y;
         
         console.log('Element selected:', elementId, 'dragOffset:', dragOffsetX, dragOffsetY);
         highlightElement(elementId);
+        
+        // Send selection event
+        sendElementSelect(elementId);
     } else {
         if (selectedElementId) {
             console.log('Deselecting element:', selectedElementId);
+            sendElementDeselect(selectedElementId);
             clearSelection();
             selectedElementId = null;
-        } else {
-            console.log('No element found to select');
         }
+        
+        // Start panning when no element is selected
+        console.log('Starting pan mode');
+        isPanning = true;
+        lastPanX = x;
+        lastPanY = y;
+        canvas.style.cursor = 'grabbing';
     }
 }
 
@@ -962,6 +2102,13 @@ function handleElementDrag(x, y) {
     if (selectedElementId) {
         const newX = x - dragOffsetX;
         const newY = y - dragOffsetY;
+        
+        // Save state on first movement
+        if (!hasMoved) {
+            saveCanvasState('move element');
+            hasMoved = true;
+        }
+        
         console.log('Dragging element:', selectedElementId, 'to:', newX, newY);
         updateElementPosition(selectedElementId, newX, newY);
     }
@@ -983,7 +2130,115 @@ function finishElementDrag() {
             }
         }
         isDragging = false;
+        hasMoved = false; // Reset move flag
         console.log('isDragging set to false');
+    }
+}
+
+// Resize handling functions
+function handleElementResize(x, y) {
+    if (!selectedElementId || !activeResizeHandle || !resizeStartBounds) return;
+    
+    const element = elements.get(selectedElementId);
+    if (!element || !isElementResizable(element)) return;
+    
+    // Save state on first resize
+    if (!hasResized) {
+        saveCanvasState('resize element');
+        hasResized = true;
+    }
+    
+    const handleIndex = activeResizeHandle.index;
+    const newBounds = calculateNewBounds(x, y, handleIndex, resizeStartBounds);
+    
+    // Update element bounds
+    element.x = newBounds.x;
+    element.y = newBounds.y;
+    element.width = newBounds.width;
+    element.height = newBounds.height;
+    
+    // Redraw canvas with updated element
+    redrawCanvas();
+}
+
+function calculateNewBounds(mouseX, mouseY, handleIndex, originalBounds) {
+    let newBounds = { ...originalBounds };
+    
+    switch (handleIndex) {
+        case 0: // Top-left
+            newBounds.width = originalBounds.width + (originalBounds.x - mouseX);
+            newBounds.height = originalBounds.height + (originalBounds.y - mouseY);
+            newBounds.x = mouseX;
+            newBounds.y = mouseY;
+            break;
+        case 1: // Top-center
+            newBounds.height = originalBounds.height + (originalBounds.y - mouseY);
+            newBounds.y = mouseY;
+            break;
+        case 2: // Top-right
+            newBounds.width = mouseX - originalBounds.x;
+            newBounds.height = originalBounds.height + (originalBounds.y - mouseY);
+            newBounds.y = mouseY;
+            break;
+        case 3: // Middle-left
+            newBounds.width = originalBounds.width + (originalBounds.x - mouseX);
+            newBounds.x = mouseX;
+            break;
+        case 4: // Middle-right
+            newBounds.width = mouseX - originalBounds.x;
+            break;
+        case 5: // Bottom-left
+            newBounds.width = originalBounds.width + (originalBounds.x - mouseX);
+            newBounds.height = mouseY - originalBounds.y;
+            newBounds.x = mouseX;
+            break;
+        case 6: // Bottom-center
+            newBounds.height = mouseY - originalBounds.y;
+            break;
+        case 7: // Bottom-right
+            newBounds.width = mouseX - originalBounds.x;
+            newBounds.height = mouseY - originalBounds.y;
+            break;
+    }
+    
+    // Enforce minimum size
+    const minSize = 10;
+    newBounds.width = Math.max(minSize, newBounds.width);
+    newBounds.height = Math.max(minSize, newBounds.height);
+    
+    return newBounds;
+}
+
+function finishElementResize() {
+    if (selectedElementId && isResizing) {
+        const element = elements.get(selectedElementId);
+        if (element && signalRConnection && signalRConnection.state === signalR.HubConnectionState.Connected) {
+            // Send resize update via SignalR
+            sendElementResize(currentBoardId, selectedElementId, element.x, element.y, element.width, element.height)
+                .then(() => console.log('Element resize sent successfully'))
+                .catch((err) => console.log('Element resize failed:', err));
+        }
+        
+        isResizing = false;
+        activeResizeHandle = null;
+        resizeStartBounds = null;
+        hasResized = false; // Reset resize flag
+        
+        // Reset cursor
+        if (canvas) {
+            canvas.style.cursor = 'default';
+        }
+    }
+}
+
+function updateCursorForResizeHandles(x, y) {
+    if (!selectedElementId) return;
+    
+    const resizeHandle = getResizeHandleAt(x, y);
+    if (resizeHandle && canvas) {
+        canvas.style.cursor = resizeHandle.handle.cursor;
+    } else if (canvas) {
+        canvas.style.cursor = 'default';
     }
 }
 
@@ -1010,3 +2265,365 @@ document.addEventListener('DOMContentLoaded', () => {
         initializeCanvas();
     }, 100);
 });
+
+// Mouse tracking for cursor updates
+window.addMouseMoveListener = (dotNetRef) => {
+    let mouseTracker = (event) => {
+        const rect = canvas?.getBoundingClientRect();
+        if (rect) {
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+            dotNetRef.invokeMethodAsync('OnMouseMove', x, y);
+        }
+    };
+    
+    if (canvas) {
+        canvas.addEventListener('mousemove', mouseTracker);
+    } else {
+        // Retry if canvas not ready
+        setTimeout(() => {
+            canvas = document.getElementById('drawingCanvas');
+            if (canvas) {
+                canvas.addEventListener('mousemove', mouseTracker);
+            }
+        }, 100);
+    }
+};
+
+// Collaborative selection handling
+let collaborativeSelections = new Map();
+
+window.showElementSelection = (elementId, userName, connectionId) => {
+    if (!ctx) return;
+    
+    const element = elements.get(elementId);
+    if (!element) return;
+    
+    // Store selection info
+    collaborativeSelections.set(connectionId, { elementId, userName });
+    
+    // Redraw canvas with collaborative selections
+    redrawCanvas();
+    drawCollaborativeSelections();
+};
+
+window.hideElementSelection = (elementId, connectionId) => {
+    collaborativeSelections.delete(connectionId);
+    redrawCanvas();
+    drawCollaborativeSelections();
+};
+
+function drawCollaborativeSelections() {
+    if (!ctx) return;
+    
+    for (const [connectionId, selection] of collaborativeSelections.entries()) {
+        const element = elements.get(selection.elementId);
+        if (!element) continue;
+        
+        // Draw selection border with different color
+        ctx.save();
+        ctx.strokeStyle = '#ff6b6b';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([3, 3]);
+        
+        const padding = 3;
+        let width = element.width || 0;
+        let height = element.height || 0;
+        
+        // Special handling for text elements
+        if (element.type === 'Text' && element.data && element.data.content) {
+            ctx.font = `${element.data.bold ? 'bold ' : ''}${element.data.italic ? 'italic ' : ''}${element.data.fontSize || 16}px ${element.data.fontFamily || 'Arial'}`;
+            const textMetrics = ctx.measureText(element.data.content);
+            width = textMetrics.width;
+            height = element.data.fontSize || 16;
+        }
+        
+        ctx.strokeRect(
+            element.x - padding,
+            element.y - padding,
+            width + (2 * padding),
+            height + (2 * padding)
+        );
+        
+        // Draw user name label
+        ctx.fillStyle = '#ff6b6b';
+        ctx.font = '12px Arial';
+        ctx.fillText(selection.userName, element.x, element.y - 8);
+        
+        ctx.restore();
+    }
+};
+
+// Image upload functionality
+function setupImageUpload() {
+    const imageInput = document.getElementById('imageUpload');
+    if (imageInput) {
+        imageInput.addEventListener('change', handleImageUpload);
+    }
+}
+
+function triggerImageUpload(x, y) {
+    pendingImagePosition = { x, y };
+    const imageInput = document.getElementById('imageUpload');
+    if (imageInput) {
+        imageInput.click();
+    }
+}
+
+async function handleImageUpload(event) {
+    const file = event.target.files[0];
+    if (!file || !pendingImagePosition) return;
+    
+    try {
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        const response = await fetch('/api/image/upload', {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (response.ok) {
+            const result = await response.json();
+            createImageElement(pendingImagePosition.x, pendingImagePosition.y, result);
+        } else {
+            const error = await response.text();
+            alert('Image upload failed: ' + error);
+        }
+    } catch (error) {
+        console.error('Image upload error:', error);
+        alert('Image upload failed: ' + error.message);
+    } finally {
+        // Clear the input and pending position
+        event.target.value = '';
+        pendingImagePosition = null;
+    }
+}
+
+function createImageElement(x, y, imageData) {
+    // Calculate display size (max 400x300 while maintaining aspect ratio)
+    const maxWidth = 400;
+    const maxHeight = 300;
+    const aspectRatio = imageData.originalWidth / imageData.originalHeight;
+    
+    let displayWidth = imageData.originalWidth;
+    let displayHeight = imageData.originalHeight;
+    
+    if (displayWidth > maxWidth) {
+        displayWidth = maxWidth;
+        displayHeight = displayWidth / aspectRatio;
+    }
+    
+    if (displayHeight > maxHeight) {
+        displayHeight = maxHeight;
+        displayWidth = displayHeight * aspectRatio;
+    }
+    
+    const elementData = {
+        type: 'Image',
+        x: x,
+        y: y,
+        width: displayWidth,
+        height: displayHeight,
+        data: imageData
+    };
+    
+    sendElement(currentBoardId, elementData);
+};
+
+// Z-index control functions for UI buttons
+window.bringSelectedToFront = () => {
+    console.log('bringSelectedToFront called, selectedElementId:', selectedElementId);
+    if (selectedElementId) {
+        bringElementToFront(selectedElementId);
+    } else {
+        alert('Please select an element first');
+    }
+};
+
+window.sendSelectedToBack = () => {
+    console.log('sendSelectedToBack called, selectedElementId:', selectedElementId);
+    if (selectedElementId) {
+        sendElementToBack(selectedElementId);
+    } else {
+        alert('Please select an element first');
+    }
+};
+
+// Context menu functionality
+let contextMenu = null;
+
+window.showContextMenu = (x, y) => {
+    contextMenu = document.getElementById('contextMenu');
+    if (contextMenu && selectedElementId) {
+        contextMenu.style.display = 'block';
+        contextMenu.style.left = x + 'px';
+        contextMenu.style.top = y + 'px';
+        
+        // Hide menu when clicking elsewhere
+        document.addEventListener('click', hideContextMenu);
+        return true; // Prevent default context menu
+    }
+    return false;
+};
+
+window.hideContextMenu = () => {
+    if (contextMenu) {
+        contextMenu.style.display = 'none';
+        document.removeEventListener('click', hideContextMenu);
+    }
+};
+
+window.deleteSelectedElement = () => {
+    if (selectedElementId) {
+        console.log('Deleting element:', selectedElementId);
+        saveCanvasState('delete element');
+        
+        // Remove from local elements map
+        elements.delete(selectedElementId);
+        
+        // Send delete request via SignalR if connected
+        if (signalRConnection && signalRConnection.state === signalR.HubConnectionState.Connected) {
+            signalRConnection.invoke("DeleteElement", currentBoardId, selectedElementId)
+                .then(() => console.log('Element deletion sent successfully'))
+                .catch(error => console.log("Failed to delete element:", error));
+        }
+        
+        // Clear selection and redraw canvas
+        selectedElementId = null;
+        redrawCanvas();
+    }
+    hideContextMenu();
+};
+
+// Right-click handler for canvas
+function handleCanvasRightClick(event) {
+    event.preventDefault(); // Prevent default context menu
+    
+    const rect = canvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    
+    // Check if we're right-clicking on a selected element
+    if (selectedElementId) {
+        const element = elements.get(selectedElementId);
+        if (element && isPointInElement(x, y, element)) {
+            // Show context menu at mouse position
+            showContextMenu(event.clientX, event.clientY);
+            return;
+        }
+    }
+    
+    // If not on selected element, try to select element under cursor
+    const elementId = getElementAtPoint(x, y);
+    if (elementId) {
+        // Select the element first
+        if (selectedElementId && selectedElementId !== elementId) {
+            sendElementDeselect(selectedElementId);
+        }
+        selectedElementId = elementId;
+        highlightElement(elementId);
+        sendElementSelect(elementId);
+        
+        // Then show context menu
+        showContextMenu(event.clientX, event.clientY);
+    }
+}
+
+// Helper function to check if point is within element bounds
+function isPointInElement(x, y, element) {
+    if (element.type === 'Text' && element.data && element.data.content) {
+        // Special handling for text elements
+        const canvas = document.getElementById('drawingCanvas');
+        const ctx = canvas.getContext('2d');
+        ctx.save();
+        ctx.font = `${element.data.bold ? 'bold ' : ''}${element.data.italic ? 'italic ' : ''}${element.data.fontSize || 16}px ${element.data.fontFamily || 'Arial'}`;
+        const textMetrics = ctx.measureText(element.data.content);
+        const textWidth = textMetrics.width;
+        const textHeight = element.data.fontSize || 16;
+        ctx.restore();
+        
+        return x >= element.x && x <= element.x + textWidth &&
+               y >= element.y && y <= element.y + textHeight;
+    } else {
+        return x >= element.x && x <= element.x + (element.width || 0) &&
+               y >= element.y && y <= element.y + (element.height || 0);
+    }
+}
+
+// Setup keyboard event handlers
+function setupKeyboardHandlers() {
+    let previousTool = null;
+    
+    document.addEventListener('keydown', function(event) {
+        // Handle Ctrl+Z for undo
+        if (event.ctrlKey && event.key === 'z' && !event.shiftKey) {
+            event.preventDefault();
+            undo();
+        }
+        // Handle Ctrl+Y or Ctrl+Shift+Z for redo
+        else if (event.ctrlKey && (event.key === 'y' || (event.key === 'z' && event.shiftKey))) {
+            event.preventDefault();
+            redo();
+        }
+        // Handle Ctrl+C for copy
+        else if (event.ctrlKey && event.key === 'c') {
+            event.preventDefault();
+            copySelectedElement();
+        }
+        // Handle Ctrl+V for paste
+        else if (event.ctrlKey && event.key === 'v') {
+            event.preventDefault();
+            pasteElement();
+        }
+        // Handle DEL key for deleting selected element
+        else if (event.key === 'Delete' && selectedElementId) {
+            event.preventDefault();
+            deleteSelectedElement();
+        }
+        // Handle spacebar for hand tool
+        else if (event.code === 'Space' && !event.repeat) {
+            event.preventDefault();
+            
+            // If already on select tool, do nothing
+            if (currentTool === 'select') return;
+            
+            // Store current tool and switch to select
+            previousTool = currentTool;
+            window.setCurrentTool('select');
+            
+            // Update Blazor component
+            window.updateBlazorCurrentTool('select');
+        }
+    });
+    
+    document.addEventListener('keyup', function(event) {
+        // Handle spacebar release to return to previous tool
+        if (event.code === 'Space' && previousTool && currentTool === 'select') {
+            event.preventDefault();
+            
+            // Switch back to previous tool
+            window.setCurrentTool(previousTool);
+            window.updateBlazorCurrentTool(previousTool);
+            previousTool = null;
+        }
+    });
+}
+
+// Set Blazor reference for JavaScript to call back to Blazor
+window.setBlazorReference = (dotNetRef) => {
+    blazorReference = dotNetRef;
+    console.log('Blazor reference set for tool updates');
+};
+
+// Function to update Blazor component tool state
+window.updateBlazorCurrentTool = async (tool) => {
+    if (blazorReference) {
+        try {
+            await blazorReference.invokeMethodAsync('UpdateCurrentTool', tool);
+            console.log('Blazor tool updated to:', tool);
+        } catch (error) {
+            console.log('Failed to update Blazor tool:', error);
+        }
+    }
+};

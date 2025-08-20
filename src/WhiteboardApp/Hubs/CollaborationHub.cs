@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.SignalR;
 using WhiteboardApp.Models;
 using WhiteboardApp.Services;
 using System.Text.Json;
+using System.Collections.Concurrent;
 
 namespace WhiteboardApp.Hubs;
 
@@ -9,6 +10,7 @@ public class CollaborationHub : Hub
 {
     private readonly ElementService _elementService;
     private readonly BoardService _boardService;
+    private static readonly ConcurrentDictionary<string, UserSession> _userSessions = new();
 
     public CollaborationHub(ElementService elementService, BoardService boardService)
     {
@@ -20,13 +22,38 @@ public class CollaborationHub : Hub
     {
         await Groups.AddToGroupAsync(Context.ConnectionId, $"Board_{boardId}");
         
-        // Notify others that user joined
-        await Clients.Group($"Board_{boardId}").SendAsync("UserJoined", userName);
+        // Add user session
+        var userSession = new UserSession
+        {
+            ConnectionId = Context.ConnectionId,
+            BoardId = Guid.Parse(boardId),
+            UserName = userName,
+            CursorX = 0,
+            CursorY = 0,
+            IsActive = true
+        };
+        _userSessions[Context.ConnectionId] = userSession;
+        
+        // Get all active users for this board
+        var activeUsers = _userSessions.Values
+            .Where(u => u.BoardId.ToString() == boardId && u.IsActive)
+            .Select(u => new { connectionId = u.ConnectionId, userName = u.UserName, cursorX = u.CursorX, cursorY = u.CursorY })
+            .ToList();
+        
+        // Notify others that user joined and send current user list to new user
+        await Clients.Group($"Board_{boardId}").SendAsync("UserJoined", new { connectionId = Context.ConnectionId, userName = userName });
+        await Clients.Caller.SendAsync("ActiveUsersUpdated", activeUsers);
     }
 
     public async Task LeaveBoard(string boardId)
     {
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"Board_{boardId}");
+        
+        // Remove user session and notify others
+        if (_userSessions.TryRemove(Context.ConnectionId, out var userSession))
+        {
+            await Clients.Group($"Board_{boardId}").SendAsync("UserLeft", new { connectionId = Context.ConnectionId, userName = userSession.UserName });
+        }
     }
 
     public async Task AddDrawingPath(string boardId, object pathData)
@@ -86,6 +113,7 @@ public class CollaborationHub : Hub
                 "Text" => ElementType.Text,
                 "Shape" => ElementType.Shape,
                 "StickyNote" => ElementType.StickyNote,
+                "Image" => ElementType.Image,
                 _ => ElementType.Drawing
             };
 
@@ -125,6 +153,13 @@ public class CollaborationHub : Hub
 
     public async Task UpdateCursor(string boardId, double x, double y)
     {
+        // Update user session cursor position
+        if (_userSessions.TryGetValue(Context.ConnectionId, out var userSession))
+        {
+            userSession.CursorX = x;
+            userSession.CursorY = y;
+        }
+        
         await Clients.OthersInGroup($"Board_{boardId}").SendAsync("CursorUpdated", Context.ConnectionId, x, y);
     }
 
@@ -211,7 +246,121 @@ public class CollaborationHub : Hub
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
-        // Clean up any group memberships if needed
+        // Remove user session and notify others
+        if (_userSessions.TryRemove(Context.ConnectionId, out var userSession))
+        {
+            await Clients.Group($"Board_{userSession.BoardId}").SendAsync("UserLeft", new { connectionId = Context.ConnectionId, userName = userSession.UserName });
+        }
+        
         await base.OnDisconnectedAsync(exception);
+    }
+
+    public async Task SelectElement(string boardId, string elementId)
+    {
+        if (_userSessions.TryGetValue(Context.ConnectionId, out var userSession))
+        {
+            await Clients.OthersInGroup($"Board_{boardId}").SendAsync("ElementSelected", elementId, userSession.UserName, Context.ConnectionId);
+        }
+    }
+
+    public async Task DeselectElement(string boardId, string elementId)
+    {
+        await Clients.OthersInGroup($"Board_{boardId}").SendAsync("ElementDeselected", elementId, Context.ConnectionId);
+    }
+
+    public async Task BringToFront(string boardId, string elementId)
+    {
+        try
+        {
+            if (Guid.TryParse(elementId, out var elementGuid))
+            {
+                var element = await _elementService.GetElementAsync(elementGuid);
+                if (element != null)
+                {
+                    // Get the highest z-index in this board
+                    var maxZIndex = await _elementService.GetMaxZIndexAsync(element.BoardId);
+                    element.ZIndex = maxZIndex + 1;
+                    await _elementService.UpdateElementAsync(element);
+                    
+                    await Clients.Group($"Board_{boardId}").SendAsync("ElementZIndexUpdated", elementId, element.ZIndex);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            await Clients.Caller.SendAsync("Error", $"Failed to bring element to front: {ex.Message}");
+        }
+    }
+
+    public async Task SendToBack(string boardId, string elementId)
+    {
+        try
+        {
+            if (Guid.TryParse(elementId, out var elementGuid))
+            {
+                var element = await _elementService.GetElementAsync(elementGuid);
+                if (element != null)
+                {
+                    // Get the lowest z-index in this board
+                    var minZIndex = await _elementService.GetMinZIndexAsync(element.BoardId);
+                    element.ZIndex = minZIndex - 1;
+                    await _elementService.UpdateElementAsync(element);
+                    
+                    await Clients.Group($"Board_{boardId}").SendAsync("ElementZIndexUpdated", elementId, element.ZIndex);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            await Clients.Caller.SendAsync("Error", $"Failed to send element to back: {ex.Message}");
+        }
+    }
+
+    public async Task DeleteElement(string boardId, string elementId)
+    {
+        try
+        {
+            if (Guid.TryParse(elementId, out var elementGuid))
+            {
+                var success = await _elementService.DeleteElementAsync(elementGuid);
+                if (success)
+                {
+                    await Clients.Group($"Board_{boardId}").SendAsync("ElementDeleted", elementId);
+                }
+                else
+                {
+                    await Clients.Caller.SendAsync("Error", "Element not found or could not be deleted");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            await Clients.Caller.SendAsync("Error", $"Failed to delete element: {ex.Message}");
+        }
+    }
+
+    public async Task ResizeElement(string boardId, string elementId, double x, double y, double width, double height)
+    {
+        try
+        {
+            if (Guid.TryParse(elementId, out var elementGuid))
+            {
+                var element = await _elementService.GetElementAsync(elementGuid);
+                if (element != null)
+                {
+                    element.X = x;
+                    element.Y = y;
+                    element.Width = width;
+                    element.Height = height;
+                    await _elementService.UpdateElementAsync(element);
+                    
+                    await Clients.Group($"Board_{boardId}").SendAsync("ElementResized", elementId, x, y, width, height);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            await Clients.Caller.SendAsync("Error", $"Failed to resize element: {ex.Message}");
+        }
     }
 }
