@@ -1,0 +1,199 @@
+@using Microsoft.AspNetCore.SignalR.Client
+@inject IJSRuntime JSRuntime
+@implements IAsyncDisposable
+
+<div class="cursor-tracker">
+    @foreach (var cursor in activeCursors)
+    {
+        <div class="user-cursor" style="position: absolute; left: @(cursor.Value.X)px; top: @(cursor.Value.Y)px; pointer-events: none; z-index: 1000;">
+            <div class="cursor-pointer">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                    <path d="M3 3L17 9L9 11L7 17L3 3Z" fill="@cursor.Value.Color" stroke="white" stroke-width="1"/>
+                </svg>
+            </div>
+            <div class="cursor-label" style="background-color: @cursor.Value.Color; color: white; padding: 2px 6px; border-radius: 4px; font-size: 12px; margin-left: 15px; margin-top: -5px;">
+                @cursor.Value.UserName
+            </div>
+        </div>
+    }
+
+    @foreach (var user in activeUsers)
+    {
+        <div class="user-indicator" style="position: fixed; top: 10px; right: @(10 + user.Index * 50)px; background-color: @user.Color; color: white; padding: 4px 8px; border-radius: 12px; font-size: 12px; z-index: 1001;">
+            @user.UserName
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public HubConnection? HubConnection { get; set; }
+    [Parameter] public string BoardId { get; set; } = string.Empty;
+    [Parameter] public string CurrentUserName { get; set; } = string.Empty;
+
+    private Dictionary<string, CursorInfo> activeCursors = new();
+    private List<UserInfo> activeUsers = new();
+    private readonly string[] userColors = { "#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD", "#98D8C8", "#F7DC6F" };
+
+    public class CursorInfo
+    {
+        public double X { get; set; }
+        public double Y { get; set; }
+        public string UserName { get; set; } = string.Empty;
+        public string Color { get; set; } = string.Empty;
+    }
+
+    public class UserInfo
+    {
+        public string ConnectionId { get; set; } = string.Empty;
+        public string UserName { get; set; } = string.Empty;
+        public string Color { get; set; } = string.Empty;
+        public int Index { get; set; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HubConnection != null)
+        {
+            HubConnection.On<string, double, double>("CursorUpdated", OnCursorUpdated);
+            HubConnection.On<object>("UserJoined", OnUserJoined);
+            HubConnection.On<object>("UserLeft", OnUserLeft);
+            HubConnection.On<List<object>>("ActiveUsersUpdated", OnActiveUsersUpdated);
+        }
+
+        await JSRuntime.InvokeVoidAsync("addMouseMoveListener", DotNetObjectReference.Create(this));
+    }
+
+    [JSInvokable]
+    public async Task OnMouseMove(double x, double y)
+    {
+        if (HubConnection?.State == HubConnectionState.Connected)
+        {
+            await HubConnection.SendAsync("UpdateCursor", BoardId, x, y);
+        }
+    }
+
+    private async Task OnCursorUpdated(string connectionId, double x, double y)
+    {
+        if (activeCursors.ContainsKey(connectionId))
+        {
+            activeCursors[connectionId].X = x;
+            activeCursors[connectionId].Y = y;
+        }
+        else
+        {
+            var user = activeUsers.FirstOrDefault(u => u.ConnectionId == connectionId);
+            if (user != null)
+            {
+                activeCursors[connectionId] = new CursorInfo
+                {
+                    X = x,
+                    Y = y,
+                    UserName = user.UserName,
+                    Color = user.Color
+                };
+            }
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnUserJoined(object userData)
+    {
+        try
+        {
+            var userJson = System.Text.Json.JsonSerializer.Serialize(userData);
+            var user = System.Text.Json.JsonSerializer.Deserialize<dynamic>(userJson);
+            
+            var connectionId = user.GetProperty("connectionId").GetString() ?? "";
+            var userName = user.GetProperty("userName").GetString() ?? "";
+            
+            if (!string.IsNullOrEmpty(connectionId) && !string.IsNullOrEmpty(userName))
+            {
+                var colorIndex = activeUsers.Count % userColors.Length;
+                var newUser = new UserInfo
+                {
+                    ConnectionId = connectionId,
+                    UserName = userName,
+                    Color = userColors[colorIndex],
+                    Index = activeUsers.Count
+                };
+                
+                activeUsers.Add(newUser);
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error processing user joined: {ex.Message}");
+        }
+    }
+
+    private async Task OnUserLeft(object userData)
+    {
+        try
+        {
+            var userJson = System.Text.Json.JsonSerializer.Serialize(userData);
+            var user = System.Text.Json.JsonSerializer.Deserialize<dynamic>(userJson);
+            
+            var connectionId = user.GetProperty("connectionId").GetString() ?? "";
+            
+            activeUsers.RemoveAll(u => u.ConnectionId == connectionId);
+            activeCursors.Remove(connectionId);
+            
+            // Reassign indices
+            for (int i = 0; i < activeUsers.Count; i++)
+            {
+                activeUsers[i].Index = i;
+            }
+            
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error processing user left: {ex.Message}");
+        }
+    }
+
+    private async Task OnActiveUsersUpdated(List<object> users)
+    {
+        try
+        {
+            activeUsers.Clear();
+            for (int i = 0; i < users.Count; i++)
+            {
+                var userJson = System.Text.Json.JsonSerializer.Serialize(users[i]);
+                var user = System.Text.Json.JsonSerializer.Deserialize<dynamic>(userJson);
+                
+                var connectionId = user.GetProperty("connectionId").GetString() ?? "";
+                var userName = user.GetProperty("userName").GetString() ?? "";
+                
+                if (!string.IsNullOrEmpty(connectionId) && !string.IsNullOrEmpty(userName) && userName != CurrentUserName)
+                {
+                    var colorIndex = i % userColors.Length;
+                    activeUsers.Add(new UserInfo
+                    {
+                        ConnectionId = connectionId,
+                        UserName = userName,
+                        Color = userColors[colorIndex],
+                        Index = i
+                    });
+                }
+            }
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error processing active users: {ex.Message}");
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (HubConnection != null)
+        {
+            HubConnection.Remove("CursorUpdated");
+            HubConnection.Remove("UserJoined");
+            HubConnection.Remove("UserLeft");
+            HubConnection.Remove("ActiveUsersUpdated");
+        }
+    }
+}
