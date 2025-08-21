@@ -190,6 +190,9 @@ function initializeMinimap() {
         
         // Initial minimap render
         updateMinimapImmediate();
+        
+        // Initialize zoom level display
+        updateZoomLevelDisplay();
     }
 }
 
@@ -402,6 +405,9 @@ function updateMinimapActual() {
     minimapViewport.style.top = viewportY_minimap + 'px';
     minimapViewport.style.width = viewportWidth_minimap + 'px';
     minimapViewport.style.height = viewportHeight_minimap + 'px';
+    
+    // Update zoom level display
+    updateZoomLevelDisplay();
 }
 
 // Public interface - use throttled version by default
@@ -409,6 +415,26 @@ window.updateMinimap = updateMinimapThrottled;
 
 // Immediate version for when throttling is not desired
 window.updateMinimapImmediate = updateMinimapActual;
+
+// Update zoom level display
+function updateZoomLevelDisplay() {
+    let zoomDisplay = document.getElementById('zoomLevelDisplay');
+    if (!zoomDisplay) {
+        // Create zoom level display if it doesn't exist
+        const minimapContainer = document.querySelector('.minimap-container');
+        if (minimapContainer) {
+            zoomDisplay = document.createElement('div');
+            zoomDisplay.id = 'zoomLevelDisplay';
+            zoomDisplay.className = 'zoom-level-display';
+            minimapContainer.appendChild(zoomDisplay);
+        }
+    }
+    
+    if (zoomDisplay) {
+        const zoomPercentage = Math.round(zoomLevel * 100);
+        zoomDisplay.textContent = `${zoomPercentage}%`;
+    }
+}
 
 function renderElementToMinimap(element, ctx) {
     if (!element || !element.data) return;
@@ -878,6 +904,9 @@ window.updateShape = (shapeType, startX, startY, currentX, currentY) => {
     // Clear temporary canvas
     tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
     
+    // Apply viewport transformation to temp canvas
+    tempCtx.setTransform(zoomLevel, 0, 0, zoomLevel, viewportX, viewportY);
+    
     // Set style
     tempCtx.strokeStyle = '#000000';
     tempCtx.lineWidth = 2;
@@ -898,6 +927,9 @@ window.updateShape = (shapeType, startX, startY, currentX, currentY) => {
     }
     
     tempCtx.stroke();
+    
+    // Reset transform after drawing
+    tempCtx.setTransform(1, 0, 0, 1, 0, 0);
 };
 
 window.finishShape = () => {
@@ -939,14 +971,25 @@ window.drawElement = (id, x, y, type, data, width, height) => {
             break;
             
         case "Text":
+            ctx.save();
+            
+            // Draw background for visibility (especially when empty)
+            ctx.fillStyle = data.isEditing ? '#f0f8ff' : 'rgba(255, 255, 255, 0.8)';
+            ctx.strokeStyle = data.isEditing ? '#007bff' : '#cccccc';
+            ctx.lineWidth = 1;
+            ctx.fillRect(x, y, width || 200, height || 30);
+            ctx.strokeRect(x, y, width || 200, height || 30);
+            
             // Don't draw text if currently editing
-            if (!data.isEditing) {
-                ctx.save();
+            if (!data.isEditing && data.content) {
                 ctx.fillStyle = data.color || '#000000';
                 ctx.font = `${data.bold ? 'bold ' : ''}${data.italic ? 'italic ' : ''}${data.fontSize || 16}px ${data.fontFamily || 'Arial'}`;
-                ctx.fillText(data.content || '', x, y + (data.fontSize || 16));
-                ctx.restore();
+                // Better text positioning within the box
+                const textY = y + (height || 30) / 2 + (data.fontSize || 16) / 3;
+                ctx.fillText(data.content, x + 5, textY);
             }
+            
+            ctx.restore();
             break;
             
         case "Shape":
@@ -1097,17 +1140,56 @@ window.initializeSignalR = async (boardId) => {
             .build();
 
         signalRConnection.on("ElementAdded", (elementData) => {
-            console.log("ElementAdded received:", elementData);
-            // Store element with proper z-index
-            elements.set(elementData.id, {
-                x: elementData.x,
-                y: elementData.y,
-                width: elementData.width,
-                height: elementData.height,
-                type: elementData.type,
-                data: elementData.data,
-                zIndex: elementData.zIndex || 0
-            });
+            // Check if this element has a tempId that belongs to this client
+            if (elementData.tempId && elements.has(elementData.tempId)) {
+                // This is our own temp element being confirmed by the server
+                const tempElement = elements.get(elementData.tempId);
+                
+                // Update the temporary element with server data
+                tempElement.zIndex = elementData.zIndex || 0;
+                
+                // If currently editing this temp element, update references
+                if (editingElement === elementData.tempId) {
+                    editingElement = elementData.id;
+                }
+                
+                // If this temp element is selected, update selection reference
+                if (selectedElementId === elementData.tempId) {
+                    selectedElementId = elementData.id;
+                }
+                
+                // Check if there are pending updates to send
+                const hasPendingUpdate = tempElement.data.pendingUpdate;
+                if (hasPendingUpdate) {
+                    tempElement.data.pendingUpdate = false;
+                    
+                    // Send the update with the real server ID
+                    setTimeout(() => {
+                        if (tempElement.type === 'Text') {
+                            updateTextElementContent(elementData.id, tempElement.data.content);
+                        } else if (tempElement.type === 'StickyNote') {
+                            updateStickyNoteContent(elementData.id, tempElement.data.content);
+                        }
+                    }, 100); // Small delay to ensure server has processed the element creation
+                }
+                
+                // Move element from temp ID to server ID
+                elements.delete(elementData.tempId);
+                elements.set(elementData.id, tempElement);
+            } else {
+                // This is a new element from another client OR an element without tempId
+                // Add it regardless of whether it has a tempId (from other clients)
+                elements.set(elementData.id, {
+                    x: elementData.x,
+                    y: elementData.y,
+                    width: elementData.width,
+                    height: elementData.height,
+                    type: elementData.type,
+                    data: elementData.data,
+                    zIndex: elementData.zIndex || 0
+                });
+            }
+            
             // Redraw entire canvas to maintain proper z-order
             redrawCanvas();
         });
@@ -1196,6 +1278,29 @@ window.initializeSignalR = async (boardId) => {
             }
         });
 
+        signalRConnection.on("ElementStyleUpdated", (elementId, newStyleData) => {
+            console.log('ElementStyleUpdated received:', elementId, newStyleData);
+            const element = elements.get(elementId);
+            if (element) {
+                // Update element style data
+                element.data = { ...element.data, ...newStyleData };
+                
+                // For drawings, update all paths with new style
+                if (element.type === 'Drawing' && element.data.paths) {
+                    for (const path of element.data.paths) {
+                        if (newStyleData.strokeColor) {
+                            path.strokeColor = newStyleData.strokeColor;
+                        }
+                        if (newStyleData.strokeWidth) {
+                            path.strokeWidth = newStyleData.strokeWidth;
+                        }
+                    }
+                }
+                
+                redrawCanvas();
+            }
+        });
+
         await signalRConnection.start();
         await signalRConnection.invoke("JoinBoard", boardId, "Anonymous");
         
@@ -1237,10 +1342,12 @@ window.sendBoardCleared = async (boardId) => {
     }
 };
 
-window.sendElement = async (boardId, elementData) => {
+window.sendElement = async (boardId, elementData, tempId = null) => {
     if (signalRConnection && signalRConnection.state === signalR.HubConnectionState.Connected) {
         try {
-            await signalRConnection.invoke("AddElement", boardId, elementData);
+            // Include tempId in the data sent to server for correlation if provided
+            const elementDataWithTemp = tempId ? { ...elementData, tempId: tempId } : elementData;
+            await signalRConnection.invoke("AddElement", boardId, elementDataWithTemp);
         } catch (error) {
             console.log("Failed to send element:", error);
         }
@@ -1252,14 +1359,14 @@ window.getElementAtPoint = (x, y) => {
     console.log('getElementAtPoint called with:', x, y);
     console.log('Available elements:', elements.size);
     
-    // Check elements in reverse order (top to bottom)
-    const elementIds = Array.from(elements.keys()).reverse();
+    // Check elements in z-index order (highest z-index first, top to bottom visually)
+    const sortedElements = Array.from(elements.entries())
+        .sort(([,a], [,b]) => (b.zIndex || 0) - (a.zIndex || 0));
     
-    for (const id of elementIds) {
-        const element = elements.get(id);
+    for (const [id, element] of sortedElements) {
         if (!element) continue;
         
-        console.log('Checking element:', id, element.type, element.x, element.y, element.width, element.height);
+        console.log('Checking element:', id, element.type, element.x, element.y, element.width, element.height, 'zIndex:', element.zIndex || 0);
         
         // Special case for text elements (use text metrics) - check this first
         if (element.type === 'Text' && element.data && element.data.content) {
@@ -1287,6 +1394,31 @@ window.getElementAtPoint = (x, y) => {
                 return id;
             }
             ctx.restore();
+        }
+        
+        // Special case for Drawing elements (use path data for bounds)
+        if (element.type === 'Drawing' && element.data && element.data.paths) {
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            
+            // Calculate bounds from all paths
+            for (const path of element.data.paths) {
+                if (path.points && path.points.length > 0) {
+                    for (const point of path.points) {
+                        minX = Math.min(minX, point.x);
+                        minY = Math.min(minY, point.y);
+                        maxX = Math.max(maxX, point.x);
+                        maxY = Math.max(maxY, point.y);
+                    }
+                }
+            }
+            
+            // Add some tolerance for drawing stroke width
+            const tolerance = 10;
+            if (x >= minX - tolerance && x <= maxX + tolerance &&
+                y >= minY - tolerance && y <= maxY + tolerance) {
+                console.log('Drawing element HIT!', id);
+                return id;
+            }
         }
         
         // Check if point is within element bounds (for other element types)
@@ -1549,13 +1681,17 @@ function startEditingStickyNote(elementId, element) {
     
     // Create text area overlay
     const rect = canvas.getBoundingClientRect();
+    
+    // Convert world coordinates to screen coordinates for proper positioning
+    const screenPos = worldToScreen(element.x, element.y);
+    
     editInput = document.createElement('textarea');
     editInput.style.position = 'absolute';
-    editInput.style.left = (rect.left + element.x + 10) + 'px';
-    editInput.style.top = (rect.top + element.y + 10) + 'px';
-    editInput.style.width = (element.width - 20) + 'px';
-    editInput.style.height = (element.height - 20) + 'px';
-    editInput.style.fontSize = (element.data.fontSize || 14) + 'px';
+    editInput.style.left = (rect.left + screenPos.x + 10) + 'px';
+    editInput.style.top = (rect.top + screenPos.y + 10) + 'px';
+    editInput.style.width = (element.width * zoomLevel - 20) + 'px';
+    editInput.style.height = (element.height * zoomLevel - 20) + 'px';
+    editInput.style.fontSize = ((element.data.fontSize || 14) * zoomLevel) + 'px';
     editInput.style.fontFamily = 'Arial';
     editInput.style.border = '2px solid #007bff';
     editInput.style.borderRadius = '4px';
@@ -1574,9 +1710,11 @@ function startEditingStickyNote(elementId, element) {
     editInput.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
             stopEditingStickyNote();
-        } else if (e.key === 'Enter' && e.ctrlKey) {
+        } else if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault(); // Prevent default newline behavior
             stopEditingStickyNote();
         }
+        // Shift+Enter will naturally create newlines since we're not preventing it
     });
     
     // Redraw canvas to hide the text while editing
@@ -1585,23 +1723,23 @@ function startEditingStickyNote(elementId, element) {
 
 // Stop editing sticky note
 function stopEditingStickyNote() {
-    console.log('stopEditingStickyNote called', editingElement, editInput);
     if (!editingElement || !editInput) return;
     
     const element = elements.get(editingElement);
     if (element) {
         // Update element content
         const newContent = editInput.value.trim();
-        console.log('Updating sticky content from:', element.data.content, 'to:', newContent);
         element.data.content = newContent;
         element.data.isEditing = false;
         
-        // Send update via SignalR
+        // Send update via SignalR only if not a temporary element
         if (signalRConnection && signalRConnection.state === signalR.HubConnectionState.Connected) {
-            console.log('SignalR connected, sending sticky update');
-            updateStickyNoteContent(editingElement, newContent);
-        } else {
-            console.log('SignalR not connected');
+            if (!editingElement.startsWith('temp-')) {
+                updateStickyNoteContent(editingElement, newContent);
+            } else {
+                // Mark that this temp element has pending updates
+                element.data.pendingUpdate = true;
+            }
         }
     }
     
@@ -1630,12 +1768,15 @@ function startEditingTextElement(elementId, element) {
     
     // Create text input overlay
     const rect = canvas.getBoundingClientRect();
-    editInput = document.createElement('input');
-    editInput.type = 'text';
+    
+    // Convert world coordinates to screen coordinates for proper positioning
+    const screenPos = worldToScreen(element.x, element.y);
+    
+    editInput = document.createElement('textarea');
     editInput.style.position = 'absolute';
-    editInput.style.left = (rect.left + element.x) + 'px';
-    editInput.style.top = (rect.top + element.y) + 'px';
-    editInput.style.fontSize = (element.data.fontSize || 16) + 'px';
+    editInput.style.left = (rect.left + screenPos.x) + 'px';
+    editInput.style.top = (rect.top + screenPos.y) + 'px';
+    editInput.style.fontSize = ((element.data.fontSize || 16) * zoomLevel) + 'px';
     editInput.style.fontFamily = element.data.fontFamily || 'Arial';
     editInput.style.color = element.data.color || '#000000';
     editInput.style.fontWeight = element.data.bold ? 'bold' : 'normal';
@@ -1646,6 +1787,8 @@ function startEditingTextElement(elementId, element) {
     editInput.style.backgroundColor = '#ffffff';
     editInput.style.zIndex = '1000';
     editInput.style.minWidth = '100px';
+    editInput.style.resize = 'none'; // Prevent manual resizing
+    editInput.style.overflow = 'hidden'; // Hide scrollbars initially
     editInput.value = element.data.content || '';
     
     document.body.appendChild(editInput);
@@ -1657,9 +1800,11 @@ function startEditingTextElement(elementId, element) {
     editInput.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
             stopEditingTextElement();
-        } else if (e.key === 'Enter') {
+        } else if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault(); // Prevent default newline behavior
             stopEditingTextElement();
         }
+        // Shift+Enter will naturally create newlines since we're not preventing it
     });
     
     // Redraw canvas to hide the text while editing
@@ -1668,23 +1813,23 @@ function startEditingTextElement(elementId, element) {
 
 // Stop editing text element
 function stopEditingTextElement() {
-    console.log('stopEditingTextElement called', editingElement, editInput);
     if (!editingElement || !editInput) return;
     
     const element = elements.get(editingElement);
     if (element && element.type === 'Text') {
         // Update element content
         const newContent = editInput.value.trim();
-        console.log('Updating text content from:', element.data.content, 'to:', newContent);
         element.data.content = newContent;
         element.data.isEditing = false;
         
-        // Send update via SignalR
+        // Send update via SignalR only if not a temporary element
         if (signalRConnection && signalRConnection.state === signalR.HubConnectionState.Connected) {
-            console.log('SignalR connected, sending update');
-            updateTextElementContent(editingElement, newContent);
-        } else {
-            console.log('SignalR not connected');
+            if (!editingElement.startsWith('temp-')) {
+                updateTextElementContent(editingElement, newContent);
+            } else {
+                // Mark that this temp element has pending updates
+                element.data.pendingUpdate = true;
+            }
         }
     }
     
@@ -1779,6 +1924,56 @@ window.setCurrentTool = (tool) => {
     }
 };
 
+// Zoom helper functions
+function zoomAtCenter(factor) {
+    if (!canvas) return;
+    
+    // Get center of canvas
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    
+    // Get world coordinates before zoom
+    const worldPos = screenToWorld(centerX, centerY);
+    
+    // Apply zoom
+    const newZoom = Math.max(0.1, Math.min(5, zoomLevel * factor));
+    
+    if (newZoom !== zoomLevel) {
+        zoomLevel = newZoom;
+        
+        // Adjust viewport to keep center position stable
+        const newScreenPos = worldToScreen(worldPos.x, worldPos.y);
+        viewportX += centerX - newScreenPos.x;
+        viewportY += centerY - newScreenPos.y;
+        
+        redrawCanvas();
+        
+        // Update minimap if it exists
+        if (window.updateMinimap) {
+            window.updateMinimap();
+        } else {
+            // Update zoom level display if minimap isn't available yet
+            updateZoomLevelDisplay();
+        }
+    }
+}
+
+function resetZoom() {
+    zoomLevel = 1;
+    viewportX = 0;
+    viewportY = 0;
+    
+    redrawCanvas();
+    
+    // Update minimap if it exists
+    if (window.updateMinimap) {
+        window.updateMinimap();
+    } else {
+        // Update zoom level display if minimap isn't available yet
+        updateZoomLevelDisplay();
+    }
+}
+
 // Mouse event handlers
 function handleMouseWheel(event) {
     event.preventDefault();
@@ -1807,6 +2002,9 @@ function handleMouseWheel(event) {
         // Update minimap if it exists
         if (window.updateMinimap) {
             window.updateMinimap();
+        } else {
+            // Update zoom level display if minimap isn't available yet
+            updateZoomLevelDisplay();
         }
     }
 }
@@ -1896,7 +2094,9 @@ function handleMouseMove(event) {
     
     // Handle resizing
     if (isResizing && activeResizeHandle && selectedElementId) {
-        handleElementResize(screenX, screenY);
+        // Convert screen coordinates to world coordinates for resize calculations
+        const worldPos = screenToWorld(screenX, screenY);
+        handleElementResize(worldPos.x, worldPos.y);
     }
     // Handle select tool dragging separately (doesn't use isDrawing)  
     else if (currentTool === 'select' && isDragging && selectedElementId) {
@@ -1904,7 +2104,7 @@ function handleMouseMove(event) {
     }
     // Update cursor for resize handles when not dragging/resizing
     else if (currentTool === 'select' && selectedElementId && !isDragging && !isResizing) {
-        updateCursorForResizeHandles(screenX, screenY);
+        updateCursorForResizeHandles(x, y);
     }
     
     // Send cursor updates
@@ -1915,8 +2115,11 @@ function handleMouseMove(event) {
 
 function handleMouseUp(event) {
     const rect = canvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
+    const screenX = event.clientX - rect.left;
+    const screenY = event.clientY - rect.top;
+    const worldPos = screenToWorld(screenX, screenY);
+    const x = worldPos.x;
+    const y = worldPos.y;
     
     console.log('Mouse up:', currentTool, 'isDrawing:', isDrawing, 'isDragging:', isDragging);
     
@@ -1971,61 +2174,109 @@ function handleMouseUp(event) {
 
 // Element creation functions
 function createTextElement(x, y) {
-    const text = prompt('Enter text:');
-    if (text && text.trim()) {
-        saveCanvasState('create text element');
-        
-        const textData = {
-            content: text.trim(),
-            fontSize: 16,
-            fontFamily: 'Arial',
-            color: '#000000',
-            bold: false,
-            italic: false,
-            isEditing: false
-        };
-        
-        sendElement(currentBoardId, {
-            type: 'Text',
-            x: x,
-            y: y,
-            width: 0,
-            height: 0,
-            data: textData
-        });
-    }
+    saveCanvasState('create text element');
+    
+    const textData = {
+        content: 'Click to type...',
+        fontSize: 16,
+        fontFamily: 'Arial',
+        color: '#000000',
+        bold: false,
+        italic: false,
+        isEditing: true
+    };
+    
+    // Create the element and immediately start editing
+    const elementData = {
+        type: 'Text',
+        x: x,
+        y: y,
+        width: 200,
+        height: 30,
+        data: textData
+    };
+    
+    // For local creation, we need to generate a temporary ID and add to elements map
+    const tempId = 'temp-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+    elements.set(tempId, {
+        x: x,
+        y: y,
+        width: 200,
+        height: 30,
+        type: 'Text',
+        data: textData,
+        zIndex: 0
+    });
+    
+    // Auto-select and start editing immediately
+    selectedElementId = tempId;
+    setTimeout(() => {
+        startEditingTextElement(tempId, elements.get(tempId));
+    }, 50);
+    
+    // Switch back to select tool after creating text element
+    setCurrentTool('select');
+    
+    sendElement(currentBoardId, elementData, tempId);
 }
 
 function createStickyNote(x, y) {
-    const text = prompt('Enter sticky note text:');
-    if (text && text.trim()) {
-        saveCanvasState('create sticky note');
-        
-        const stickyData = {
-            content: text.trim(),
-            color: '#ffff88',
-            fontSize: 14,
-            isEditing: false
-        };
-        
-        sendElement(currentBoardId, {
-            type: 'StickyNote',
-            x: x,
-            y: y,
-            width: 200,
-            height: 150,
-            data: stickyData
-        });
-    }
+    saveCanvasState('create sticky note');
+    
+    const stickyData = {
+        content: 'Click to type...',
+        color: '#ffff88',
+        fontSize: 14,
+        isEditing: true
+    };
+    
+    // Create the element and immediately start editing
+    const elementData = {
+        type: 'StickyNote',
+        x: x,
+        y: y,
+        width: 200,
+        height: 150,
+        data: stickyData
+    };
+    
+    // For local creation, we need to generate a temporary ID and add to elements map
+    const tempId = 'temp-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+    elements.set(tempId, {
+        x: x,
+        y: y,
+        width: 200,
+        height: 150,
+        type: 'StickyNote',
+        data: stickyData,
+        zIndex: 0
+    });
+    
+    // Auto-select and start editing immediately
+    selectedElementId = tempId;
+    setTimeout(() => {
+        startEditingStickyNote(tempId, elements.get(tempId));
+    }, 50);
+    
+    // Switch back to select tool after creating sticky note
+    setCurrentTool('select');
+    
+    sendElement(currentBoardId, elementData, tempId);
 }
 
 function createShapeElement(startX, startY, endX, endY) {
     saveCanvasState('create shape');
     
-    const width = Math.abs(endX - startX);
-    const height = Math.abs(endY - startY);
-    const x = Math.min(startX, endX);
-    const y = Math.min(startY, endY);
+    let width = Math.abs(endX - startX);
+    let height = Math.abs(endY - startY);
+    
+    // Ensure minimum dimensions for click-drawn shapes (when user just clicks without dragging)
+    const minSize = 40; // Minimum size for shapes
+    if (width < minSize) width = minSize;
+    if (height < minSize) height = minSize;
+    
+    const x = Math.min(startX, endX) - (width - Math.abs(endX - startX)) / 2;
+    const y = Math.min(startY, endY) - (height - Math.abs(endY - startY)) / 2;
     
     const shapeData = {
         shapeType: currentTool,
@@ -2428,7 +2679,7 @@ function createImageElement(x, y, imageData) {
         data: imageData
     };
     
-    sendElement(currentBoardId, elementData);
+    sendElement(currentBoardId, elementData, tempId);
 };
 
 // Z-index control functions for UI buttons
@@ -2456,6 +2707,18 @@ let contextMenu = null;
 window.showContextMenu = (x, y) => {
     contextMenu = document.getElementById('contextMenu');
     if (contextMenu && selectedElementId) {
+        const element = elements.get(selectedElementId);
+        
+        // Show/hide style options based on element type
+        const styleOptions = document.getElementById('styleOptions');
+        if (styleOptions && element) {
+            if (element.type === 'Shape' || element.type === 'Drawing') {
+                styleOptions.style.display = 'block';
+            } else {
+                styleOptions.style.display = 'none';
+            }
+        }
+        
         contextMenu.style.display = 'block';
         contextMenu.style.left = x + 'px';
         contextMenu.style.top = y + 'px';
@@ -2496,13 +2759,79 @@ window.deleteSelectedElement = () => {
     hideContextMenu();
 };
 
+// Shape style update function
+window.updateShapeStyle = (property, value) => {
+    if (!selectedElementId) {
+        console.log('No element selected for style update');
+        return;
+    }
+    
+    const element = elements.get(selectedElementId);
+    if (!element) {
+        console.log('Selected element not found');
+        return;
+    }
+    
+    // Only allow style updates for shapes and drawings
+    if (element.type !== 'Shape' && element.type !== 'Drawing') {
+        console.log('Style updates only supported for shapes and drawings');
+        return;
+    }
+    
+    console.log('Updating style:', property, '=', value, 'for element:', selectedElementId);
+    
+    // Save state for undo
+    saveCanvasState('update style');
+    
+    // Update the element's style data
+    if (!element.data) {
+        element.data = {};
+    }
+    element.data[property] = value;
+    
+    // For drawings, update all paths
+    if (element.type === 'Drawing' && element.data.paths) {
+        for (const path of element.data.paths) {
+            if (property === 'strokeColor') {
+                path.strokeColor = value;
+            } else if (property === 'strokeWidth') {
+                path.strokeWidth = value;
+            }
+        }
+    }
+    
+    // Redraw canvas to show changes
+    redrawCanvas();
+    
+    // Send update via SignalR
+    if (signalRConnection && signalRConnection.state === signalR.HubConnectionState.Connected) {
+        updateElementStyle(selectedElementId, element.data);
+    }
+    
+    // Hide context menu after selection
+    hideContextMenu();
+};
+
+// Send style update via SignalR
+function updateElementStyle(elementId, newStyleData) {
+    console.log('Sending style update via SignalR:', elementId, newStyleData);
+    signalRConnection.invoke('UpdateElementStyle', currentBoardId, elementId, newStyleData)
+        .then(() => console.log('Style update sent successfully'))
+        .catch(err => console.log('Failed to update element style:', err));
+}
+
 // Right-click handler for canvas
 function handleCanvasRightClick(event) {
     event.preventDefault(); // Prevent default context menu
     
     const rect = canvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
+    const screenX = event.clientX - rect.left;
+    const screenY = event.clientY - rect.top;
+    
+    // Convert screen coordinates to world coordinates for element detection
+    const worldPos = screenToWorld(screenX, screenY);
+    const x = worldPos.x;
+    const y = worldPos.y;
     
     // Check if we're right-clicking on a selected element
     if (selectedElementId) {
@@ -2581,8 +2910,30 @@ function setupKeyboardHandlers() {
             event.preventDefault();
             deleteSelectedElement();
         }
+        // Handle + key for zoom in
+        else if (event.key === '+' || event.key === '=') {
+            event.preventDefault();
+            zoomAtCenter(1.1);
+        }
+        // Handle - key for zoom out
+        else if (event.key === '-' || event.key === '_') {
+            event.preventDefault();
+            zoomAtCenter(0.9);
+        }
+        // Handle 0 key for reset zoom
+        else if (event.key === '0') {
+            event.preventDefault();
+            resetZoom();
+        }
         // Handle spacebar for hand tool
         else if (event.code === 'Space' && !event.repeat) {
+            // Don't hijack spacebar if user is editing text
+            if (editingElement || document.activeElement.tagName === 'INPUT' || 
+                document.activeElement.tagName === 'TEXTAREA' || 
+                document.activeElement.contentEditable === 'true') {
+                return; // Let the browser handle the spacebar normally
+            }
+            
             event.preventDefault();
             
             // If already on select tool, do nothing
@@ -2600,6 +2951,13 @@ function setupKeyboardHandlers() {
     document.addEventListener('keyup', function(event) {
         // Handle spacebar release to return to previous tool
         if (event.code === 'Space' && previousTool && currentTool === 'select') {
+            // Don't handle spacebar release if user is editing text
+            if (editingElement || document.activeElement.tagName === 'INPUT' || 
+                document.activeElement.tagName === 'TEXTAREA' || 
+                document.activeElement.contentEditable === 'true') {
+                return;
+            }
+            
             event.preventDefault();
             
             // Switch back to previous tool

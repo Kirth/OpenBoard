@@ -52,7 +52,7 @@
                     <span class="tool-icon">⭕</span>
                 </button>
                 <button class="tool-btn @(currentTool == "sticky" ? "active" : "")" @onclick="@(() => SetTool("sticky"))" title="Sticky Note">
-                    <span class="tool-icon">🗒️</span>
+                    <span class="tool-icon">🟨</span>
                 </button>
                 <button class="tool-btn @(currentTool == "image" ? "active" : "")" @onclick="@(() => SetTool("image"))" title="Image">
                     <span class="tool-icon">🖼️</span>
@@ -81,6 +81,71 @@
             <div class="context-item-content">
                 <span class="context-icon">⬇️</span>
                 Send to Back
+            </div>
+        </div>
+        <div class="context-menu-divider"></div>
+        <!-- Style options for shapes -->
+        <div id="styleOptions" class="context-menu-section" style="display: none;">
+            <div id="fillColorMenu" class="context-menu-item has-submenu">
+                <div class="context-item-content">
+                    <span class="context-icon">🎨</span>
+                    Fill Color
+                </div>
+                <div class="submenu color-submenu">
+                    <div class="color-option" onclick="updateShapeStyle('fillColor', 'transparent')" style="background: linear-gradient(45deg, #ff0000 25%, transparent 25%, transparent 75%, #ff0000 75%); background-size: 8px 8px;" title="Transparent"></div>
+                    <div class="color-option" onclick="updateShapeStyle('fillColor', '#ffffff')" style="background: #ffffff; border: 1px solid #ccc;" title="White"></div>
+                    <div class="color-option" onclick="updateShapeStyle('fillColor', '#000000')" style="background: #000000;" title="Black"></div>
+                    <div class="color-option" onclick="updateShapeStyle('fillColor', '#ff0000')" style="background: #ff0000;" title="Red"></div>
+                    <div class="color-option" onclick="updateShapeStyle('fillColor', '#00ff00')" style="background: #00ff00;" title="Green"></div>
+                    <div class="color-option" onclick="updateShapeStyle('fillColor', '#0000ff')" style="background: #0000ff;" title="Blue"></div>
+                    <div class="color-option" onclick="updateShapeStyle('fillColor', '#ffff00')" style="background: #ffff00;" title="Yellow"></div>
+                    <div class="color-option" onclick="updateShapeStyle('fillColor', '#ff00ff')" style="background: #ff00ff;" title="Magenta"></div>
+                    <div class="color-option" onclick="updateShapeStyle('fillColor', '#00ffff')" style="background: #00ffff;" title="Cyan"></div>
+                </div>
+            </div>
+            <div id="strokeColorMenu" class="context-menu-item has-submenu">
+                <div class="context-item-content">
+                    <span class="context-icon">🖊️</span>
+                    Stroke Color
+                </div>
+                <div class="submenu color-submenu">
+                    <div class="color-option" onclick="updateShapeStyle('strokeColor', '#000000')" style="background: #000000;" title="Black"></div>
+                    <div class="color-option" onclick="updateShapeStyle('strokeColor', '#ffffff')" style="background: #ffffff; border: 1px solid #ccc;" title="White"></div>
+                    <div class="color-option" onclick="updateShapeStyle('strokeColor', '#ff0000')" style="background: #ff0000;" title="Red"></div>
+                    <div class="color-option" onclick="updateShapeStyle('strokeColor', '#00ff00')" style="background: #00ff00;" title="Green"></div>
+                    <div class="color-option" onclick="updateShapeStyle('strokeColor', '#0000ff')" style="background: #0000ff;" title="Blue"></div>
+                    <div class="color-option" onclick="updateShapeStyle('strokeColor', '#ffff00')" style="background: #ffff00;" title="Yellow"></div>
+                    <div class="color-option" onclick="updateShapeStyle('strokeColor', '#ff00ff')" style="background: #ff00ff;" title="Magenta"></div>
+                    <div class="color-option" onclick="updateShapeStyle('strokeColor', '#00ffff')" style="background: #00ffff;" title="Cyan"></div>
+                </div>
+            </div>
+            <div id="strokeWidthMenu" class="context-menu-item has-submenu">
+                <div class="context-item-content">
+                    <span class="context-icon">📏</span>
+                    Stroke Width
+                </div>
+                <div class="submenu width-submenu">
+                    <div class="width-option" onclick="updateShapeStyle('strokeWidth', 1)">
+                        <div class="width-preview" style="height: 1px; background: #000;"></div>
+                        <span>1px</span>
+                    </div>
+                    <div class="width-option" onclick="updateShapeStyle('strokeWidth', 2)">
+                        <div class="width-preview" style="height: 2px; background: #000;"></div>
+                        <span>2px</span>
+                    </div>
+                    <div class="width-option" onclick="updateShapeStyle('strokeWidth', 4)">
+                        <div class="width-preview" style="height: 4px; background: #000;"></div>
+                        <span>4px</span>
+                    </div>
+                    <div class="width-option" onclick="updateShapeStyle('strokeWidth', 6)">
+                        <div class="width-preview" style="height: 6px; background: #000;"></div>
+                        <span>6px</span>
+                    </div>
+                    <div class="width-option" onclick="updateShapeStyle('strokeWidth', 8)">
+                        <div class="width-preview" style="height: 8px; background: #000;"></div>
+                        <span>8px</span>
+                    </div>
+                </div>
             </div>
         </div>
         <div class="context-menu-divider"></div>
@@ -476,7 +541,8 @@
         cursor: pointer;
         font-size: 14px;
         color: #374151;
-        transition: all 0.2s ease;
+        transition: background-color 0.2s ease, color 0.2s ease;
+        box-sizing: border-box;
     }
 
     .context-menu-item:hover {
@@ -493,7 +559,18 @@
     .context-icon {
         font-size: 16px;
         width: 20px;
+        height: 20px;
         text-align: center;
+        display: inline-block;
+        line-height: 1;
+        box-sizing: border-box;
+        flex-shrink: 0;
+        vertical-align: middle;
+        text-rendering: optimizeSpeed;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        transform: translateZ(0);
+        will-change: auto;
     }
 
     .context-item-content {
@@ -506,6 +583,121 @@
         font-size: 12px;
         color: #6b7280;
         font-weight: normal;
+    }
+
+    /* Context menu submenu styles */
+    .context-menu-item.has-submenu {
+        position: relative;
+    }
+
+    .submenu {
+        display: none;
+        position: absolute;
+        left: calc(100% + 2px);
+        top: 0;
+        background: rgba(255, 255, 255, 0.98);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(0, 0, 0, 0.1);
+        border-radius: 8px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+        min-width: 150px;
+        z-index: 2001;
+        padding: 8px;
+        pointer-events: auto;
+    }
+
+    /* Show submenu when hovering over parent or submenu itself */
+    .context-menu-item.has-submenu:hover > .submenu,
+    .context-menu-item.has-submenu > .submenu:hover {
+        display: block;
+    }
+
+    /* Ensure color submenus maintain flex layout when visible */
+    .context-menu-item.has-submenu:hover > .color-submenu,
+    .context-menu-item.has-submenu > .color-submenu:hover {
+        display: flex;
+    }
+
+    /* Add invisible bridge to prevent hover break */
+    .context-menu-item.has-submenu::after {
+        content: '';
+        position: absolute;
+        right: 0;
+        top: 0;
+        width: 10px;
+        height: 100%;
+        background: transparent;
+        pointer-events: auto;
+    }
+
+    .color-submenu {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        padding: 8px;
+        width: 120px;
+    }
+
+    .color-option {
+        width: 24px;
+        height: 24px;
+        border-radius: 4px;
+        cursor: pointer;
+        border: 2px solid transparent;
+        transition: all 0.2s ease;
+        box-sizing: border-box;
+        flex-shrink: 0;
+    }
+
+    .color-option:hover {
+        border-color: #3b82f6;
+        /* Remove transform to prevent jumping */
+    }
+
+    .width-submenu {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 8px;
+        width: 100px;
+    }
+
+    /* Adjust positioning for different submenus to prevent overlaps */
+    #fillColorMenu .submenu {
+        top: 0px;
+    }
+
+    #strokeColorMenu .submenu {
+        top: 40px;
+    }
+
+    #strokeWidthMenu .submenu {
+        top: 80px;
+    }
+
+    .width-option {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 8px;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: background-color 0.2s ease;
+    }
+
+    .width-option:hover {
+        background: rgba(59, 130, 246, 0.1);
+    }
+
+    .width-preview {
+        width: 30px;
+        border-radius: 2px;
+    }
+
+    .width-option span {
+        font-size: 12px;
+        color: #374151;
+        font-weight: 500;
     }
 
     /* Minimap */
@@ -541,6 +733,21 @@
         pointer-events: none;
         min-width: 4px;
         min-height: 4px;
+    }
+
+    .zoom-level-display {
+        position: absolute;
+        bottom: 4px;
+        right: 4px;
+        background: rgba(0, 0, 0, 0.7);
+        color: white;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 3px 6px;
+        border-radius: 4px;
+        font-family: 'Segoe UI', Arial, sans-serif;
+        pointer-events: none;
+        z-index: 10;
     }
 
     /* Copy/Paste notifications */

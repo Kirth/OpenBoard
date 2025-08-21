@@ -107,6 +107,7 @@ public class CollaborationHub : Hub
             var width = elementObj.TryGetProperty("width", out var widthProp) ? widthProp.GetDouble() : 0;
             var height = elementObj.TryGetProperty("height", out var heightProp) ? heightProp.GetDouble() : 0;
             var data = elementObj.GetProperty("data");
+            var tempId = elementObj.TryGetProperty("tempId", out var tempIdProp) ? tempIdProp.GetString() : null;
 
             var type = elementType switch
             {
@@ -142,7 +143,8 @@ public class CollaborationHub : Hub
                 height = savedElement.Height,
                 zIndex = savedElement.ZIndex,
                 data = JsonSerializer.Deserialize<object>(savedElement.Data?.RootElement.GetRawText() ?? "{}"),
-                createdBy = savedElement.CreatedBy
+                createdBy = savedElement.CreatedBy,
+                tempId = tempId // Include tempId for client correlation
             });
         }
         catch (Exception ex)
@@ -361,6 +363,42 @@ public class CollaborationHub : Hub
         catch (Exception ex)
         {
             await Clients.Caller.SendAsync("Error", $"Failed to resize element: {ex.Message}");
+        }
+    }
+
+    public async Task UpdateElementStyle(string boardId, string elementId, object styleData)
+    {
+        Console.WriteLine($"UpdateElementStyle called: boardId={boardId}, elementId={elementId}, data={JsonSerializer.Serialize(styleData)}");
+        try
+        {
+            if (Guid.TryParse(elementId, out var elementGuid))
+            {
+                var element = await _elementService.GetElementAsync(elementGuid);
+                if (element != null && (element.Type == ElementType.Shape || element.Type == ElementType.Drawing))
+                {
+                    // Merge the style data with existing data
+                    var existingData = element.Data?.RootElement.GetRawText() ?? "{}";
+                    var existingDataObj = JsonSerializer.Deserialize<Dictionary<string, object>>(existingData) ?? new Dictionary<string, object>();
+                    var styleDataObj = JsonSerializer.Deserialize<Dictionary<string, object>>(JsonSerializer.Serialize(styleData)) ?? new Dictionary<string, object>();
+                    
+                    // Update the style properties
+                    foreach (var kvp in styleDataObj)
+                    {
+                        existingDataObj[kvp.Key] = kvp.Value;
+                    }
+                    
+                    element.Data = JsonDocument.Parse(JsonSerializer.Serialize(existingDataObj));
+                    await _elementService.UpdateElementAsync(element);
+                    
+                    // Broadcast to all users in the board
+                    await Clients.Group($"Board_{boardId}").SendAsync("ElementStyleUpdated", elementId, styleData);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error in UpdateElementStyle: {ex}");
+            await Clients.Caller.SendAsync("Error", $"Failed to update element style: {ex.Message}");
         }
     }
 }
