@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   postgres:
@@ -14,9 +14,9 @@ services:
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U wbb_user -d whiteboard"]
-      interval: 10s
+      interval: 1s
       timeout: 5s
-      retries: 5
+      retries: 50
 
   app:
     build:
@@ -49,3 +49,4 @@ services:
 
 volumes:
   postgres_data:
+
