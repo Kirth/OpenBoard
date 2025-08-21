@@ -28,12 +28,33 @@ public class BoardService
         return board;
     }
 
+    public async Task<Board> CreateBoardAsync(string name, bool isPublic, string? adminPin = null)
+    {
+        var board = new Board 
+        { 
+            Name = name,
+            IsPublic = isPublic,
+            AdminPin = string.IsNullOrWhiteSpace(adminPin) ? null : adminPin
+        };
+        _context.Boards.Add(board);
+        await _context.SaveChangesAsync();
+        return board;
+    }
+
     public async Task<List<BoardElement>> GetBoardElementsAsync(Guid boardId)
     {
         return await _context.BoardElements
             .Where(e => e.BoardId == boardId)
             .OrderBy(e => e.ZIndex)
             .ThenBy(e => e.CreatedAt)
+            .ToListAsync();
+    }
+
+    public async Task<List<Board>> GetPublicBoardsAsync()
+    {
+        return await _context.Boards
+            .Where(b => b.IsPublic)
+            .OrderByDescending(b => b.UpdatedAt)
             .ToListAsync();
     }
 }

@@ -10,12 +10,32 @@
 @inject IJSRuntime JSRuntime
 @implements IAsyncDisposable
 
-<PageTitle>Whiteboard - @boardName</PageTitle>
+<PageTitle>OpenBoard - @boardName</PageTitle>
 
 <div class="board-container">
     <!-- Status bar at top -->
     <div class="status-bar">
-        <div class="board-title">@boardName</div>
+        <div class="status-left">
+            <button class="home-btn" @onclick="GoToHome" @onclick:stopPropagation="true" title="Back to Home">
+                <span class="home-icon">«</span>
+            </button>
+            <div class="board-menu-container">
+                <button class="board-menu-trigger" @onclick="ToggleBoardMenu" @onclick:stopPropagation="true">
+                    <span class="board-title">@boardName</span>
+                    <span class="dropdown-arrow">▼</span>
+                </button>
+                <div class="board-menu @(showBoardMenu ? "show" : "")" @onclick:stopPropagation="true">
+                    <div class="board-menu-item" @onclick="ClearBoard">
+                        <span class="menu-icon">🗑️</span>
+                        Clear Board
+                    </div>
+                    <div class="board-menu-item" @onclick="() => showBoardMenu = false">
+                        <span class="menu-icon">ℹ️</span>
+                        Board Info
+                    </div>
+                </div>
+            </div>
+        </div>
         <span class="connection-status @(signalRConnected ? "connected" : "disconnected")">
             <span class="status-dot"></span>
             @(signalRConnected ? "Connected" : "Local Mode")
@@ -45,11 +65,51 @@
                 <button class="tool-btn @(currentTool == "text" ? "active" : "")" @onclick="@(() => SetTool("text"))" title="Text">
                     <span class="tool-icon">📝</span>
                 </button>
-                <button class="tool-btn @(currentTool == "rectangle" ? "active" : "")" @onclick="@(() => SetTool("rectangle"))" title="Rectangle">
-                    <span class="tool-icon">⬜</span>
-                </button>
-                <button class="tool-btn @(currentTool == "circle" ? "active" : "")" @onclick="@(() => SetTool("circle"))" title="Circle">
-                    <span class="tool-icon">⭕</span>
+                <div class="shape-tool-container" 
+                     @onmouseleave="CloseShapeMenuOnLeave"
+                     @onmouseenter="CancelShapeMenuClose">
+                    <button class="tool-btn shape-tool @(IsShapeToolActive() ? "active" : "")" 
+                            @onclick="@(() => SetTool(selectedShapeType))" 
+                            @onmousedown="StartShapeToolHold"
+                            @onmouseup="EndShapeToolHold"
+                            @onmouseleave="EndShapeToolHold"
+                            @onmouseenter="CancelShapeMenuClose"
+                            title="@GetShapeToolTitle() (Hold for more shapes)">
+                        <span class="tool-icon">@GetShapeToolIcon()</span>
+                        <span class="shape-dropdown-indicator">⌃</span>
+                    </button>
+                    <div class="shape-menu @(showShapeMenu ? "show" : "")" 
+                         @onclick:stopPropagation="true"
+                         @onmouseleave="CloseShapeMenuOnLeave"
+                         @onmouseenter="CancelShapeMenuClose">
+                        <div class="shape-menu-item" @onclick="@(() => SelectShape("rectangle"))">
+                            <span class="shape-icon">⬜</span>
+                            <span class="shape-label">Rectangle</span>
+                        </div>
+                        <div class="shape-menu-item" @onclick="@(() => SelectShape("circle"))">
+                            <span class="shape-icon">⭕</span>
+                            <span class="shape-label">Circle</span>
+                        </div>
+                        <div class="shape-menu-item" @onclick="@(() => SelectShape("triangle"))">
+                            <span class="shape-icon">🔺</span>
+                            <span class="shape-label">Triangle</span>
+                        </div>
+                        <div class="shape-menu-item" @onclick="@(() => SelectShape("diamond"))">
+                            <span class="shape-icon">💎</span>
+                            <span class="shape-label">Diamond</span>
+                        </div>
+                        <div class="shape-menu-item" @onclick="@(() => SelectShape("ellipse"))">
+                            <span class="shape-icon">🔴</span>
+                            <span class="shape-label">Ellipse</span>
+                        </div>
+                        <div class="shape-menu-item" @onclick="@(() => SelectShape("star"))">
+                            <span class="shape-icon">⭐</span>
+                            <span class="shape-label">Star</span>
+                        </div>
+                    </div>
+                </div>
+                <button class="tool-btn @(currentTool == "line" ? "active" : "")" @onclick="@(() => SetTool("line"))" title="Line">
+                    <span class="tool-icon">📏</span>
                 </button>
                 <button class="tool-btn @(currentTool == "sticky" ? "active" : "")" @onclick="@(() => SetTool("sticky"))" title="Sticky Note">
                     <span class="tool-icon">🟨</span>
@@ -60,13 +120,6 @@
             </div>
         </div>
         
-        <div class="toolbar-divider"></div>
-        
-        <div class="toolbar-section">
-            <button class="tool-btn danger" @onclick="ClearBoard" title="Clear Board">
-                <span class="tool-icon">🗑️</span>
-            </button>
-        </div>
     </div>
     
     <!-- Context Menu -->
@@ -163,6 +216,13 @@
             </div>
             <span class="context-hotkey">Ctrl+V</span>
         </div>
+        <div class="context-menu-item" onclick="duplicateSelectedElement()">
+            <div class="context-item-content">
+                <span class="context-icon">⧉</span>
+                Duplicate
+            </div>
+            <span class="context-hotkey">Ctrl+D</span>
+        </div>
         <div class="context-menu-divider"></div>
         <div class="context-menu-item" onclick="deleteSelectedElement()">
             <div class="context-item-content">
@@ -191,6 +251,13 @@
     private bool signalRConnected = false;
     private HubConnection? hubConnection;
     private string currentUserName = "Anonymous";
+    private bool showBoardMenu = false;
+    
+    // Shape tool state
+    private string selectedShapeType = "rectangle";
+    private bool showShapeMenu = false;
+    private System.Threading.Timer? shapeToolTimer;
+    private System.Threading.Timer? shapeMenuCloseTimer;
     
     protected override async Task OnInitializedAsync()
     {
@@ -296,12 +363,146 @@
         StateHasChanged();
     }
 
+    // Shape tool methods
+    private void StartShapeToolHold()
+    {
+        shapeToolTimer?.Dispose();
+        shapeToolTimer = new System.Threading.Timer(ShowShapeMenu, null, 250, Timeout.Infinite);
+    }
+    
+    private void EndShapeToolHold()
+    {
+        shapeToolTimer?.Dispose();
+        shapeToolTimer = null;
+    }
+    
+    private void ShowShapeMenu(object? state)
+    {
+        InvokeAsync(async () =>
+        {
+            showShapeMenu = true;
+            StateHasChanged();
+            // Add event listener to close menu when clicking outside
+            await JSRuntime.InvokeVoidAsync("addClickOutsideHandler", "shape-tool-container");
+        });
+    }
+    
+    private void SelectShape(string shapeType)
+    {
+        selectedShapeType = shapeType;
+        showShapeMenu = false;
+        SetTool(shapeType);
+        StateHasChanged();
+    }
+    
+    private void CloseShapeMenuOnLeave()
+    {
+        // Add a small delay before closing to allow moving between button and menu
+        shapeMenuCloseTimer?.Dispose();
+        shapeMenuCloseTimer = new System.Threading.Timer(DelayedCloseShapeMenu, null, 100, Timeout.Infinite);
+    }
+    
+    private void DelayedCloseShapeMenu(object? state)
+    {
+        InvokeAsync(() =>
+        {
+            if (showShapeMenu)
+            {
+                showShapeMenu = false;
+                StateHasChanged();
+            }
+        });
+    }
+    
+    private void CancelShapeMenuClose()
+    {
+        shapeMenuCloseTimer?.Dispose();
+        shapeMenuCloseTimer = null;
+    }
+    
+    private bool IsShapeToolActive()
+    {
+        return currentTool == "rectangle" || currentTool == "circle" || 
+               currentTool == "triangle" || currentTool == "diamond" || 
+               currentTool == "ellipse" || currentTool == "star";
+    }
+    
+    private string GetShapeToolIcon()
+    {
+        return selectedShapeType switch
+        {
+            "circle" => "⭕",
+            "rectangle" => "⬜",
+            "triangle" => "🔺",
+            "diamond" => "💎",
+            "ellipse" => "🔴",
+            "star" => "⭐",
+            _ => "⬜"
+        };
+    }
+    
+    private string GetShapeToolTitle()
+    {
+        return selectedShapeType switch
+        {
+            "circle" => "Circle",
+            "rectangle" => "Rectangle",
+            "triangle" => "Triangle",
+            "diamond" => "Diamond",
+            "ellipse" => "Ellipse",
+            "star" => "Star",
+            _ => "Shape"
+        };
+    }
+
     // Element creation is now handled in JavaScript
+    
+    private void ToggleBoardMenu()
+    {
+        showBoardMenu = !showBoardMenu;
+        if (showBoardMenu)
+        {
+            // Add event listener to close menu when clicking outside
+            JSRuntime.InvokeVoidAsync("addClickOutsideHandler", "board-menu-container");
+        }
+    }
+    
+    [JSInvokable]
+    public void CloseBoardMenu()
+    {
+        showBoardMenu = false;
+        StateHasChanged();
+    }
+    
+    [JSInvokable]
+    public void CloseShapeMenu()
+    {
+        showShapeMenu = false;
+        StateHasChanged();
+    }
+    
+    private void GoToHome()
+    {
+        try
+        {
+            Console.WriteLine("Navigating to home page...");
+            Navigation.NavigateTo("/", forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Navigation error: {ex.Message}");
+            // Try alternative navigation
+            JSRuntime.InvokeVoidAsync("window.location.assign", "/");
+        }
+    }
 
     private async Task ClearBoard()
     {
         try
         {
+            // Close menu first
+            showBoardMenu = false;
+            
             // Clear all elements from the database
             if (Guid.TryParse(BoardId, out var boardGuid))
             {
@@ -341,6 +542,8 @@
 
     public async ValueTask DisposeAsync()
     {
+        shapeToolTimer?.Dispose();
+        shapeMenuCloseTimer?.Dispose();
         if (hubConnection != null)
         {
             await hubConnection.DisposeAsync();
@@ -375,10 +578,121 @@
         z-index: 100;
     }
 
+    .status-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    
+    .home-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(255, 255, 255, 0.9);
+        border: 1px solid rgba(0, 0, 0, 0.1);
+        width: 36px;
+        height: 36px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        z-index: 1001;
+        position: relative;
+        pointer-events: auto;
+    }
+    
+    .home-btn:hover {
+        background: rgba(255, 255, 255, 1);
+        border-color: rgba(0, 0, 0, 0.15);
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    .home-btn:active {
+        transform: translateY(1px);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    }
+    
+    .home-icon {
+        font-size: 16px;
+        color: #6b7280;
+        font-weight: bold;
+    }
+    
     .board-title {
         font-size: 18px;
         font-weight: 600;
         color: #2c3e50;
+    }
+    
+    .board-menu-container {
+        position: relative;
+        display: inline-block;
+    }
+    
+    .board-menu-trigger {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 8px 12px;
+        border-radius: 6px;
+        transition: background-color 0.2s ease;
+    }
+    
+    .board-menu-trigger:hover {
+        background-color: rgba(0, 0, 0, 0.05);
+    }
+    
+    .dropdown-arrow {
+        font-size: 12px;
+        color: #666;
+        transition: transform 0.2s ease;
+    }
+    
+    .board-menu-trigger:hover .dropdown-arrow,
+    .board-menu.show ~ .board-menu-trigger .dropdown-arrow {
+        transform: rotate(180deg);
+    }
+    
+    .board-menu {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        background: white;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        min-width: 180px;
+        z-index: 1000;
+        display: none;
+        padding: 4px 0;
+    }
+    
+    .board-menu.show {
+        display: block;
+    }
+    
+    .board-menu-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 16px;
+        cursor: pointer;
+        font-size: 14px;
+        color: #333;
+        transition: background-color 0.2s ease;
+    }
+    
+    .board-menu-item:hover {
+        background-color: #f5f5f5;
+    }
+    
+    .menu-icon {
+        font-size: 16px;
+        width: 16px;
+        text-align: center;
     }
 
     .connection-status {
@@ -472,6 +786,66 @@
         padding: 4px;
     }
 
+    /* Shape tool container and menu */
+    .shape-tool-container {
+        position: relative;
+        display: inline-block;
+    }
+
+    .shape-menu {
+        position: absolute;
+        bottom: calc(100% + 8px);
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(255, 255, 255, 0.98);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(0, 0, 0, 0.1);
+        border-radius: 12px;
+        padding: 8px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+        z-index: 2000;
+        min-width: 160px;
+        display: none;
+        gap: 4px;
+        flex-direction: column;
+    }
+
+    .shape-menu.show {
+        display: flex;
+    }
+
+    .shape-menu-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 16px;
+        cursor: pointer;
+        font-size: 14px;
+        color: #374151;
+        transition: background-color 0.2s ease, color 0.2s ease;
+        border-radius: 8px;
+        box-sizing: border-box;
+    }
+
+    .shape-menu-item:hover {
+        background: rgba(59, 130, 246, 0.1);
+        color: #3b82f6;
+    }
+
+    .shape-icon {
+        font-size: 16px;
+        width: 20px;
+        height: 20px;
+        text-align: center;
+        display: inline-block;
+        line-height: 1;
+        flex-shrink: 0;
+    }
+
+    .shape-label {
+        font-weight: 500;
+    }
+
     .toolbar-divider {
         width: 1px;
         height: 24px;
@@ -513,6 +887,35 @@
     .tool-btn.danger:hover {
         background: rgba(239, 68, 68, 0.1);
         color: #dc2626;
+    }
+
+    /* Shape tool specific styles */
+    .tool-btn.shape-tool {
+        position: relative;
+        flex-direction: column;
+        gap: 1px;
+    }
+
+    .shape-dropdown-indicator {
+        position: absolute;
+        bottom: 2px;
+        right: 2px;
+        font-size: 10px;
+        color: #374151;
+        opacity: 0.8;
+        line-height: 1;
+        transition: all 0.2s ease;
+        font-weight: bold;
+    }
+
+    .tool-btn.shape-tool:hover .shape-dropdown-indicator {
+        opacity: 1;
+        color: #1f2937;
+    }
+
+    .tool-btn.shape-tool.active .shape-dropdown-indicator {
+        opacity: 1;
+        color: rgba(255, 255, 255, 0.9);
     }
 
     .tool-icon {
@@ -758,13 +1161,36 @@
         transform: translateX(-50%);
         background: rgba(0, 0, 0, 0.8);
         color: white;
-        padding: 8px 16px;
-        border-radius: 4px;
+        padding: 10px 16px;
+        border-radius: 6px;
         font-size: 14px;
         font-weight: 500;
         z-index: 2000;
-        animation: slideDown 0.3s ease-out, fadeOut 0.3s ease-in 1.7s forwards;
+        animation: slideDown 0.3s ease-out, fadeOut 0.3s ease-in 2.2s forwards;
         pointer-events: none;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    
+    .copy-paste-notification.success {
+        background: rgba(34, 197, 94, 0.9);
+    }
+    
+    .copy-paste-notification.error {
+        background: rgba(239, 68, 68, 0.9);
+    }
+    
+    .copy-paste-notification.copy {
+        background: rgba(59, 130, 246, 0.9);
+    }
+    
+    .copy-paste-notification.paste {
+        background: rgba(168, 85, 247, 0.9);
+    }
+    
+    .notification-icon {
+        font-size: 16px;
     }
 
     @@keyframes slideDown {

@@ -113,6 +113,7 @@ public class CollaborationHub : Hub
             {
                 "Text" => ElementType.Text,
                 "Shape" => ElementType.Shape,
+                "Line" => ElementType.Line,
                 "StickyNote" => ElementType.StickyNote,
                 "Image" => ElementType.Image,
                 _ => ElementType.Drawing
@@ -175,8 +176,33 @@ public class CollaborationHub : Hub
                 var element = await _elementService.GetElementAsync(elementGuid);
                 if (element != null)
                 {
+                    // Calculate the offset for line endpoint translation
+                    var deltaX = newX - element.X;
+                    var deltaY = newY - element.Y;
+                    
                     element.X = newX;
                     element.Y = newY;
+                    
+                    // For lines, also update endpoint coordinates in the data
+                    if (element.Type == ElementType.Line && element.Data != null)
+                    {
+                        var existingData = element.Data.RootElement.GetRawText();
+                        var dataObj = JsonSerializer.Deserialize<Dictionary<string, object>>(existingData) ?? new Dictionary<string, object>();
+                        
+                        if (dataObj.TryGetValue("startX", out var startXObj) && double.TryParse(startXObj.ToString(), out var startX) &&
+                            dataObj.TryGetValue("startY", out var startYObj) && double.TryParse(startYObj.ToString(), out var startY) &&
+                            dataObj.TryGetValue("endX", out var endXObj) && double.TryParse(endXObj.ToString(), out var endX) &&
+                            dataObj.TryGetValue("endY", out var endYObj) && double.TryParse(endYObj.ToString(), out var endY))
+                        {
+                            dataObj["startX"] = startX + deltaX;
+                            dataObj["startY"] = startY + deltaY;
+                            dataObj["endX"] = endX + deltaX;
+                            dataObj["endY"] = endY + deltaY;
+                            
+                            element.Data = JsonDocument.Parse(JsonSerializer.Serialize(dataObj));
+                        }
+                    }
+                    
                     await _elementService.UpdateElementAsync(element);
                     
                     // Broadcast to all users in the board
@@ -374,7 +400,7 @@ public class CollaborationHub : Hub
             if (Guid.TryParse(elementId, out var elementGuid))
             {
                 var element = await _elementService.GetElementAsync(elementGuid);
-                if (element != null && (element.Type == ElementType.Shape || element.Type == ElementType.Drawing))
+                if (element != null && (element.Type == ElementType.Shape || element.Type == ElementType.Drawing || element.Type == ElementType.Line))
                 {
                     // Merge the style data with existing data
                     var existingData = element.Data?.RootElement.GetRawText() ?? "{}";
@@ -388,6 +414,24 @@ public class CollaborationHub : Hub
                     }
                     
                     element.Data = JsonDocument.Parse(JsonSerializer.Serialize(existingDataObj));
+                    
+                    // For lines, also update the bounding box if endpoint coordinates changed
+                    if (element.Type == ElementType.Line && 
+                        (styleDataObj.ContainsKey("startX") || styleDataObj.ContainsKey("startY") || 
+                         styleDataObj.ContainsKey("endX") || styleDataObj.ContainsKey("endY")))
+                    {
+                        if (existingDataObj.TryGetValue("startX", out var startXObj) && double.TryParse(startXObj.ToString(), out var startX) &&
+                            existingDataObj.TryGetValue("startY", out var startYObj) && double.TryParse(startYObj.ToString(), out var startY) &&
+                            existingDataObj.TryGetValue("endX", out var endXObj) && double.TryParse(endXObj.ToString(), out var endX) &&
+                            existingDataObj.TryGetValue("endY", out var endYObj) && double.TryParse(endYObj.ToString(), out var endY))
+                        {
+                            element.X = Math.Min(startX, endX);
+                            element.Y = Math.Min(startY, endY);
+                            element.Width = Math.Abs(endX - startX);
+                            element.Height = Math.Abs(endY - startY);
+                        }
+                    }
+                    
                     await _elementService.UpdateElementAsync(element);
                     
                     // Broadcast to all users in the board

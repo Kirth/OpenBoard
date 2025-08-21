@@ -7,10 +7,10 @@ let tempCtx;
 let isDrawingShape = false;
 let elements = new Map();
 let selectedElementId = null;
-let editingElement = null;
-let editInput = null;
+let editingElement = null; // Legacy - use editorManager.isEditing() instead
+let editInput = null; // Legacy - managed by EditorManager
 let currentBoardId = null;
-let currentTool = 'select';
+let currentTool = 'select'; // Legacy - use toolManager.getTool() instead
 let isDrawing = false;
 let currentPath = [];
 let startX = 0, startY = 0;
@@ -23,6 +23,10 @@ let activeResizeHandle = null;
 let resizeStartBounds = null;
 let hasResized = false;
 let blazorReference = null;
+// Line selection settings
+const LINE_SELECTION_TOLERANCE = 8; // Base tolerance in pixels for line selection
+// Track elements to select after creation
+let elementsToSelect = new Set();
 // Viewport state for infinite canvas
 let viewportX = 0;
 let viewportY = 0;
@@ -52,6 +56,425 @@ let maxUndoSteps = 50;
 let isUndoRedoOperation = false;
 // Copy/Paste system
 let copiedElement = null;
+// Legacy variables - now handled by managers
+let shouldSwitchToSelectAfterEditing = false; // No longer used
+let previousTool = null; // Legacy - use toolManager.getPreviousTool() instead
+// Shift key tracking for line snapping
+window.isShiftHeld = false;
+
+// EditorManager class - centralized editing state management
+class EditorManager {
+    constructor() {
+        this.state = 'IDLE'; // IDLE, CREATING, EDITING, SAVING, ERROR
+        this.editingElementId = null;
+        this.editInput = null;
+        this.element = null;
+        this.onToolSwitchRequest = null; // Callback for requesting tool switches
+        this.onStateChange = null; // Callback for state changes
+    }
+    
+    // State validation
+    canStartEditing() {
+        return this.state === 'IDLE';
+    }
+    
+    canStopEditing() {
+        return this.state === 'EDITING';
+    }
+    
+    isEditing() {
+        return this.state === 'EDITING' && this.editingElementId !== null;
+    }
+    
+    // Transition to editing state
+    async startEditing(elementId, element, elementType) {
+        if (!this.canStartEditing()) {
+            console.warn('Cannot start editing: invalid state', this.state);
+            return false;
+        }
+        
+        try {
+            this.setState('CREATING');
+            
+            // Validate inputs
+            if (!elementId || !element || !elements.has(elementId)) {
+                throw new Error('Invalid element for editing');
+            }
+            
+            if (elementType !== 'StickyNote' && elementType !== 'Text') {
+                throw new Error('Unsupported element type for editing: ' + elementType);
+            }
+            
+            // Clean up any previous editing state
+            await this.cleanup();
+            
+            // Set up new editing session
+            this.editingElementId = elementId;
+            this.element = element;
+            element.data.isEditing = true;
+            
+            // Create DOM input element
+            this.createInputElement(elementType);
+            
+            this.setState('EDITING');
+            return true;
+            
+        } catch (error) {
+            console.error('Failed to start editing:', error);
+            this.setState('ERROR');
+            await this.cleanup();
+            return false;
+        }
+    }
+    
+    // Transition out of editing state
+    async stopEditing() {
+        if (!this.canStopEditing()) {
+            console.warn('Cannot stop editing: invalid state', this.state);
+            return false;
+        }
+        
+        try {
+            this.setState('SAVING');
+            
+            // Save changes if element exists
+            if (this.element && this.editInput) {
+                const newContent = this.editInput.value.trim();
+                this.element.data.content = newContent;
+                this.element.data.isEditing = false;
+                
+                // Send updates via SignalR if connected
+                if (signalRConnection && signalRConnection.state === signalR.HubConnectionState.Connected) {
+                    if (!this.editingElementId.startsWith('temp-')) {
+                        if (this.element.type === 'StickyNote') {
+                            updateStickyNoteContent(this.editingElementId, newContent);
+                        } else if (this.element.type === 'Text') {
+                            updateTextElementContent(this.editingElementId, newContent);
+                        }
+                    } else {
+                        // Mark temp element for pending update
+                        this.element.data.pendingUpdate = true;
+                    }
+                }
+            }
+            
+            // Clean up DOM and state
+            await this.cleanup();
+            
+            // Request tool switch through callback
+            if (this.onToolSwitchRequest) {
+                this.onToolSwitchRequest('select');
+            }
+            
+            this.setState('IDLE');
+            return true;
+            
+        } catch (error) {
+            console.error('Failed to stop editing:', error);
+            this.setState('ERROR');
+            await this.cleanup();
+            return false;
+        }
+    }
+    
+    // Create DOM input element based on type
+    createInputElement(elementType) {
+        const rect = canvas.getBoundingClientRect();
+        const screenPos = worldToScreen(this.element.x, this.element.y);
+        
+        this.editInput = document.createElement('textarea');
+        this.editInput.style.position = 'absolute';
+        this.editInput.style.zIndex = '1000';
+        this.editInput.style.border = '2px solid #007bff';
+        this.editInput.style.borderRadius = '4px';
+        this.editInput.style.padding = '5px';
+        this.editInput.style.resize = 'none';
+        this.editInput.value = this.element.data.content || '';
+        
+        if (elementType === 'StickyNote') {
+            this.editInput.style.left = (rect.left + screenPos.x + 10) + 'px';
+            this.editInput.style.top = (rect.top + screenPos.y + 10) + 'px';
+            this.editInput.style.width = (this.element.width * zoomLevel - 20) + 'px';
+            this.editInput.style.height = (this.element.height * zoomLevel - 20) + 'px';
+            this.editInput.style.fontSize = ((this.element.data.fontSize || 14) * zoomLevel) + 'px';
+            this.editInput.style.fontFamily = 'Arial';
+            this.editInput.style.backgroundColor = this.element.data.color || '#ffff88';
+        } else if (elementType === 'Text') {
+            this.editInput.style.left = (rect.left + screenPos.x) + 'px';
+            this.editInput.style.top = (rect.top + screenPos.y) + 'px';
+            this.editInput.style.fontSize = ((this.element.data.fontSize || 16) * zoomLevel) + 'px';
+            this.editInput.style.fontFamily = this.element.data.fontFamily || 'Arial';
+            this.editInput.style.color = this.element.data.color || '#000000';
+            this.editInput.style.fontWeight = this.element.data.bold ? 'bold' : 'normal';
+            this.editInput.style.fontStyle = this.element.data.italic ? 'italic' : 'normal';
+            this.editInput.style.backgroundColor = '#ffffff';
+            this.editInput.style.minWidth = '100px';
+            this.editInput.style.overflow = 'hidden';
+        }
+        
+        // Add event listeners
+        this.editInput.addEventListener('blur', () => this.stopEditing());
+        this.editInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' || (e.key === 'Enter' && !e.shiftKey)) {
+                e.preventDefault();
+                this.stopEditing();
+            }
+        });
+        
+        document.body.appendChild(this.editInput);
+        this.editInput.focus();
+        this.editInput.select();
+    }
+    
+    // Clean up DOM elements and reset state
+    async cleanup() {
+        if (this.editInput) {
+            try {
+                this.editInput.blur();
+            } catch (e) {
+                // Ignore blur errors
+            }
+            
+            if (this.editInput.parentNode) {
+                this.editInput.parentNode.removeChild(this.editInput);
+            }
+            this.editInput = null;
+        }
+        
+        if (this.element && this.element.data) {
+            this.element.data.isEditing = false;
+        }
+        
+        this.editingElementId = null;
+        this.element = null;
+        
+        // Trigger canvas redraw
+        if (typeof redrawCanvas === 'function') {
+            redrawCanvas();
+        }
+    }
+    
+    // Set state with optional callback notification
+    setState(newState) {
+        const oldState = this.state;
+        this.state = newState;
+        
+        if (this.onStateChange) {
+            this.onStateChange(oldState, newState);
+        }
+        
+        console.log('EditorManager state:', oldState, '->', newState);
+    }
+    
+    // Force cleanup and reset to idle state
+    async forceReset() {
+        await this.cleanup();
+        this.setState('IDLE');
+    }
+}
+
+// ToolManager class - decoupled tool switching logic
+class ToolManager {
+    constructor() {
+        this.currentTool = 'select';
+        this.previousTool = null;
+        this.onToolChange = null; // Callback for tool changes
+    }
+    
+    // Set current tool with validation and callbacks
+    setTool(newTool) {
+        const validTools = ['select', 'pen', 'text', 'rectangle', 'circle', 'triangle', 'diamond', 'ellipse', 'star', 'line', 'sticky', 'image'];
+        
+        if (!validTools.includes(newTool)) {
+            console.warn('Invalid tool:', newTool, 'Valid tools are:', validTools);
+            return false;
+        }
+        
+        if (this.currentTool === newTool) {
+            return true; // No change needed
+        }
+        
+        const oldTool = this.currentTool;
+        this.previousTool = oldTool;
+        this.currentTool = newTool;
+        
+        // Notify Blazor component
+        if (typeof window.updateBlazorCurrentTool === 'function') {
+            window.updateBlazorCurrentTool(newTool);
+        }
+        
+        // Notify subscribers
+        if (this.onToolChange) {
+            this.onToolChange(oldTool, newTool);
+        }
+        
+        console.log('Tool changed:', oldTool, '->', newTool);
+        return true;
+    }
+    
+    // Get current tool
+    getTool() {
+        return this.currentTool;
+    }
+    
+    // Get previous tool
+    getPreviousTool() {
+        return this.previousTool;
+    }
+    
+    // Switch to previous tool
+    switchToPrevious() {
+        if (this.previousTool) {
+            return this.setTool(this.previousTool);
+        }
+        return false;
+    }
+    
+    // Check if current tool is one of the specified tools
+    isOneOf(tools) {
+        return tools.includes(this.currentTool);
+    }
+    
+    // Check if current tool supports editing
+    isEditingTool() {
+        return this.isOneOf(['text', 'sticky']);
+    }
+}
+
+// Create global tool and editor manager instances
+const toolManager = new ToolManager();
+const editorManager = new EditorManager();
+
+// Set up callbacks to keep legacy variables synchronized
+toolManager.onToolChange = (oldTool, newTool) => {
+    currentTool = newTool; // Keep legacy variable in sync
+};
+
+// Set up tool switch callback for editor
+editorManager.onToolSwitchRequest = (tool) => {
+    // Use the window function to ensure all systems are updated
+    window.setCurrentTool(tool);
+};
+
+// ElementFactory class - standardized element creation
+class ElementFactory {
+    static createTempId() {
+        return 'temp-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+    }
+    
+    static async createStickyNote(x, y) {
+        try {
+            saveCanvasState('create sticky note');
+            
+            const stickyData = {
+                content: 'Click to type...',
+                color: '#ffff88',
+                fontSize: 14,
+                isEditing: true
+            };
+            
+            const elementData = {
+                type: 'StickyNote',
+                x: x,
+                y: y,
+                width: 200,
+                height: 150,
+                data: stickyData
+            };
+            
+            const tempId = ElementFactory.createTempId();
+            const element = {
+                x: x,
+                y: y,
+                width: 200,
+                height: 150,
+                type: 'StickyNote',
+                data: stickyData,
+                zIndex: 0
+            };
+            
+            // Add to elements map
+            elements.set(tempId, element);
+            selectedElementId = tempId;
+            
+            // Send to server
+            sendElement(currentBoardId, elementData, tempId);
+            
+            // Start editing using EditorManager
+            const success = await editorManager.startEditing(tempId, element, 'StickyNote');
+            if (!success) {
+                // Cleanup on failure
+                elements.delete(tempId);
+                selectedElementId = null;
+                throw new Error('Failed to start editing sticky note');
+            }
+            
+            return { tempId, element, success: true };
+            
+        } catch (error) {
+            console.error('Failed to create sticky note:', error);
+            return { success: false, error };
+        }
+    }
+    
+    static async createTextElement(x, y) {
+        try {
+            saveCanvasState('create text element');
+            
+            const textData = {
+                content: 'Click to type...',
+                fontSize: 16,
+                fontFamily: 'Arial',
+                color: '#000000',
+                bold: false,
+                italic: false,
+                isEditing: true
+            };
+            
+            const elementData = {
+                type: 'Text',
+                x: x,
+                y: y,
+                width: 200,
+                height: 30,
+                data: textData
+            };
+            
+            const tempId = ElementFactory.createTempId();
+            const element = {
+                x: x,
+                y: y,
+                width: 200,
+                height: 30,
+                type: 'Text',
+                data: textData,
+                zIndex: 0
+            };
+            
+            // Add to elements map
+            elements.set(tempId, element);
+            selectedElementId = tempId;
+            
+            // Send to server
+            sendElement(currentBoardId, elementData, tempId);
+            
+            // Start editing using EditorManager
+            const success = await editorManager.startEditing(tempId, element, 'Text');
+            if (!success) {
+                // Cleanup on failure
+                elements.delete(tempId);
+                selectedElementId = null;
+                throw new Error('Failed to start editing text element');
+            }
+            
+            return { tempId, element, success: true };
+            
+        } catch (error) {
+            console.error('Failed to create text element:', error);
+            return { success: false, error };
+        }
+    }
+}
 
 window.initializeCanvas = () => {
     canvas = document.getElementById('drawingCanvas');
@@ -463,23 +886,61 @@ function renderElementToMinimap(element, ctx) {
             ctx.fillStyle = element.data.fillColor || 'transparent';
             ctx.lineWidth = Math.max(0.5, (element.data.strokeWidth || 2) * 0.5);
             
+            ctx.beginPath();
             if (element.data.shapeType === 'circle') {
                 const centerX = element.x + element.width / 2;
                 const centerY = element.y + element.height / 2;
                 const radius = Math.min(element.width, element.height) / 2;
-                ctx.beginPath();
                 ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
-                if (element.data.fillColor && element.data.fillColor !== 'transparent') {
-                    ctx.fill();
+            } else if (element.data.shapeType === 'triangle') {
+                const centerX = element.x + element.width / 2;
+                ctx.moveTo(centerX, element.y);
+                ctx.lineTo(element.x, element.y + element.height);
+                ctx.lineTo(element.x + element.width, element.y + element.height);
+                ctx.closePath();
+            } else if (element.data.shapeType === 'diamond') {
+                const centerX = element.x + element.width / 2;
+                const centerY = element.y + element.height / 2;
+                ctx.moveTo(centerX, element.y);
+                ctx.lineTo(element.x + element.width, centerY);
+                ctx.lineTo(centerX, element.y + element.height);
+                ctx.lineTo(element.x, centerY);
+                ctx.closePath();
+            } else if (element.data.shapeType === 'ellipse') {
+                const centerX = element.x + element.width / 2;
+                const centerY = element.y + element.height / 2;
+                const radiusX = element.width / 2;
+                const radiusY = element.height / 2;
+                ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, 2 * Math.PI);
+            } else if (element.data.shapeType === 'star') {
+                const centerX = element.x + element.width / 2;
+                const centerY = element.y + element.height / 2;
+                const outerRadius = Math.min(element.width, element.height) / 2;
+                const innerRadius = outerRadius * 0.4;
+                const points = 5;
+                
+                for (let i = 0; i < points * 2; i++) {
+                    const angle = (i * Math.PI) / points - Math.PI / 2;
+                    const radius = i % 2 === 0 ? outerRadius : innerRadius;
+                    const px = centerX + Math.cos(angle) * radius;
+                    const py = centerY + Math.sin(angle) * radius;
+                    
+                    if (i === 0) {
+                        ctx.moveTo(px, py);
+                    } else {
+                        ctx.lineTo(px, py);
+                    }
                 }
-                ctx.stroke();
+                ctx.closePath();
             } else {
-                // Rectangle
-                if (element.data.fillColor && element.data.fillColor !== 'transparent') {
-                    ctx.fillRect(element.x, element.y, element.width, element.height);
-                }
-                ctx.strokeRect(element.x, element.y, element.width, element.height);
+                // Rectangle (default)
+                ctx.rect(element.x, element.y, element.width, element.height);
             }
+            
+            if (element.data.fillColor && element.data.fillColor !== 'transparent') {
+                ctx.fill();
+            }
+            ctx.stroke();
             break;
             
         case 'StickyNote':
@@ -637,33 +1098,51 @@ window.redo = redo;
 function copySelectedElement() {
     if (!selectedElementId) {
         console.log('No element selected to copy');
+        showNotification('No element selected', 'error');
         return;
     }
     
     const element = elements.get(selectedElementId);
     if (element) {
-        // Create a deep copy of the element
+        // Create a deep copy of the element with all properties
         copiedElement = {
             type: element.type,
             x: element.x,
             y: element.y,
-            width: element.width,
-            height: element.height,
-            data: JSON.parse(JSON.stringify(element.data)), // Deep copy
-            zIndex: element.zIndex
+            width: element.width || 0,
+            height: element.height || 0,
+            data: element.data ? JSON.parse(JSON.stringify(element.data)) : {},
+            zIndex: element.zIndex || 0,
+            createdBy: element.createdBy || 'Anonymous'
         };
         console.log('Element copied:', copiedElement);
-        showNotification('Element copied');
+        showNotification('Element copied (Ctrl+V to paste)', 'copy');
+        
+        // Also try to copy to system clipboard for external apps
+        try {
+            const elementInfo = `Whiteboard Element: ${element.type}`;
+            navigator.clipboard.writeText(elementInfo).catch(() => {
+                console.log('Could not write to clipboard, but element is copied internally');
+            });
+        } catch (e) {
+            console.log('Clipboard write failed, but element is copied internally');
+        }
     }
 }
 
 async function pasteElement() {
+    // Priority 1: If we have a copied element, paste it immediately
+    if (copiedElement) {
+        pasteCopiedElement();
+        return;
+    }
+    
+    // Priority 2: Try to read from system clipboard
     try {
-        // First try to read from system clipboard
         const clipboardItems = await navigator.clipboard.read();
         
         for (const clipboardItem of clipboardItems) {
-            // Check for images
+            // Check for images first
             for (const type of clipboardItem.types) {
                 if (type.startsWith('image/')) {
                     console.log('Image found in clipboard');
@@ -678,19 +1157,14 @@ async function pasteElement() {
                 console.log('Text found in clipboard');
                 const blob = await clipboardItem.getType('text/plain');
                 const text = await blob.text();
-                if (text.trim()) {
+                if (text.trim() && !text.startsWith('Whiteboard Element:')) {
                     pasteTextFromClipboard(text.trim());
                     return;
                 }
             }
         }
         
-        // If no external content, paste copied element
-        if (copiedElement) {
-            pasteCopiedElement();
-        } else {
-            console.log('Nothing to paste');
-        }
+        showNotification('Nothing to paste', 'error');
         
     } catch (error) {
         console.log('Clipboard access failed, trying fallback methods:', error);
@@ -698,7 +1172,7 @@ async function pasteElement() {
         // Fallback: try text-only clipboard access
         try {
             const text = await navigator.clipboard.readText();
-            if (text.trim()) {
+            if (text.trim() && !text.startsWith('Whiteboard Element:')) {
                 pasteTextFromClipboard(text.trim());
                 return;
             }
@@ -706,12 +1180,7 @@ async function pasteElement() {
             console.log('Text clipboard access also failed:', textError);
         }
         
-        // Final fallback: paste copied element if available
-        if (copiedElement) {
-            pasteCopiedElement();
-        } else {
-            console.log('No clipboard access and nothing copied');
-        }
+        showNotification('Nothing to paste - copy an element first (Ctrl+C)', 'error');
     }
 }
 
@@ -720,24 +1189,99 @@ function pasteCopiedElement() {
     
     saveCanvasState('paste element');
     
-    // Calculate paste position (offset from original)
-    const offsetX = 20;
-    const offsetY = 20;
-    const newX = copiedElement.x + offsetX;
-    const newY = copiedElement.y + offsetY;
+    // Calculate smart paste position
+    let newX, newY;
     
-    // Create the pasted element
-    sendElement(currentBoardId, {
+    // If there's a selected element, paste near it
+    if (selectedElementId) {
+        const selectedElement = elements.get(selectedElementId);
+        if (selectedElement) {
+            newX = selectedElement.x + 30;
+            newY = selectedElement.y + 30;
+        } else {
+            // Fallback to offset from original
+            newX = copiedElement.x + 20;
+            newY = copiedElement.y + 20;
+        }
+    } else {
+        // No selection, paste in viewport center with small offset
+        const centerX = (-viewportX + canvas.width / 2) / zoomLevel;
+        const centerY = (-viewportY + canvas.height / 2) / zoomLevel;
+        newX = centerX - (copiedElement.width || 50) / 2;
+        newY = centerY - (copiedElement.height || 30) / 2;
+    }
+    
+    // Generate a temporary ID for tracking the pasted element
+    const tempId = 'temp_paste_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    
+    // Create the pasted element with proper data structure
+    const pastedElementData = {
         type: copiedElement.type,
         x: newX,
         y: newY,
         width: copiedElement.width,
         height: copiedElement.height,
         data: copiedElement.data
-    });
+    };
+    
+    // Add the element to local map with temp ID first
+    elements.set(tempId, pastedElementData);
+    
+    sendElement(currentBoardId, pastedElementData, tempId);
+    
+    // Mark this temp element for selection when server confirms it
+    markElementForSelection(tempId);
+    
+    // Update the copied element position for next paste (cascade effect)
+    copiedElement.x = newX;
+    copiedElement.y = newY;
     
     console.log('Element pasted at:', newX, newY);
-    showNotification('Element pasted');
+    showNotification(`${copiedElement.type} pasted`, 'paste');
+}
+
+function markElementForSelection(tempId) {
+    elementsToSelect.add(tempId);
+}
+
+function duplicateSelectedElement() {
+    if (!selectedElementId) {
+        console.log('No element selected to duplicate');
+        showNotification('No element selected', 'error');
+        return;
+    }
+    
+    const element = elements.get(selectedElementId);
+    if (!element) {
+        showNotification('Element not found', 'error');
+        return;
+    }
+    
+    saveCanvasState('duplicate element');
+    
+    // Generate a temporary ID for tracking the duplicated element
+    const tempId = 'temp_duplicate_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    
+    // Create duplicate directly without using copy/paste to avoid conflicts
+    const duplicateData = {
+        type: element.type,
+        x: element.x + 30,
+        y: element.y + 30,
+        width: element.width || 0,
+        height: element.height || 0,
+        data: element.data ? JSON.parse(JSON.stringify(element.data)) : {}
+    };
+    
+    // Add the element to local map with temp ID first
+    elements.set(tempId, duplicateData);
+    
+    sendElement(currentBoardId, duplicateData, tempId);
+    
+    // Mark this temp element for selection when server confirms it
+    markElementForSelection(tempId);
+    
+    console.log('Element duplicated at:', duplicateData.x, duplicateData.y);
+    showNotification(`${element.type} duplicated`, 'success');
 }
 
 function pasteTextFromClipboard(text) {
@@ -767,7 +1311,7 @@ function pasteTextFromClipboard(text) {
     });
     
     console.log('Text pasted:', text);
-    showNotification('Text pasted');
+    showNotification('Text pasted', 'paste');
 }
 
 async function pasteImageFromClipboard(blob) {
@@ -826,7 +1370,7 @@ async function pasteImageFromClipboard(blob) {
             });
             
             console.log('Image pasted successfully');
-            showNotification('Image pasted');
+            showNotification('Image pasted', 'paste');
         } else {
             console.error('Failed to upload pasted image');
         }
@@ -836,7 +1380,7 @@ async function pasteImageFromClipboard(blob) {
 }
 
 // Notification system
-function showNotification(message) {
+function showNotification(message, type = 'info') {
     // Remove existing notification if any
     const existingNotification = document.querySelector('.copy-paste-notification');
     if (existingNotification) {
@@ -845,18 +1389,26 @@ function showNotification(message) {
     
     // Create notification element
     const notification = document.createElement('div');
-    notification.className = 'copy-paste-notification';
-    notification.textContent = message;
+    notification.className = `copy-paste-notification ${type}`;
+    
+    // Add icon based on type
+    let icon = '📋';
+    if (type === 'success') icon = '✅';
+    else if (type === 'error') icon = '❌';
+    else if (type === 'copy') icon = '📄';
+    else if (type === 'paste') icon = '📋';
+    
+    notification.innerHTML = `<span class="notification-icon">${icon}</span> ${message}`;
     
     // Add to document
     document.body.appendChild(notification);
     
-    // Auto-remove after 2 seconds
+    // Auto-remove after 2.5 seconds
     setTimeout(() => {
         if (notification.parentNode) {
             notification.remove();
         }
-    }, 2000);
+    }, 2500);
 }
 
 window.startNewPath = (x, y) => {
@@ -899,6 +1451,7 @@ window.startShape = (shapeType, x, y) => {
 };
 
 window.updateShape = (shapeType, startX, startY, currentX, currentY) => {
+    console.log('updateShape called with:', shapeType, 'from', startX, startY, 'to', currentX, currentY);
     if (!tempCtx || !isDrawingShape) return;
     
     // Clear temporary canvas
@@ -924,6 +1477,46 @@ window.updateShape = (shapeType, startX, startY, currentX, currentY) => {
         const centerX = startX + width / 2;
         const centerY = startY + height / 2;
         tempCtx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+    } else if (shapeType === 'triangle') {
+        const centerX = startX + width / 2;
+        tempCtx.moveTo(centerX, startY); // Top point
+        tempCtx.lineTo(startX, startY + height); // Bottom left
+        tempCtx.lineTo(startX + width, startY + height); // Bottom right
+        tempCtx.closePath();
+    } else if (shapeType === 'diamond') {
+        const centerX = startX + width / 2;
+        const centerY = startY + height / 2;
+        tempCtx.moveTo(centerX, startY); // Top
+        tempCtx.lineTo(startX + width, centerY); // Right
+        tempCtx.lineTo(centerX, startY + height); // Bottom
+        tempCtx.lineTo(startX, centerY); // Left
+        tempCtx.closePath();
+    } else if (shapeType === 'ellipse') {
+        const centerX = startX + width / 2;
+        const centerY = startY + height / 2;
+        const radiusX = Math.abs(width) / 2;
+        const radiusY = Math.abs(height) / 2;
+        tempCtx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, 2 * Math.PI);
+    } else if (shapeType === 'star') {
+        const centerX = startX + width / 2;
+        const centerY = startY + height / 2;
+        const outerRadius = Math.min(Math.abs(width), Math.abs(height)) / 2;
+        const innerRadius = outerRadius * 0.4;
+        const points = 5;
+        
+        for (let i = 0; i < points * 2; i++) {
+            const angle = (i * Math.PI) / points - Math.PI / 2;
+            const radius = i % 2 === 0 ? outerRadius : innerRadius;
+            const x = centerX + Math.cos(angle) * radius;
+            const y = centerY + Math.sin(angle) * radius;
+            
+            if (i === 0) {
+                tempCtx.moveTo(x, y);
+            } else {
+                tempCtx.lineTo(x, y);
+            }
+        }
+        tempCtx.closePath();
     }
     
     tempCtx.stroke();
@@ -933,6 +1526,95 @@ window.updateShape = (shapeType, startX, startY, currentX, currentY) => {
 };
 
 window.finishShape = () => {
+    isDrawingShape = false;
+    if (tempCtx) {
+        tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
+    }
+};
+
+// Line drawing functions
+window.startLine = (x, y) => {
+    isDrawingShape = true;
+    window.lineStartX = x;
+    window.lineStartY = y;
+};
+
+// Helper function to snap line to nearest horizontal, vertical, or diagonal
+function snapLineToAngle(startX, startY, currentX, currentY) {
+    const deltaX = currentX - startX;
+    const deltaY = currentY - startY;
+    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+    
+    // Calculate angle in degrees
+    const angle = Math.atan2(deltaY, deltaX) * (180 / Math.PI);
+    
+    // Snap to nearest 45-degree increment
+    const snapAngles = [0, 45, 90, 135, 180, -135, -90, -45];
+    let closestAngle = snapAngles[0];
+    let minDiff = Math.abs(angle - snapAngles[0]);
+    
+    for (const snapAngle of snapAngles) {
+        const diff = Math.abs(angle - snapAngle);
+        if (diff < minDiff) {
+            minDiff = diff;
+            closestAngle = snapAngle;
+        }
+    }
+    
+    // Convert back to radians and calculate snapped coordinates
+    const radians = closestAngle * (Math.PI / 180);
+    const snappedX = startX + distance * Math.cos(radians);
+    const snappedY = startY + distance * Math.sin(radians);
+    
+    return { x: snappedX, y: snappedY };
+}
+
+window.updateLine = (startX, startY, currentX, currentY) => {
+    if (!tempCtx || !isDrawingShape) return;
+    
+    // Snap to angles when Shift is held
+    let endX = currentX;
+    let endY = currentY;
+    
+    if (window.isShiftHeld) {
+        const snapped = snapLineToAngle(startX, startY, currentX, currentY);
+        endX = snapped.x;
+        endY = snapped.y;
+    }
+    
+    // Clear temporary canvas
+    tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
+    
+    // Apply viewport transformation to temp canvas
+    tempCtx.setTransform(zoomLevel, 0, 0, zoomLevel, viewportX, viewportY);
+    
+    // Set style - different appearance when snapping
+    if (window.isShiftHeld) {
+        tempCtx.strokeStyle = '#007bff';  // Blue color when snapping
+        tempCtx.lineWidth = 3;
+        tempCtx.setLineDash([5, 5]);  // Dashed line when snapping
+    } else {
+        tempCtx.strokeStyle = '#000000';
+        tempCtx.lineWidth = 2;
+        tempCtx.setLineDash([]);  // Solid line
+    }
+    tempCtx.lineCap = 'round';
+    
+    // Draw line
+    tempCtx.beginPath();
+    tempCtx.moveTo(startX, startY);
+    tempCtx.lineTo(endX, endY);
+    tempCtx.stroke();
+    
+    // Reset transform after drawing
+    tempCtx.setTransform(1, 0, 0, 1, 0, 0);
+    
+    // Store snapped coordinates for line creation
+    window.currentLineEndX = endX;
+    window.currentLineEndY = endY;
+};
+
+window.finishLine = () => {
     isDrawingShape = false;
     if (tempCtx) {
         tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
@@ -1008,11 +1690,73 @@ window.drawElement = (id, x, y, type, data, width, height) => {
                 const centerX = x + (width || 100) / 2;
                 const centerY = y + (height || 100) / 2;
                 ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+            } else if (data.shapeType === 'triangle') {
+                const w = width || 100;
+                const h = height || 100;
+                const centerX = x + w / 2;
+                ctx.moveTo(centerX, y); // Top point
+                ctx.lineTo(x, y + h); // Bottom left
+                ctx.lineTo(x + w, y + h); // Bottom right
+                ctx.closePath();
+            } else if (data.shapeType === 'diamond') {
+                const w = width || 100;
+                const h = height || 100;
+                const centerX = x + w / 2;
+                const centerY = y + h / 2;
+                ctx.moveTo(centerX, y); // Top
+                ctx.lineTo(x + w, centerY); // Right
+                ctx.lineTo(centerX, y + h); // Bottom
+                ctx.lineTo(x, centerY); // Left
+                ctx.closePath();
+            } else if (data.shapeType === 'ellipse') {
+                const w = width || 100;
+                const h = height || 100;
+                const centerX = x + w / 2;
+                const centerY = y + h / 2;
+                const radiusX = w / 2;
+                const radiusY = h / 2;
+                ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, 2 * Math.PI);
+            } else if (data.shapeType === 'star') {
+                const w = width || 100;
+                const h = height || 100;
+                const centerX = x + w / 2;
+                const centerY = y + h / 2;
+                const outerRadius = Math.min(w, h) / 2;
+                const innerRadius = outerRadius * 0.4;
+                const points = 5;
+                
+                for (let i = 0; i < points * 2; i++) {
+                    const angle = (i * Math.PI) / points - Math.PI / 2;
+                    const radius = i % 2 === 0 ? outerRadius : innerRadius;
+                    const px = centerX + Math.cos(angle) * radius;
+                    const py = centerY + Math.sin(angle) * radius;
+                    
+                    if (i === 0) {
+                        ctx.moveTo(px, py);
+                    } else {
+                        ctx.lineTo(px, py);
+                    }
+                }
+                ctx.closePath();
             }
             
             if (data.fillColor && data.fillColor !== 'transparent') {
                 ctx.fill();
             }
+            ctx.stroke();
+            ctx.restore();
+            break;
+            
+        case "Line":
+            ctx.save();
+            ctx.strokeStyle = data.strokeColor || '#000000';
+            ctx.lineWidth = data.strokeWidth || 2;
+            ctx.lineCap = 'round';
+            
+            // Draw line using the stored start and end points
+            ctx.beginPath();
+            ctx.moveTo(data.startX, data.startY);
+            ctx.lineTo(data.endX, data.endY);
             ctx.stroke();
             ctx.restore();
             break;
@@ -1176,6 +1920,14 @@ window.initializeSignalR = async (boardId) => {
                 // Move element from temp ID to server ID
                 elements.delete(elementData.tempId);
                 elements.set(elementData.id, tempElement);
+                
+                // Check if this element should be auto-selected
+                if (elementsToSelect.has(elementData.tempId)) {
+                    elementsToSelect.delete(elementData.tempId);
+                    selectedElementId = elementData.id;
+                    highlightElement(elementData.id);
+                    console.log('Auto-selected pasted element:', elementData.id);
+                }
             } else {
                 // This is a new element from another client OR an element without tempId
                 // Add it regardless of whether it has a tempId (from other clients)
@@ -1285,6 +2037,14 @@ window.initializeSignalR = async (boardId) => {
                 // Update element style data
                 element.data = { ...element.data, ...newStyleData };
                 
+                // For lines, update bounding box if endpoint coordinates changed
+                if (element.type === 'Line' && (newStyleData.startX !== undefined || newStyleData.startY !== undefined || newStyleData.endX !== undefined || newStyleData.endY !== undefined)) {
+                    element.x = Math.min(element.data.startX, element.data.endX);
+                    element.y = Math.min(element.data.startY, element.data.endY);
+                    element.width = Math.abs(element.data.endX - element.data.startX);
+                    element.height = Math.abs(element.data.endY - element.data.startY);
+                }
+                
                 // For drawings, update all paths with new style
                 if (element.type === 'Drawing' && element.data.paths) {
                     for (const path of element.data.paths) {
@@ -1355,6 +2115,39 @@ window.sendElement = async (boardId, elementData, tempId = null) => {
 };
 
 // Element selection and movement functions
+// Helper function to calculate distance from a point to a line segment
+function pointToLineDistance(px, py, x1, y1, x2, y2) {
+    const A = px - x1;
+    const B = py - y1;
+    const C = x2 - x1;
+    const D = y2 - y1;
+    
+    const dot = A * C + B * D;
+    const lenSq = C * C + D * D;
+    
+    let param = -1;
+    if (lenSq !== 0) {
+        param = dot / lenSq;
+    }
+    
+    let xx, yy;
+    
+    if (param < 0) {
+        xx = x1;
+        yy = y1;
+    } else if (param > 1) {
+        xx = x2;
+        yy = y2;
+    } else {
+        xx = x1 + param * C;
+        yy = y1 + param * D;
+    }
+    
+    const dx = px - xx;
+    const dy = py - yy;
+    return Math.sqrt(dx * dx + dy * dy);
+}
+
 window.getElementAtPoint = (x, y) => {
     console.log('getElementAtPoint called with:', x, y);
     console.log('Available elements:', elements.size);
@@ -1421,6 +2214,26 @@ window.getElementAtPoint = (x, y) => {
             }
         }
         
+        // Special case for Line elements (use point-to-line distance)
+        if (element.type === 'Line' && element.data) {
+            const startX = element.data.startX;
+            const startY = element.data.startY;
+            const endX = element.data.endX;
+            const endY = element.data.endY;
+            const strokeWidth = element.data.strokeWidth || 2;
+            
+            // Calculate distance from point to line segment
+            const distance = pointToLineDistance(x, y, startX, startY, endX, endY);
+            // Adjust tolerance based on zoom level and stroke width
+            const baseTolerance = LINE_SELECTION_TOLERANCE / Math.max(zoomLevel, 0.5);
+            const tolerance = Math.max(strokeWidth / 2 + baseTolerance / 2, baseTolerance);
+            
+            if (distance <= tolerance) {
+                console.log('Line element HIT!', id, 'distance:', distance, 'tolerance:', tolerance);
+                return id;
+            }
+        }
+        
         // Check if point is within element bounds (for other element types)
         if (x >= element.x && x <= element.x + (element.width || 0) &&
             y >= element.y && y <= element.y + (element.height || 0)) {
@@ -1451,27 +2264,45 @@ window.highlightElement = (id) => {
     let width = element.width || 0;
     let height = element.height || 0;
     
-    // Special handling for text elements
-    if (element.type === 'Text' && element.data && element.data.content) {
-        ctx.font = `${element.data.bold ? 'bold ' : ''}${element.data.italic ? 'italic ' : ''}${element.data.fontSize || 16}px ${element.data.fontFamily || 'Arial'}`;
-        const textMetrics = ctx.measureText(element.data.content);
-        width = textMetrics.width;
-        height = element.data.fontSize || 16;
-    }
-    
-    // Draw selection rectangle
-    const selectionRect = {
-        x: element.x - padding,
-        y: element.y - padding,
-        width: width + (2 * padding),
-        height: height + (2 * padding)
-    };
-    
-    ctx.strokeRect(selectionRect.x, selectionRect.y, selectionRect.width, selectionRect.height);
-    
-    // Draw resize handles (only for resizable elements)
-    if (isElementResizable(element)) {
-        drawResizeHandles(selectionRect);
+    // Special handling for Line elements
+    if (element.type === 'Line' && element.data) {
+        // Don't draw a selection rectangle for lines, instead highlight the line itself
+        ctx.strokeStyle = '#007bff';
+        ctx.lineWidth = 4;
+        ctx.setLineDash([8, 4]);
+        ctx.lineCap = 'round';
+        
+        // Draw highlighted line
+        ctx.beginPath();
+        ctx.moveTo(element.data.startX, element.data.startY);
+        ctx.lineTo(element.data.endX, element.data.endY);
+        ctx.stroke();
+        
+        // Draw endpoint handles
+        drawLineEndpointHandles(element);
+    } else {
+        // Special handling for text elements
+        if (element.type === 'Text' && element.data && element.data.content) {
+            ctx.font = `${element.data.bold ? 'bold ' : ''}${element.data.italic ? 'italic ' : ''}${element.data.fontSize || 16}px ${element.data.fontFamily || 'Arial'}`;
+            const textMetrics = ctx.measureText(element.data.content);
+            width = textMetrics.width;
+            height = element.data.fontSize || 16;
+        }
+        
+        // Draw selection rectangle
+        const selectionRect = {
+            x: element.x - padding,
+            y: element.y - padding,
+            width: width + (2 * padding),
+            height: height + (2 * padding)
+        };
+        
+        ctx.strokeRect(selectionRect.x, selectionRect.y, selectionRect.width, selectionRect.height);
+        
+        // Draw resize handles (only for resizable elements)
+        if (isElementResizable(element)) {
+            drawResizeHandles(selectionRect);
+        }
     }
     
     ctx.restore();
@@ -1531,6 +2362,56 @@ function drawResizeHandles(selectionRect) {
     window.resizeHandles = handles;
 }
 
+// Draw endpoint handles for line elements
+function drawLineEndpointHandles(element) {
+    if (!element.data) return;
+    
+    ctx.save();
+    
+    const handleSize = 8;
+    const handleOffset = handleSize / 2;
+    
+    // Style for endpoint handles
+    ctx.fillStyle = '#007bff';
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([]); // Reset dash pattern
+    
+    const startHandle = {
+        x: element.data.startX - handleOffset,
+        y: element.data.startY - handleOffset,
+        cursor: 'move',
+        type: 'endpoint',
+        endpoint: 'start'
+    };
+    
+    const endHandle = {
+        x: element.data.endX - handleOffset,
+        y: element.data.endY - handleOffset,
+        cursor: 'move',
+        type: 'endpoint', 
+        endpoint: 'end'
+    };
+    
+    const handles = [startHandle, endHandle];
+    
+    // Draw each handle as a circle for better visual distinction
+    handles.forEach(handle => {
+        const centerX = handle.x + handleOffset;
+        const centerY = handle.y + handleOffset;
+        
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, handleOffset, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.stroke();
+    });
+    
+    ctx.restore();
+    
+    // Store line endpoint handles for hit testing
+    window.lineEndpointHandles = handles;
+}
+
 // Check if point is on a resize handle
 function getResizeHandleAt(x, y) {
     if (!window.resizeHandles || !selectedElementId) return null;
@@ -1544,6 +2425,48 @@ function getResizeHandleAt(x, y) {
         }
     }
     return null;
+}
+
+// Check if point is on a line endpoint handle
+function getLineEndpointHandleAt(x, y) {
+    if (!window.lineEndpointHandles || !selectedElementId) return null;
+    
+    const element = elements.get(selectedElementId);
+    if (!element || element.type !== 'Line') return null;
+    
+    const handleSize = 8;
+    const handleOffset = handleSize / 2;
+    
+    for (let i = 0; i < window.lineEndpointHandles.length; i++) {
+        const handle = window.lineEndpointHandles[i];
+        const centerX = handle.x + handleOffset;
+        const centerY = handle.y + handleOffset;
+        
+        // Check if point is within the circular handle
+        const distance = Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2));
+        if (distance <= handleOffset) {
+            return { index: i, handle: handle };
+        }
+    }
+    return null;
+}
+
+// Start line endpoint dragging operation
+function startLineEndpointDrag(endpointHandle) {
+    isResizing = true; // Reuse the resize mechanism for simplicity
+    activeResizeHandle = endpointHandle;
+    hasResized = false;
+    
+    const element = elements.get(selectedElementId);
+    if (element && element.type === 'Line') {
+        // Store original line data for drag calculations
+        resizeStartBounds = {
+            startX: element.data.startX,
+            startY: element.data.startY,
+            endX: element.data.endX,
+            endY: element.data.endY
+        };
+    }
 }
 
 // Start resizing operation
@@ -1573,8 +2496,20 @@ window.updateElementPosition = (id, newX, newY) => {
     const element = elements.get(id);
     if (!element) return;
     
+    // Calculate the offset from the current position
+    const deltaX = newX - element.x;
+    const deltaY = newY - element.y;
+    
     element.x = newX;
     element.y = newY;
+    
+    // For lines, also translate the endpoint coordinates
+    if (element.type === 'Line' && element.data) {
+        element.data.startX += deltaX;
+        element.data.startY += deltaY;
+        element.data.endX += deltaX;
+        element.data.endY += deltaY;
+    }
     
     // Redraw canvas with new position
     redrawCanvas();
@@ -1655,24 +2590,50 @@ function handleCanvasDoubleClick(event) {
     
     console.log('Element found at double-click:', elementId, element);
     
-    if (element && element.type === 'StickyNote') {
-        console.log('Starting sticky note editing');
-        startEditingStickyNote(elementId, element);
-    } else if (element && element.type === 'Text') {
-        console.log('Starting text element editing');
-        startEditingTextElement(elementId, element);
+    if (element && (element.type === 'StickyNote' || element.type === 'Text')) {
+        console.log(`Starting ${element.type} editing using EditorManager`);
+        editorManager.startEditing(elementId, element, element.type);
     } else {
         console.log('No editable element found, stopping any current editing');
         // Stop editing if clicking elsewhere
-        stopEditingStickyNote();
-        stopEditingTextElement();
+        if (editorManager.isEditing()) {
+            editorManager.stopEditing();
+        }
     }
 }
 
-// Start editing a sticky note
+// DEPRECATED: Use editorManager.startEditing() instead
 function startEditingStickyNote(elementId, element) {
-    // Stop any current editing
-    stopEditingStickyNote();
+    // State guards - don't start editing if conditions aren't right
+    if (!element || !elements.has(elementId)) {
+        console.warn('Cannot start editing: element not found', elementId);
+        return;
+    }
+    
+    if (element.type !== 'StickyNote') {
+        console.warn('Cannot start editing: element is not a sticky note', element.type);
+        return;
+    }
+    
+    // Clean up any existing editing state without triggering tool changes
+    if (editInput) {
+        try {
+            editInput.blur(); // Ensure focus is released
+        } catch (e) {
+            // Ignore if already blurred or removed
+        }
+        
+        if (editInput.parentNode) {
+            editInput.parentNode.removeChild(editInput);
+        }
+        editInput = null;
+    }
+    if (editingElement) {
+        const prevElement = elements.get(editingElement);
+        if (prevElement && prevElement.data) {
+            prevElement.data.isEditing = false;
+        }
+    }
     
     editingElement = elementId;
     
@@ -1721,7 +2682,7 @@ function startEditingStickyNote(elementId, element) {
     redrawCanvas();
 }
 
-// Stop editing sticky note
+// DEPRECATED: Use editorManager.stopEditing() instead
 function stopEditingStickyNote() {
     if (!editingElement || !editInput) return;
     
@@ -1743,23 +2704,63 @@ function stopEditingStickyNote() {
         }
     }
     
-    // Remove input element
-    if (editInput && editInput.parentNode) {
-        editInput.parentNode.removeChild(editInput);
+    // Remove input element with improved cleanup
+    if (editInput) {
+        // Remove event listeners to prevent memory leaks
+        try {
+            editInput.blur(); // Ensure focus is released
+        } catch (e) {
+            // Ignore if already blurred or removed
+        }
+        
+        // Remove from DOM
+        if (editInput.parentNode) {
+            editInput.parentNode.removeChild(editInput);
+        }
     }
     
     editInput = null;
     editingElement = null;
     
+    // Mark that we should switch to select tool on next user action
+    shouldSwitchToSelectAfterEditing = true;
+    
     // Redraw canvas
     redrawCanvas();
 }
 
-// Start editing a text element
+// DEPRECATED: Use editorManager.startEditing() instead
 function startEditingTextElement(elementId, element) {
-    // Stop any current editing
-    stopEditingTextElement();
-    stopEditingStickyNote();
+    // State guards - don't start editing if conditions aren't right
+    if (!element || !elements.has(elementId)) {
+        console.warn('Cannot start editing: element not found', elementId);
+        return;
+    }
+    
+    if (element.type !== 'Text') {
+        console.warn('Cannot start editing: element is not a text element', element.type);
+        return;
+    }
+    
+    // Clean up any existing editing state without triggering tool changes
+    if (editInput) {
+        try {
+            editInput.blur(); // Ensure focus is released
+        } catch (e) {
+            // Ignore if already blurred or removed
+        }
+        
+        if (editInput.parentNode) {
+            editInput.parentNode.removeChild(editInput);
+        }
+        editInput = null;
+    }
+    if (editingElement) {
+        const prevElement = elements.get(editingElement);
+        if (prevElement && prevElement.data) {
+            prevElement.data.isEditing = false;
+        }
+    }
     
     editingElement = elementId;
     
@@ -1811,7 +2812,7 @@ function startEditingTextElement(elementId, element) {
     redrawCanvas();
 }
 
-// Stop editing text element
+// DEPRECATED: Use editorManager.stopEditing() instead
 function stopEditingTextElement() {
     if (!editingElement || !editInput) return;
     
@@ -1833,13 +2834,26 @@ function stopEditingTextElement() {
         }
     }
     
-    // Remove input element
-    if (editInput && editInput.parentNode) {
-        editInput.parentNode.removeChild(editInput);
+    // Remove input element with improved cleanup
+    if (editInput) {
+        // Remove event listeners to prevent memory leaks
+        try {
+            editInput.blur(); // Ensure focus is released
+        } catch (e) {
+            // Ignore if already blurred or removed
+        }
+        
+        // Remove from DOM
+        if (editInput.parentNode) {
+            editInput.parentNode.removeChild(editInput);
+        }
     }
     
     editInput = null;
     editingElement = null;
+    
+    // Mark that we should switch to select tool on next user action
+    shouldSwitchToSelectAfterEditing = true;
     
     // Redraw canvas
     redrawCanvas();
@@ -1906,22 +2920,28 @@ function redrawCanvas() {
     }
 }
 
-// Tool management
+// Tool management - Updated for new shapes 2024-08-21
 window.setCurrentTool = (tool) => {
-    currentTool = tool;
-    console.log('Tool set to:', currentTool);
-    
-    // Update cursor style
-    const cursorStyle = tool === 'pen' ? 'crosshair' :
-                       tool === 'text' ? 'text' :
-                       (tool === 'rectangle' || tool === 'circle') ? 'crosshair' :
-                       tool === 'sticky' ? 'pointer' :
-                       tool === 'image' ? 'crosshair' :
-                       tool === 'select' ? 'default' : 'default';
-    
-    if (canvas) {
-        canvas.style.cursor = cursorStyle;
+    console.log('setCurrentTool called with:', tool);
+    // Use ToolManager instead of direct assignment
+    const success = toolManager.setTool(tool);
+    console.log('ToolManager setTool success:', success);
+    if (success) {
+        currentTool = tool; // Keep legacy variable in sync
+        
+        // Update cursor style
+        const cursorStyle = tool === 'pen' ? 'crosshair' :
+                           tool === 'text' ? 'text' :
+                           (tool === 'rectangle' || tool === 'circle' || tool === 'triangle' || tool === 'diamond' || tool === 'ellipse' || tool === 'star') ? 'crosshair' :
+                           tool === 'sticky' ? 'pointer' :
+                           tool === 'image' ? 'crosshair' :
+                           tool === 'select' ? 'default' : 'default';
+        
+        if (canvas) {
+            canvas.style.cursor = cursorStyle;
+        }
     }
+    return success;
 };
 
 // Zoom helper functions
@@ -2010,6 +3030,8 @@ function handleMouseWheel(event) {
 }
 
 function handleMouseDown(event) {
+    // No longer need delayed tool switching - EditorManager handles this
+    
     const rect = canvas.getBoundingClientRect();
     const screenX = event.clientX - rect.left;
     const screenY = event.clientY - rect.top;
@@ -2020,9 +3042,9 @@ function handleMouseDown(event) {
     startX = x;
     startY = y;
     
-    console.log('Mouse down:', currentTool, x, y);
+    console.log('Mouse down:', toolManager.getTool(), x, y);
     
-    switch (currentTool) {
+    switch (toolManager.getTool()) {
         case 'pen':
             isDrawing = true;
             currentPath = [{ x, y }];
@@ -2030,11 +3052,11 @@ function handleMouseDown(event) {
             break;
             
         case 'text':
-            createTextElement(x, y);
+            ElementFactory.createTextElement(x, y);
             break;
             
         case 'sticky':
-            createStickyNote(x, y);
+            ElementFactory.createStickyNote(x, y);
             break;
             
         case 'image':
@@ -2043,8 +3065,18 @@ function handleMouseDown(event) {
             
         case 'rectangle':
         case 'circle':
+        case 'triangle':
+        case 'diamond':
+        case 'ellipse':
+        case 'star':
+            console.log('Mouse down - starting shape with tool:', toolManager.getTool());
             isDrawing = true;
-            startShape(currentTool, x, y);
+            startShape(toolManager.getTool(), x, y);
+            break;
+            
+        case 'line':
+            isDrawing = true;
+            startLine(x, y);
             break;
             
         case 'select':
@@ -2079,7 +3111,7 @@ function handleMouseMove(event) {
     }
     
     if (isDrawing) {
-        switch (currentTool) {
+        switch (toolManager.getTool()) {
             case 'pen':
                 currentPath.push({ x, y });
                 drawLine(x, y);
@@ -2087,7 +3119,15 @@ function handleMouseMove(event) {
                 
             case 'rectangle':
             case 'circle':
-                updateShape(currentTool, startX, startY, x, y);
+            case 'triangle':
+            case 'diamond':
+            case 'ellipse':
+            case 'star':
+                updateShape(toolManager.getTool(), startX, startY, x, y);
+                break;
+                
+            case 'line':
+                updateLine(startX, startY, x, y);
                 break;
         }
     }
@@ -2099,11 +3139,11 @@ function handleMouseMove(event) {
         handleElementResize(worldPos.x, worldPos.y);
     }
     // Handle select tool dragging separately (doesn't use isDrawing)  
-    else if (currentTool === 'select' && isDragging && selectedElementId) {
+    else if (toolManager.getTool() === 'select' && isDragging && selectedElementId) {
         handleElementDrag(x, y);
     }
     // Update cursor for resize handles when not dragging/resizing
-    else if (currentTool === 'select' && selectedElementId && !isDragging && !isResizing) {
+    else if (toolManager.getTool() === 'select' && selectedElementId && !isDragging && !isResizing) {
         updateCursorForResizeHandles(x, y);
     }
     
@@ -2126,7 +3166,7 @@ function handleMouseUp(event) {
     if (isDrawing) {
         isDrawing = false;
         
-        switch (currentTool) {
+        switch (toolManager.getTool()) {
         case 'pen':
             if (currentPath.length > 0) {
                 saveCanvasState('create drawing');
@@ -2148,8 +3188,25 @@ function handleMouseUp(event) {
             
         case 'rectangle':
         case 'circle':
+        case 'triangle':
+        case 'diamond':
+        case 'ellipse':
+        case 'star':
             createShapeElement(startX, startY, x, y);
             finishShape();
+            break;
+            
+        case 'line':
+            // Use snapped coordinates if they were set during line drawing
+            const finalEndX = window.currentLineEndX !== undefined ? window.currentLineEndX : x;
+            const finalEndY = window.currentLineEndY !== undefined ? window.currentLineEndY : y;
+            createLineElement(startX, startY, finalEndX, finalEndY);
+            
+            // Clean up stored coordinates
+            window.currentLineEndX = undefined;
+            window.currentLineEndY = undefined;
+            
+            finishLine();
             break;
         }
     }
@@ -2166,13 +3223,13 @@ function handleMouseUp(event) {
         finishElementResize();
     }
     // Handle select tool drag end separately (doesn't use isDrawing)
-    else if (currentTool === 'select' && isDragging) {
+    else if (toolManager.getTool() === 'select' && isDragging) {
         console.log('Finishing element drag');
         finishElementDrag();
     }
 }
 
-// Element creation functions
+// DEPRECATED: Element creation functions - use ElementFactory instead
 function createTextElement(x, y) {
     saveCanvasState('create text element');
     
@@ -2208,18 +3265,25 @@ function createTextElement(x, y) {
         zIndex: 0
     });
     
-    // Auto-select and start editing immediately
+    // Auto-select the newly created text element
     selectedElementId = tempId;
-    setTimeout(() => {
-        startEditingTextElement(tempId, elements.get(tempId));
-    }, 50);
     
-    // Switch back to select tool after creating text element
-    setCurrentTool('select');
-    
+    // Send the element to server first
     sendElement(currentBoardId, elementData, tempId);
+    
+    // Start editing after a small delay to ensure proper initialization
+    console.log('Created text element, starting edit mode immediately:', tempId);
+    setTimeout(() => {
+        if (elements.has(tempId)) {
+            startEditingTextElement(tempId, elements.get(tempId));
+        }
+    }, 10);
+    
+    // Don't switch tools! Let the user finish editing first
+    // Tool will switch automatically when editing finishes
 }
 
+// DEPRECATED: Use ElementFactory.createStickyNote() instead
 function createStickyNote(x, y) {
     saveCanvasState('create sticky note');
     
@@ -2252,16 +3316,22 @@ function createStickyNote(x, y) {
         zIndex: 0
     });
     
-    // Auto-select and start editing immediately
+    // Auto-select the newly created sticky note
     selectedElementId = tempId;
-    setTimeout(() => {
-        startEditingStickyNote(tempId, elements.get(tempId));
-    }, 50);
     
-    // Switch back to select tool after creating sticky note
-    setCurrentTool('select');
-    
+    // Send the element to server
     sendElement(currentBoardId, elementData, tempId);
+    
+    // Start editing after a small delay to ensure proper initialization
+    console.log('Created sticky note, starting edit mode immediately:', tempId);
+    setTimeout(() => {
+        if (elements.has(tempId)) {
+            startEditingStickyNote(tempId, elements.get(tempId));
+        }
+    }, 10);
+    
+    // Don't switch tools! Let the user finish editing first
+    // Tool will switch automatically when editing finishes
 }
 
 function createShapeElement(startX, startY, endX, endY) {
@@ -2278,8 +3348,11 @@ function createShapeElement(startX, startY, endX, endY) {
     const x = Math.min(startX, endX) - (width - Math.abs(endX - startX)) / 2;
     const y = Math.min(startY, endY) - (height - Math.abs(endY - startY)) / 2;
     
+    const currentShapeTool = toolManager.getTool();
+    console.log('Creating shape element with tool:', currentShapeTool);
+    
     const shapeData = {
-        shapeType: currentTool,
+        shapeType: currentShapeTool,
         fillColor: 'transparent',
         strokeColor: '#000000',
         strokeWidth: 2
@@ -2295,12 +3368,58 @@ function createShapeElement(startX, startY, endX, endY) {
     });
 }
 
+function createLineElement(startX, startY, endX, endY) {
+    saveCanvasState('create line');
+    
+    // Ensure minimum line length for click-drawn lines
+    const minLength = 20;
+    const length = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2));
+    
+    if (length < minLength) {
+        // Extend the line to minimum length in the same direction
+        const angle = Math.atan2(endY - startY, endX - startX);
+        endX = startX + Math.cos(angle) * minLength;
+        endY = startY + Math.sin(angle) * minLength;
+    }
+    
+    const lineData = {
+        startX: startX,
+        startY: startY,
+        endX: endX,
+        endY: endY,
+        strokeColor: '#000000',
+        strokeWidth: 2
+    };
+    
+    sendElement(currentBoardId, {
+        type: 'Line',
+        x: Math.min(startX, endX),
+        y: Math.min(startY, endY),
+        width: Math.abs(endX - startX),
+        height: Math.abs(endY - startY),
+        data: lineData
+    });
+}
+
 // Selection functions
 function handleSelectClick(x, y) {
     console.log('handleSelectClick called:', x, y);
     
-    // First check if clicking on a resize handle of selected element
+    // First check if clicking on a resize handle or line endpoint handle of selected element
     if (selectedElementId) {
+        const element = elements.get(selectedElementId);
+        
+        // Check for line endpoint handles first
+        if (element && element.type === 'Line') {
+            const endpointHandle = getLineEndpointHandleAt(x, y);
+            if (endpointHandle) {
+                console.log('Line endpoint handle clicked:', endpointHandle.handle.endpoint);
+                startLineEndpointDrag(endpointHandle);
+                return;
+            }
+        }
+        
+        // Check for resize handles for other elements
         const resizeHandle = getResizeHandleAt(x, y);
         if (resizeHandle) {
             console.log('Resize handle clicked:', resizeHandle.index);
@@ -2391,7 +3510,38 @@ function handleElementResize(x, y) {
     if (!selectedElementId || !activeResizeHandle || !resizeStartBounds) return;
     
     const element = elements.get(selectedElementId);
-    if (!element || !isElementResizable(element)) return;
+    if (!element) return;
+    
+    // Handle line endpoint dragging
+    if (element.type === 'Line' && activeResizeHandle.handle && activeResizeHandle.handle.type === 'endpoint') {
+        // Save state on first drag
+        if (!hasResized) {
+            saveCanvasState('move line endpoint');
+            hasResized = true;
+        }
+        
+        const endpoint = activeResizeHandle.handle.endpoint;
+        if (endpoint === 'start') {
+            element.data.startX = x;
+            element.data.startY = y;
+        } else if (endpoint === 'end') {
+            element.data.endX = x;
+            element.data.endY = y;
+        }
+        
+        // Update bounding box for line
+        element.x = Math.min(element.data.startX, element.data.endX);
+        element.y = Math.min(element.data.startY, element.data.endY);
+        element.width = Math.abs(element.data.endX - element.data.startX);
+        element.height = Math.abs(element.data.endY - element.data.startY);
+        
+        // Redraw canvas with updated line
+        redrawCanvas();
+        return;
+    }
+    
+    // Handle regular element resizing
+    if (!isElementResizable(element)) return;
     
     // Save state on first resize
     if (!hasResized) {
@@ -2464,10 +3614,16 @@ function finishElementResize() {
     if (selectedElementId && isResizing) {
         const element = elements.get(selectedElementId);
         if (element && signalRConnection && signalRConnection.state === signalR.HubConnectionState.Connected) {
-            // Send resize update via SignalR
-            sendElementResize(currentBoardId, selectedElementId, element.x, element.y, element.width, element.height)
-                .then(() => console.log('Element resize sent successfully'))
-                .catch((err) => console.log('Element resize failed:', err));
+            // Handle line endpoint updates differently
+            if (element.type === 'Line' && activeResizeHandle && activeResizeHandle.handle && activeResizeHandle.handle.type === 'endpoint') {
+                // For lines, update the data containing the endpoint coordinates
+                updateElementStyle(selectedElementId, element.data);
+            } else {
+                // Send regular resize update via SignalR
+                sendElementResize(currentBoardId, selectedElementId, element.x, element.y, element.width, element.height)
+                    .then(() => console.log('Element resize sent successfully'))
+                    .catch((err) => console.log('Element resize failed:', err));
+            }
         }
         
         isResizing = false;
@@ -2520,11 +3676,17 @@ document.addEventListener('DOMContentLoaded', () => {
 // Mouse tracking for cursor updates
 window.addMouseMoveListener = (dotNetRef) => {
     let mouseTracker = (event) => {
-        const rect = canvas?.getBoundingClientRect();
-        if (rect) {
-            const x = event.clientX - rect.left;
-            const y = event.clientY - rect.top;
-            dotNetRef.invokeMethodAsync('OnMouseMove', x, y);
+        try {
+            const rect = canvas?.getBoundingClientRect();
+            if (rect && dotNetRef) {
+                const x = event.clientX - rect.left;
+                const y = event.clientY - rect.top;
+                dotNetRef.invokeMethodAsync('OnMouseMove', x, y).catch(() => {
+                    // Ignore SignalR connection errors during navigation
+                });
+            }
+        } catch (error) {
+            // Ignore errors during navigation
         }
     };
     
@@ -2679,7 +3841,11 @@ function createImageElement(x, y, imageData) {
         data: imageData
     };
     
-    sendElement(currentBoardId, elementData, tempId);
+    sendElement(currentBoardId, elementData);
+    
+    // Switch to select tool after placing image
+    window.setCurrentTool('select');
+    window.updateBlazorCurrentTool('select');
 };
 
 // Z-index control functions for UI buttons
@@ -2712,7 +3878,7 @@ window.showContextMenu = (x, y) => {
         // Show/hide style options based on element type
         const styleOptions = document.getElementById('styleOptions');
         if (styleOptions && element) {
-            if (element.type === 'Shape' || element.type === 'Drawing') {
+            if (element.type === 'Shape' || element.type === 'Drawing' || element.type === 'Line') {
                 styleOptions.style.display = 'block';
             } else {
                 styleOptions.style.display = 'none';
@@ -2772,9 +3938,9 @@ window.updateShapeStyle = (property, value) => {
         return;
     }
     
-    // Only allow style updates for shapes and drawings
-    if (element.type !== 'Shape' && element.type !== 'Drawing') {
-        console.log('Style updates only supported for shapes and drawings');
+    // Only allow style updates for shapes, drawings, and lines
+    if (element.type !== 'Shape' && element.type !== 'Drawing' && element.type !== 'Line') {
+        console.log('Style updates only supported for shapes, drawings, and lines');
         return;
     }
     
@@ -2874,37 +4040,84 @@ function isPointInElement(x, y, element) {
         
         return x >= element.x && x <= element.x + textWidth &&
                y >= element.y && y <= element.y + textHeight;
+    } else if (element.type === 'Line' && element.data) {
+        // Special handling for line elements - use precise line distance
+        const startX = element.data.startX;
+        const startY = element.data.startY;
+        const endX = element.data.endX;
+        const endY = element.data.endY;
+        const strokeWidth = element.data.strokeWidth || 2;
+        
+        // Calculate distance from point to line segment
+        const distance = pointToLineDistance(x, y, startX, startY, endX, endY);
+        // Adjust tolerance based on zoom level and stroke width
+        const baseTolerance = LINE_SELECTION_TOLERANCE / Math.max(zoomLevel, 0.5);
+        const tolerance = Math.max(strokeWidth / 2 + baseTolerance / 2, baseTolerance);
+        
+        return distance <= tolerance;
     } else {
+        // Default bounding box detection for other elements
         return x >= element.x && x <= element.x + (element.width || 0) &&
                y >= element.y && y <= element.y + (element.height || 0);
     }
 }
 
 // Setup keyboard event handlers
+// previousTool is now managed by ToolManager - no need for separate declaration
+
 function setupKeyboardHandlers() {
-    let previousTool = null;
+    // Remove existing listeners to prevent duplicates
+    document.removeEventListener('keydown', handleKeyDown);
+    document.removeEventListener('keyup', handleKeyUp);
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('keyup', handleKeyUp);
+}
+
+// Debounce mechanism to prevent double execution
+let lastActionTime = 0;
+const actionDebounceMs = 100;
+
+function handleKeyDown(event) {
+    // Track Shift key for line snapping
+    if (event.key === 'Shift') {
+        window.isShiftHeld = true;
+    }
     
-    document.addEventListener('keydown', function(event) {
-        // Handle Ctrl+Z for undo
-        if (event.ctrlKey && event.key === 'z' && !event.shiftKey) {
-            event.preventDefault();
-            undo();
-        }
-        // Handle Ctrl+Y or Ctrl+Shift+Z for redo
-        else if (event.ctrlKey && (event.key === 'y' || (event.key === 'z' && event.shiftKey))) {
-            event.preventDefault();
-            redo();
-        }
-        // Handle Ctrl+C for copy
-        else if (event.ctrlKey && event.key === 'c') {
-            event.preventDefault();
-            copySelectedElement();
-        }
-        // Handle Ctrl+V for paste
-        else if (event.ctrlKey && event.key === 'v') {
-            event.preventDefault();
-            pasteElement();
-        }
+    // Debounce rapid key presses
+    const now = Date.now();
+    if (now - lastActionTime < actionDebounceMs && 
+        (event.ctrlKey && ['c', 'v', 'd'].includes(event.key))) {
+        return;
+    }
+    
+    // Handle Ctrl+Z for undo
+    if (event.ctrlKey && event.key === 'z' && !event.shiftKey) {
+        event.preventDefault();
+        undo();
+    }
+    // Handle Ctrl+Y or Ctrl+Shift+Z for redo
+    else if (event.ctrlKey && (event.key === 'y' || (event.key === 'z' && event.shiftKey))) {
+        event.preventDefault();
+        redo();
+    }
+    // Handle Ctrl+C for copy
+    else if (event.ctrlKey && event.key === 'c') {
+        event.preventDefault();
+        lastActionTime = now;
+        copySelectedElement();
+    }
+    // Handle Ctrl+V for paste
+    else if (event.ctrlKey && event.key === 'v') {
+        event.preventDefault();
+        lastActionTime = now;
+        pasteElement();
+    }
+    // Handle Ctrl+D for duplicate
+    else if (event.ctrlKey && event.key === 'd') {
+        event.preventDefault();
+        lastActionTime = now;
+        duplicateSelectedElement();
+    }
         // Handle DEL key for deleting selected element
         else if (event.key === 'Delete' && selectedElementId) {
             event.preventDefault();
@@ -2928,7 +4141,7 @@ function setupKeyboardHandlers() {
         // Handle spacebar for hand tool
         else if (event.code === 'Space' && !event.repeat) {
             // Don't hijack spacebar if user is editing text
-            if (editingElement || document.activeElement.tagName === 'INPUT' || 
+            if (editorManager.isEditing() || document.activeElement.tagName === 'INPUT' || 
                 document.activeElement.tagName === 'TEXTAREA' || 
                 document.activeElement.contentEditable === 'true') {
                 return; // Let the browser handle the spacebar normally
@@ -2937,22 +4150,26 @@ function setupKeyboardHandlers() {
             event.preventDefault();
             
             // If already on select tool, do nothing
-            if (currentTool === 'select') return;
+            if (toolManager.getTool() === 'select') return;
             
-            // Store current tool and switch to select
-            previousTool = currentTool;
-            window.setCurrentTool('select');
+            // Switch to select tool (ToolManager handles previous tool tracking)
+            toolManager.setTool('select');
             
             // Update Blazor component
             window.updateBlazorCurrentTool('select');
         }
-    });
+}
+
+function handleKeyUp(event) {
+    // Track Shift key release for line snapping
+    if (event.key === 'Shift') {
+        window.isShiftHeld = false;
+    }
     
-    document.addEventListener('keyup', function(event) {
-        // Handle spacebar release to return to previous tool
-        if (event.code === 'Space' && previousTool && currentTool === 'select') {
+    // Handle spacebar release to return to previous tool
+    if (event.code === 'Space' && toolManager.getPreviousTool() && toolManager.getTool() === 'select') {
             // Don't handle spacebar release if user is editing text
-            if (editingElement || document.activeElement.tagName === 'INPUT' || 
+            if (editorManager.isEditing() || document.activeElement.tagName === 'INPUT' || 
                 document.activeElement.tagName === 'TEXTAREA' || 
                 document.activeElement.contentEditable === 'true') {
                 return;
@@ -2961,17 +4178,38 @@ function setupKeyboardHandlers() {
             event.preventDefault();
             
             // Switch back to previous tool
-            window.setCurrentTool(previousTool);
-            window.updateBlazorCurrentTool(previousTool);
-            previousTool = null;
+            toolManager.switchToPrevious();
         }
-    });
 }
 
 // Set Blazor reference for JavaScript to call back to Blazor
 window.setBlazorReference = (dotNetRef) => {
     blazorReference = dotNetRef;
     console.log('Blazor reference set for tool updates');
+};
+
+// Handle click outside for dropdown menus
+window.addClickOutsideHandler = (containerClass) => {
+    const handleClick = (event) => {
+        const container = document.querySelector(`.${containerClass}`);
+        if (container && !container.contains(event.target)) {
+            // Close the appropriate menu based on container class
+            if (blazorReference) {
+                if (containerClass === 'board-menu-container') {
+                    blazorReference.invokeMethodAsync('CloseBoardMenu');
+                } else if (containerClass === 'shape-tool-container') {
+                    blazorReference.invokeMethodAsync('CloseShapeMenu');
+                }
+            }
+            // Remove the event listener
+            document.removeEventListener('click', handleClick);
+        }
+    };
+    
+    // Add event listener with a small delay to avoid immediate closure
+    setTimeout(() => {
+        document.addEventListener('click', handleClick);
+    }, 50);
 };
 
 // Function to update Blazor component tool state

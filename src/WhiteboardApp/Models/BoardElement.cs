@@ -7,6 +7,7 @@ public enum ElementType
     Drawing,
     Text,
     Shape,
+    Line,
     StickyNote,
     Image
 }

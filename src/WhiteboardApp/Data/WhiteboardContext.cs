@@ -34,6 +34,8 @@ public class WhiteboardContext : DbContext
             entity.Property(e => e.Name).HasColumnName("name").HasMaxLength(255).IsRequired();
             entity.Property(e => e.CreatedAt).HasColumnName("createdat").HasDefaultValueSql("NOW()");
             entity.Property(e => e.UpdatedAt).HasColumnName("updatedat").HasDefaultValueSql("NOW()");
+            entity.Property(e => e.IsPublic).HasColumnName("ispublic").HasDefaultValue(false);
+            entity.Property(e => e.AdminPin).HasColumnName("adminpin").HasMaxLength(100);
         });
 
         modelBuilder.Entity<BoardElement>(entity =>
