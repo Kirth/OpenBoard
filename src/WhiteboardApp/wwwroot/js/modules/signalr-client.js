@@ -334,6 +334,94 @@ function setupEventHandlers() {
         }
     });
 
+    // Element brought to front handler
+    signalRConnection.on("ElementBroughtToFront", (payload) => {
+        // payload could be { elementId, z } OR (legacy) just elementId
+        try {
+            console.log('[DEBUG] ElementBroughtToFront received:', payload);
+            const elementId = typeof payload === 'string' ? payload : payload.elementId;
+            const z = typeof payload === 'object' && payload && 'z' in payload ? payload.z : null;
+
+            const el = dependencies.elements?.get(elementId);
+            if (!el) {
+                console.warn('[DEBUG] Element not found for bring to front:', elementId);
+                return;
+            }
+
+            console.log('[DEBUG] Element before z update:', {id: elementId, oldZ: el.z, newZ: z});
+
+            if (z != null) {
+                el.z = z;                // canonical z from server
+                el.data = el.data || {};
+                el.data.z = z;
+                console.log('[DEBUG] Used server-provided z:', z);
+            } else {
+                // Fallback (not ideal): bump locally with a monotonic counter
+                // WARNING: only safe if server makes the same decision and broadcasts the same z later.
+                const maxZ = Math.max(0, ...Array.from(dependencies.elements.values()).map(e => e.z ?? e.data?.z ?? 0));
+                el.z = maxZ + 1;
+                el.data = el.data || {};
+                el.data.z = el.z;
+                console.log('[DEBUG] Computed fallback z:', el.z, 'from maxZ:', maxZ);
+            }
+
+            dependencies.redrawCanvas?.();
+            console.log(`Element ${elementId} brought to front (z=${el.z})`);
+        } catch (err) {
+            console.error('ElementBroughtToFront handler error', err);
+        }
+    });
+
+    signalRConnection.on("ElementSentToBack", (payload) => {
+        try {
+            const elementId = typeof payload === 'string' ? payload : payload.elementId;
+            const z = typeof payload === 'object' && payload && 'z' in payload ? payload.z : null;
+
+            const el = dependencies.elements?.get(elementId);
+            if (!el) return;
+
+            if (z != null) {
+                el.z = z;
+                el.data = el.data || {};
+                el.data.z = z;
+            } else {
+                // Fallback: compute min z and go below
+                const minZ = Math.min(0, ...Array.from(dependencies.elements.values()).map(e => e.z ?? e.data?.z ?? 0));
+                el.z = minZ - 1;
+                el.data = el.data || {};
+                el.data.z = el.z;
+            }
+
+            dependencies.redrawCanvas?.();
+            console.log(`Element ${elementId} sent to back (z=${el.z})`);
+        } catch (err) {
+            console.error('ElementSentToBack handler error', err);
+        }
+    });
+
+    // (Preferred) Server sends the full order to make all clients consistent
+    // payload: { order: [elementIdLowestZ, ..., elementIdHighestZ] }
+    signalRConnection.on("ElementsOrderUpdated", (payload) => {
+        try {
+            if (!payload || !Array.isArray(payload.order)) return;
+            const order = payload.order;
+            // Assign 0..N-1 as z based on order; or use provided z array if included.
+            for (let i = 0; i < order.length; i++) {
+                const id = order[i];
+                const el = dependencies.elements?.get(id);
+                if (el) {
+                    el.z = i;
+                    el.data = el.data || {};
+                    el.data.z = i;
+                }
+            }
+            dependencies.redrawCanvas?.();
+            console.log('[ElementsOrderUpdated] applied order of', order.length, 'elements');
+        } catch (err) {
+            console.error('ElementsOrderUpdated handler error', err);
+        }
+    });
+
     // Connection events
     signalRConnection.onreconnecting(() => {
         console.log("SignalR reconnecting...");
@@ -413,6 +501,34 @@ async function loadExistingElements(boardId) {
         // Update minimap
         if (dependencies.updateMinimapImmediate) {
             dependencies.updateMinimapImmediate();
+        }
+
+        // Migrate existing elements to have z-index (for elements loaded from server without z)
+        if (dependencies.elements) {
+            let migrated = 0;
+            for (const [id, element] of dependencies.elements) {
+                if (element.z === undefined) {
+                    element.z = 0;
+                    migrated++;
+                }
+                if (element.createdAt === undefined) {
+                    element.createdAt = Date.now() + migrated; // spread them out slightly
+                }
+                // Also ensure data.z is set
+                if (element.data && element.data.z === undefined) {
+                    element.data.z = element.z;
+                }
+            }
+            if (migrated > 0) {
+                console.log(`[z-migration] Updated ${migrated} loaded elements with z-index`);
+                // Force redraw to apply new z-order
+                setTimeout(() => {
+                    if (dependencies.redrawCanvas) {
+                        dependencies.redrawCanvas();
+                        console.log('[z-migration] Forced redraw after z-index migration');
+                    }
+                }, 50);
+            }
         }
 
     } catch (error) {

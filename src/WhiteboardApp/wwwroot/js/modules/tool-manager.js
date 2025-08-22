@@ -339,6 +339,32 @@ export function handleKeyDown(event) {
                     break;
             }
         }
+
+        // Zoom controls (without Ctrl/Cmd)
+        if (!event.ctrlKey && !event.metaKey) {
+            switch (event.key) {
+                case '-':
+                case '_':
+                    event.preventDefault();
+                    if (dependencies.zoomOut) {
+                        dependencies.zoomOut();
+                    }
+                    break;
+                case '+':
+                case '=':
+                    event.preventDefault();
+                    if (dependencies.zoomIn) {
+                        dependencies.zoomIn();
+                    }
+                    break;
+                case '0':
+                    event.preventDefault();
+                    if (dependencies.resetZoom) {
+                        dependencies.resetZoom();
+                    }
+                    break;
+            }
+        }
     } catch (error) {
         console.error('Error in handleKeyDown:', error);
     }
@@ -370,7 +396,7 @@ export function startShape(shapeType, x, y) {
         dependencies.startX = x;
         dependencies.startY = y;
 
-        console.log(`Started drawing ${shapeType} at (${x}, ${y})`);
+        // console.log(`Started drawing ${shapeType} at (${x}, ${y})`);
         return true;
     } catch (error) {
         console.error('Failed to start shape:', error);
@@ -380,15 +406,22 @@ export function startShape(shapeType, x, y) {
 
 export function updateShape(shapeType, startX, startY, currentX, currentY) {
     try {
-        if (!dependencies.tempCtx || !dependencies.tempCanvas) return;
+        if (!dependencies.tempCtx || !dependencies.tempCanvas) {
+            console.log('Missing temp canvas dependencies');
+            return;
+        }
 
         // Clear temporary canvas
         dependencies.tempCtx.clearRect(0, 0, dependencies.tempCanvas.width, dependencies.tempCanvas.height);
+        
+        // Save context state
+        dependencies.tempCtx.save();
 
-        // Apply viewport transformation
-        if (dependencies.applyViewportTransform) {
-            dependencies.applyViewportTransform();
-        }
+        // Apply viewport transformation to temp canvas
+        // Get viewport values directly from viewport manager 
+        const viewportInfo = dependencies.getViewportInfo ? dependencies.getViewportInfo() : { viewportX: 0, viewportY: 0, zoomLevel: 1 };
+        dependencies.tempCtx.translate(-viewportInfo.viewportX, -viewportInfo.viewportY);
+        dependencies.tempCtx.scale(viewportInfo.zoomLevel, viewportInfo.zoomLevel);
 
         // Set drawing style
         dependencies.tempCtx.strokeStyle = '#000000';
@@ -446,10 +479,8 @@ export function updateShape(shapeType, startX, startY, currentX, currentY) {
                 break;
         }
 
-        // Reset transformation
-        if (dependencies.resetCanvasTransform) {
-            dependencies.resetCanvasTransform();
-        }
+        // Restore context state
+        dependencies.tempCtx.restore();
 
     } catch (error) {
         console.error('Failed to update shape:', error);
@@ -472,7 +503,7 @@ export function finishShape() {
             dependencies.redrawCanvas();
         }
 
-        console.log('Finished drawing shape');
+        // console.log('Finished drawing shape');
         return true;
     } catch (error) {
         console.error('Failed to finish shape:', error);
@@ -487,7 +518,7 @@ export function startLine(x, y) {
         dependencies.startX = x;
         dependencies.startY = y;
 
-        console.log(`Started drawing line at (${x}, ${y})`);
+        // console.log(`Started drawing line at (${x}, ${y})`);
         return true;
     } catch (error) {
         console.error('Failed to start line:', error);
@@ -502,7 +533,8 @@ export function updateLine(startX, startY, currentX, currentY) {
         // Clear temporary canvas
         dependencies.tempCtx.clearRect(0, 0, dependencies.tempCanvas.width, dependencies.tempCanvas.height);
 
-        // Apply viewport transformation
+        // Save context and apply viewport transformation
+        dependencies.tempCtx.save();
         if (dependencies.applyViewportTransform) {
             dependencies.applyViewportTransform();
         }
@@ -527,10 +559,8 @@ export function updateLine(startX, startY, currentX, currentY) {
         dependencies.tempCtx.lineTo(endX, endY);
         dependencies.tempCtx.stroke();
 
-        // Reset transformation
-        if (dependencies.resetCanvasTransform) {
-            dependencies.resetCanvasTransform();
-        }
+        // Restore context state
+        dependencies.tempCtx.restore();
 
     } catch (error) {
         console.error('Failed to update line:', error);
@@ -606,7 +636,8 @@ export function drawLine(x, y) {
         // Add point to current path
         currentPath.push({ x, y });
 
-        // Apply viewport transformation for drawing
+        // Save context and apply viewport transformation for drawing
+        dependencies.ctx.save();
         dependencies.applyViewportTransform();
 
         // Draw line segment
@@ -623,8 +654,8 @@ export function drawLine(x, y) {
             dependencies.ctx.stroke();
         }
 
-        // Reset canvas transformation
-        dependencies.resetCanvasTransform();
+        // Restore canvas transformation
+        dependencies.ctx.restore();
 
         return true;
     } catch (error) {

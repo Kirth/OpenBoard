@@ -33,7 +33,7 @@ let maxUndoSteps = 50;
 let isUndoRedoOperation = false;
 
 // Constants
-const LINE_SELECTION_TOLERANCE = 8;
+const LINE_TOLERANCE_PX = 8; // constant in *screen* pixels
 
 // Dependencies that will be injected from other modules
 let dependencies = {
@@ -41,9 +41,9 @@ let dependencies = {
     ctx: null,
     tempCanvas: null,
     tempCtx: null,
-    viewportX: 0,
-    viewportY: 0,
-    zoomLevel: 1,
+    getViewportX: null,
+    getViewportY: null,
+    getZoomLevel: null,
     screenToWorld: null,
     worldToScreen: null,
     redrawCanvas: null,
@@ -79,6 +79,8 @@ export class ElementFactory {
             y: y,
             width: 200,
             height: 150,
+            z: 0,
+            createdAt: Date.now(),
             data: {
                 content: content,
                 color: color,
@@ -96,6 +98,8 @@ export class ElementFactory {
             y: y,
             width: Math.max(content.length * fontSize * 0.6, 100),
             height: fontSize * 1.2,
+            z: 0,
+            createdAt: Date.now(),
             data: {
                 content: content,
                 fontSize: fontSize,
@@ -114,6 +118,8 @@ export class ElementFactory {
             y: y,
             width: width,
             height: height,
+            z: 0,
+            createdAt: Date.now(),
             data: {
                 color: style.color || '#000000',
                 fillColor: style.fillColor || 'transparent',
@@ -130,6 +136,8 @@ export class ElementFactory {
             y: y1,
             width: x2 - x1,
             height: y2 - y1,
+            z: 0,
+            createdAt: Date.now(),
             data: {
                 color: style.color || '#000000',
                 strokeWidth: style.strokeWidth || 2
@@ -145,6 +153,8 @@ export class ElementFactory {
             y: y,
             width: width,
             height: height,
+            z: 0,
+            createdAt: Date.now(),
             data: {
                 imageData: imageData
             }
@@ -160,6 +170,8 @@ export class ElementFactory {
             y: bounds.minY,
             width: bounds.maxX - bounds.minX,
             height: bounds.maxY - bounds.minY,
+            z: 0,
+            createdAt: Date.now(),
             data: {
                 path: path,
                 color: style.color || '#000000',
@@ -369,6 +381,7 @@ export class EditorManager {
 
         const rect = dependencies.canvas.getBoundingClientRect();
         const screenPos = dependencies.worldToScreen(this.element.x, this.element.y);
+        const z = dependencies.getZoomLevel ? dependencies.getZoomLevel() : 1;
         
         this.editInput = document.createElement('textarea');
         this.editInput.style.position = 'absolute';
@@ -382,17 +395,17 @@ export class EditorManager {
         if (elementType === 'StickyNote') {
             this.editInput.style.left = (rect.left + screenPos.x + 10) + 'px';
             this.editInput.style.top = (rect.top + screenPos.y + 10) + 'px';
-            this.editInput.style.width = (this.element.width * dependencies.zoomLevel - 20) + 'px';
-            this.editInput.style.height = (this.element.height * dependencies.zoomLevel - 20) + 'px';
-            this.editInput.style.fontSize = ((this.element.data.fontSize || 14) * dependencies.zoomLevel) + 'px';
+            this.editInput.style.width = (this.element.width * z - 20) + 'px';
+            this.editInput.style.height = (this.element.height * z - 20) + 'px';
+            this.editInput.style.fontSize = ((this.element.data.fontSize || 14) * z) + 'px';
             this.editInput.style.fontFamily = 'Arial';
             this.editInput.style.backgroundColor = this.element.data.color || '#ffeb3b';
         } else if (elementType === 'Text') {
             this.editInput.style.left = (rect.left + screenPos.x) + 'px';
             this.editInput.style.top = (rect.top + screenPos.y) + 'px';
-            this.editInput.style.width = (this.element.width * dependencies.zoomLevel) + 'px';
-            this.editInput.style.height = (this.element.height * dependencies.zoomLevel) + 'px';
-            this.editInput.style.fontSize = ((this.element.data.fontSize || 16) * dependencies.zoomLevel) + 'px';
+            this.editInput.style.width = (this.element.width * z) + 'px';
+            this.editInput.style.height = (this.element.height * z) + 'px';
+            this.editInput.style.fontSize = ((this.element.data.fontSize || 16) * z) + 'px';
             this.editInput.style.fontFamily = this.element.data.fontFamily || 'Arial';
             this.editInput.style.color = this.element.data.color || '#000000';
             this.editInput.style.backgroundColor = 'rgba(255, 255, 255, 0.9)';
@@ -520,7 +533,9 @@ export function drawElement(id, x, y, type, data, width, height) {
         y: y,
         width: width,
         height: height,
-        data: data
+        data: data,
+        z: (data && typeof data.z === 'number') ? data.z : (data && typeof data.zIndex === 'number') ? data.zIndex : 0,
+        createdAt: Date.now()
     };
     
     elements.set(id, element);
@@ -536,11 +551,25 @@ export function drawElement(id, x, y, type, data, width, height) {
 }
 
 export function getElementAtPoint(x, y) {
-    // Search in reverse order to get topmost element
-    const elementArray = Array.from(elements.values()).reverse();
+    // Search by z-order, highest z first (topmost element)
+    const elementArray = Array.from(elements.values()).sort((a, b) => {
+        const za = (a.z ?? a.data?.z ?? 0);
+        const zb = (b.z ?? b.data?.z ?? 0);
+        if (za !== zb) return zb - za; // reverse sort for hit testing
+        // tie-breaker: creation time/id to keep determinism  
+        return (b.createdAt ?? 0) - (a.createdAt ?? 0);
+    });
+    
+    // DEBUG: Log viewport state used for hit testing
+    const vx = dependencies.getViewportX ? dependencies.getViewportX() : dependencies.viewportX;
+    const vy = dependencies.getViewportY ? dependencies.getViewportY() : dependencies.viewportY;
+    const z = dependencies.getZoomLevel ? dependencies.getZoomLevel() : dependencies.zoomLevel;
+    console.log(`[hit-test] using viewport state: vx=${vx?.toFixed?.(1) ?? vx} vy=${vy?.toFixed?.(1) ?? vy} z=${z?.toFixed?.(2) ?? z}`);
     
     for (const element of elementArray) {
-        if (isPointInElement(x, y, element)) {
+        const isHit = isPointInElement(x, y, element);
+        // console.log(`HIT TEST: point(${x.toFixed(1)},${y.toFixed(1)}) vs ${element.type}(${element.x.toFixed(1)},${element.y.toFixed(1)},${element.width}x${element.height}) z=${element.z ?? 0} = ${isHit}`);
+        if (isHit) {
             return element;
         }
     }
@@ -691,13 +720,26 @@ export function sendSelectedToBack() {
 export function isPointInElement(x, y, element) {
     if (!element) return false;
     
+    // Always normalize possible negative sizes
+    const nx1 = Math.min(element.x, element.x + element.width);
+    const ny1 = Math.min(element.y, element.y + element.height);
+    const nx2 = Math.max(element.x, element.x + element.width);
+    const ny2 = Math.max(element.y, element.y + element.height);
+    
     switch (element.type) {
-        case 'Line':
-            return pointToLineDistance(x, y, element.x, element.y, 
-                element.x + element.width, element.y + element.height) <= LINE_SELECTION_TOLERANCE;
+        case 'Line': {
+            // keep visual tolerance constant in screen px, convert to world units
+            const z = dependencies.getZoomLevel ? dependencies.getZoomLevel() : 1;
+            const tolWorld = LINE_TOLERANCE_PX / Math.max(z, 1e-6);
+            return pointToLineDistance(
+                x, y,
+                element.x, element.y,
+                element.x + element.width,
+                element.y + element.height
+            ) <= tolWorld;
+        }
         default:
-            return x >= element.x && x <= element.x + element.width &&
-                   y >= element.y && y <= element.y + element.height;
+            return x >= nx1 && x <= nx2 && y >= ny1 && y <= ny2;
     }
 }
 
@@ -731,8 +773,12 @@ export function isElementResizable(element) {
 // Resize handles and dragging
 export function drawResizeHandles(selectionRect) {
     if (!dependencies.ctx) return;
-    
+    const ctx = dependencies.ctx;
     const handleSize = 8;
+    ctx.save();
+    // draw in pure screen px; canvas-manager restores to this baseline before UI, but be robust
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    
     const handles = [
         { x: selectionRect.x, y: selectionRect.y }, // Top-left
         { x: selectionRect.x + selectionRect.width, y: selectionRect.y }, // Top-right
@@ -744,14 +790,15 @@ export function drawResizeHandles(selectionRect) {
         { x: selectionRect.x + selectionRect.width, y: selectionRect.y + selectionRect.height / 2 } // Right-center
     ];
     
-    dependencies.ctx.fillStyle = '#ffffff';
-    dependencies.ctx.strokeStyle = '#007bff';
-    dependencies.ctx.lineWidth = 1;
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = '#007bff';
+    ctx.lineWidth = 1;
     
     for (const handle of handles) {
-        dependencies.ctx.fillRect(handle.x - handleSize / 2, handle.y - handleSize / 2, handleSize, handleSize);
-        dependencies.ctx.strokeRect(handle.x - handleSize / 2, handle.y - handleSize / 2, handleSize, handleSize);
+        ctx.fillRect(handle.x - handleSize / 2, handle.y - handleSize / 2, handleSize, handleSize);
+        ctx.strokeRect(handle.x - handleSize / 2, handle.y - handleSize / 2, handleSize, handleSize);
     }
+    ctx.restore();
 }
 
 // Copy/paste operations
@@ -938,9 +985,49 @@ export function getElementById(id) {
     return elements.get(id);
 }
 
+// Migrate existing elements to have z-index and createdAt
+function migrateExistingElements() {
+    let migrated = 0;
+    for (const [id, element] of elements) {
+        if (element.z === undefined) {
+            element.z = 0;
+            migrated++;
+        }
+        if (element.createdAt === undefined) {
+            element.createdAt = Date.now() + migrated; // spread them out slightly
+            migrated++;
+        }
+        // Also ensure data.z is set
+        if (element.data && element.data.z === undefined) {
+            element.data.z = element.z;
+        }
+    }
+    if (migrated > 0) {
+        console.log(`[z-migration] Updated ${migrated/2} existing elements with z-index and createdAt`);
+        // Force redraw
+        if (dependencies.redrawCanvas) {
+            dependencies.redrawCanvas();
+        }
+    }
+}
+
+// Manual migration function for debugging
+export function forceMigrateElements() {
+    console.log('[debug] Force migrating elements...');
+    migrateExistingElements();
+    console.log('[debug] Current elements:', Array.from(elements.values()).map(e => ({
+        id: e.id.substring(0, 8),
+        type: e.type,
+        z: e.z,
+        createdAt: e.createdAt
+    })));
+}
+
 // Initialize the module
 export function init() {
     console.log('Element Factory module loaded');
+    // Migrate any existing elements to have z-index
+    setTimeout(migrateExistingElements, 100); // delay to ensure all elements are loaded
 }
 
 // Backward compatibility - expose to window
@@ -971,4 +1058,5 @@ if (typeof window !== 'undefined') {
     window.stopEditingStickyNote = stopEditingStickyNote;
     window.startEditingTextElement = startEditingTextElement;
     window.stopEditingTextElement = stopEditingTextElement;
+    window.forceMigrateElements = forceMigrateElements;
 }

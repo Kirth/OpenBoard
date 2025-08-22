@@ -1,772 +1,795 @@
-// Canvas Manager Module - Handles all canvas operations and rendering
-// This module manages the main drawing canvas, temporary canvas for previews,
-// coordinate transformations, and basic rendering operations
 
-// Import dependencies (to be connected with other modules)
-// import { elements, selectedElementId, getElementAtPoint } from './element-factory.js';
-// import { viewportX, viewportY, zoomLevel } from './viewport-manager.js';
+// Canvas Manager Module - corrected
 
-// Core canvas elements
 let canvas = null;
 let ctx = null;
 let tempCanvas = null;
 let tempCtx = null;
 
-// Viewport state (will be managed by viewport-manager eventually)
+// Local fallbacks; real values should come from dependency getters
 let viewportX = 0;
 let viewportY = 0;
 let zoomLevel = 1;
 
-// Dependencies that will be injected from other modules
 let dependencies = {
-    elements: null, // Map of elements
-    selectedElementId: null,
-    getElementAtPoint: null,
-    highlightElement: null,
-    clearSelection: null,
-    drawResizeHandles: null,
-    drawLineEndpointHandles: null,
-    drawCollaborativeSelections: null,
-    cursors: null,
-    editorManager: null,
-    minimapCtx: null
+  elements: null,                    // Map<string, Element>
+  getSelectedElementId: null,        // () => string | null
+  getElementAtPoint: null,           // (x,y) => Element | null (screen-space)
+  drawResizeHandles: null,           // (screenRect) => void
+  drawLineEndpointHandles: null,     // (element) => void
+  drawCollaborativeSelections: null, // () => void
+  cursors: null,                     // Map<connectionId, {x,y,color,userName}> (world)
+  editorManager: null,               // optional
+  minimapCtx: null,                  // optional
+  getViewportX: null,                // () => number
+  getViewportY: null,                // () => number
+  getZoomLevel: null,                // () => number
+  requestRedraw: null,               // optional: () => void
+  canvasContainer: null,             // HTMLElement used for measuring size
 };
 
-// Set dependencies from other modules
+let canvasContainer = null;
+let ro = null;
+
 export function setDependencies(deps) {
-    Object.assign(dependencies, deps);
+  Object.assign(dependencies, deps);
+  canvasContainer = deps.canvasContainer ?? null;
 }
 
-// Initialize the canvas and set up basic properties
+// --- sizing / DPR helpers ---------------------------------------------------
+
+function resetForDPR(context, dpr) {
+  // 1 CSS px unit in ctx after this baseline
+  context.setTransform(1, 0, 0, 1, 0, 0);
+  context.scale(dpr, dpr);
+}
+
+// Attach/detach ResizeObserver
+export function attachResizeObserver() {
+  const target = canvasContainer || canvas?.parentElement || canvas;
+  if (!target || ro) return;
+  ro = new ResizeObserver(() => resizeCanvas());
+  ro.observe(target);
+}
+
+export function detachResizeObserver() {
+  if (!ro) return;
+  ro.disconnect();
+  ro = null;
+}
+
+// --- Init / Resize ----------------------------------------------------------
+
 export function initializeCanvas() {
-    try {
-        canvas = document.getElementById('whiteboard-canvas');
-        if (!canvas) {
-            throw new Error('Canvas element not found');
-        }
+  try {
+    canvas = document.getElementById('whiteboard-canvas');
+    if (!canvas) throw new Error('Canvas element not found');
 
-        ctx = canvas.getContext('2d');
-        if (!ctx) {
-            throw new Error('Could not get 2D rendering context');
-        }
+    ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Could not get 2D rendering context');
 
-        // Set up canvas properties
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.imageSmoothingEnabled = true;
+    // Canvas should fill its container via CSS; JS only controls bitmap size.
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    canvas.style.display = 'block';
 
-        // Create temporary canvas for shape previews
-        createTempCanvas();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.imageSmoothingEnabled = true;
 
-        // Set initial size
-        resizeCanvas();
+    createTempCanvas();
+    resizeCanvas();
+    attachResizeObserver();
 
-        console.log('Canvas initialized successfully');
-        return true;
-    } catch (error) {
-        console.error('Failed to initialize canvas:', error);
-        return false;
-    }
+    // React to DPR changes or viewport resizes
+    window.addEventListener('resize', resizeCanvas, { passive: true });
+
+    console.log('Canvas initialized');
+    return true;
+  } catch (e) {
+    console.error('Failed to initialize canvas:', e);
+    return false;
+  }
 }
 
-// Create temporary canvas for drawing previews
 function createTempCanvas() {
-    try {
-        tempCanvas = document.createElement('canvas');
-        tempCtx = tempCanvas.getContext('2d');
-        
-        if (!tempCtx) {
-            throw new Error('Could not create temporary canvas context');
-        }
-
-        tempCtx.lineCap = 'round';
-        tempCtx.lineJoin = 'round';
-        tempCtx.imageSmoothingEnabled = true;
-
-        console.log('Temporary canvas created');
-    } catch (error) {
-        console.error('Failed to create temporary canvas:', error);
-    }
+  tempCanvas = document.createElement('canvas');
+  tempCtx = tempCanvas.getContext('2d');
+  if (!tempCtx) {
+    console.error('Could not create temporary canvas context');
+    return;
+  }
+  
+  // Position temporary canvas on top of main canvas
+  tempCanvas.style.position = 'absolute';
+  tempCanvas.style.top = '0';
+  tempCanvas.style.left = '0';
+  tempCanvas.style.pointerEvents = 'none'; // Allow mouse events to pass through
+  tempCanvas.style.zIndex = '10'; // Above main canvas
+  
+  tempCtx.lineCap = 'round';
+  tempCtx.lineJoin = 'round';
+  tempCtx.imageSmoothingEnabled = true;
+  
+  // Add to DOM - append to the canvas container
+  const canvasContainer = canvas?.parentElement;
+  if (canvasContainer) {
+    canvasContainer.appendChild(tempCanvas);
+  } else {
+    console.warn('Could not find canvas container for temporary canvas');
+  }
 }
 
-// Handle canvas resizing with proper device pixel ratio support
 export function resizeCanvas() {
-    if (!canvas || !ctx) {
-        console.warn('Canvas not initialized');
-        return;
+  if (!canvas || !ctx) return;
+
+  try {
+    const target = canvasContainer || canvas?.parentElement || canvas;
+
+    const rect = target.getBoundingClientRect();
+    console.log('[resize] dpr=%o rect=%o canvas={w:%o,h:%o}', window.devicePixelRatio, rect, canvas.width, canvas.height);
+
+    const dpr = window.devicePixelRatio || 1;
+    const cssW = Math.max(0, rect.width);
+    const cssH = Math.max(0, rect.height);
+
+    if (cssW === 0 || cssH === 0) return; // nothing to do yet
+
+    // Internal bitmap size in device pixels
+    const devW = Math.max(1, Math.round(cssW * dpr));
+    const devH = Math.max(1, Math.round(cssH * dpr));
+
+    if (canvas.width !== devW || canvas.height !== devH) {
+      canvas.width = devW;
+      canvas.height = devH;
     }
 
-    try {
-        const rect = canvas.getBoundingClientRect();
-        const dpr = window.devicePixelRatio || 1;
+    // Keep CSS fill; do NOT set explicit px, avoid feedback loops
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
 
-        // Set the internal size to the display size * device pixel ratio
-        canvas.width = rect.width * dpr;
-        canvas.height = rect.height * dpr;
+    // DPR baseline (1 unit == 1 CSS px)
+    resetForDPR(ctx, dpr);
 
-        // Scale the context to match the device pixel ratio
-        ctx.scale(dpr, dpr);
-
-        // Set the CSS size to the display size
-        canvas.style.width = rect.width + 'px';
-        canvas.style.height = rect.height + 'px';
-
-        // Update temp canvas size
-        if (tempCanvas && tempCtx) {
-            tempCanvas.width = canvas.width;
-            tempCanvas.height = canvas.height;
-            tempCtx.scale(dpr, dpr);
-        }
-
-        // Restore canvas properties after resize
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.imageSmoothingEnabled = true;
-
-        if (tempCtx) {
-            tempCtx.lineCap = 'round';
-            tempCtx.lineJoin = 'round';
-            tempCtx.imageSmoothingEnabled = true;
-        }
-
-        console.log(`Canvas resized to ${rect.width}x${rect.height} (${canvas.width}x${canvas.height} internal)`);
-    } catch (error) {
-        console.error('Failed to resize canvas:', error);
+    // Mirror temp canvas
+    if (tempCanvas && tempCtx) {
+      if (tempCanvas.width !== devW) tempCanvas.width = devW;
+      if (tempCanvas.height !== devH) tempCanvas.height = devH;
+      resetForDPR(tempCtx, dpr);
+      tempCtx.lineCap = 'round';
+      tempCtx.lineJoin = 'round';
+      tempCtx.imageSmoothingEnabled = true;
     }
+
+    // Restore drawing props after setTransform
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.imageSmoothingEnabled = true;
+
+    // Optional: trigger redraw
+    dependencies.requestRedraw?.();
+
+    // Debug:
+    // console.log(`Canvas: css ${cssW}x${cssH}, dev ${devW}x${devH}, dpr ${dpr}`);
+  } catch (e) {
+    console.error('Failed to resize canvas:', e);
+  }
 }
 
-// Main canvas redraw function
-export function redrawCanvas() {
-    if (!canvas || !ctx) {
-        console.warn('Canvas not initialized');
-        return;
-    }
+// --- Coordinate conversions -------------------------------------------------
 
-    try {
-        // Clear the canvas
-        clearCanvas();
-
-        // Apply viewport transformation
-        applyViewportTransform();
-
-        // Render all elements
-        if (dependencies.elements && dependencies.elements instanceof Map) {
-            for (const [elementId, element] of dependencies.elements) {
-                renderExistingElement(element);
-            }
-        }
-
-        // Reset transformation for UI elements
-        resetCanvasTransform();
-
-        // Draw selection handles and collaborative selections
-        drawUIElements();
-
-        // Draw cursors
-        drawCursors();
-
-    } catch (error) {
-        console.error('Failed to redraw canvas:', error);
-    }
+function currentViewportX() {
+  const value = dependencies.getViewportX ? dependencies.getViewportX() : viewportX;
+  return value;
+}
+function currentViewportY() {
+  const value = dependencies.getViewportY ? dependencies.getViewportY() : viewportY;
+  return value;
+}
+function currentZoom() {
+  const value = dependencies.getZoomLevel ? dependencies.getZoomLevel() : zoomLevel;
+  return value;
 }
 
-// Apply viewport transformation (translate and scale)
-export function applyViewportTransform() {
-    if (!ctx) return;
-
-    try {
-        ctx.save();
-        // Use viewport manager's values instead of local ones
-        const currentViewportX = dependencies.getViewportX ? dependencies.getViewportX() : viewportX;
-        const currentViewportY = dependencies.getViewportY ? dependencies.getViewportY() : viewportY;
-        const currentZoomLevel = dependencies.getZoomLevel ? dependencies.getZoomLevel() : zoomLevel;
-        
-        ctx.translate(-currentViewportX, -currentViewportY);
-        ctx.scale(currentZoomLevel, currentZoomLevel);
-    } catch (error) {
-        console.error('Failed to apply viewport transform:', error);
-    }
+// world -> screen (CSS px), aligned with draw transform: translate(-vx,-vy) then scale(z)
+export function worldToScreen(wx, wy) {
+  const vx = currentViewportX();
+  const vy = currentViewportY();
+  const z = currentZoom();
+  return { x: (wx - vx) * z, y: (wy - vy) * z };
 }
 
-// Reset canvas transformation
-export function resetCanvasTransform() {
-    if (!ctx) return;
-
-    try {
-        ctx.restore();
-    } catch (error) {
-        console.error('Failed to reset canvas transform:', error);
-    }
+// screen (CSS px) -> world
+export function screenToWorld(sx, sy) {
+  const vx = currentViewportX();
+  const vy = currentViewportY();
+  const z = currentZoom();
+  
+  // Debug coordinate conversion issues at different zoom levels
+  // if (sx < 1000 && sy < 1000 && (z < 0.8 || Math.abs(vx) > 10 || Math.abs(vy) > 10)) {
+  //   console.log(`screenToWorld: (${sx},${sy}) zoom:${(z*100).toFixed(0)}% viewport:(${vx.toFixed(1)},${vy.toFixed(1)}) -> (${(sx/z+vx).toFixed(1)},${(sy/z+vy).toFixed(1)})`);
+  // }
+  
+  return { x: sx / z + vx, y: sy / z + vy };
 }
 
-// Convert screen coordinates to world coordinates
-export function screenToWorld(screenX, screenY) {
-    try {
-        const currentViewportX = dependencies.getViewportX ? dependencies.getViewportX() : viewportX;
-        const currentViewportY = dependencies.getViewportY ? dependencies.getViewportY() : viewportY;
-        const currentZoomLevel = dependencies.getZoomLevel ? dependencies.getZoomLevel() : zoomLevel;
-        
-        return {
-            x: (screenX + currentViewportX) / currentZoomLevel,
-            y: (screenY + currentViewportY) / currentZoomLevel
-        };
-    } catch (error) {
-        console.error('Failed to convert screen to world coordinates:', error);
-        return { x: screenX, y: screenY };
-    }
-}
+// --- Drawing lifecycle ------------------------------------------------------
 
-// Convert world coordinates to screen coordinates
-export function worldToScreen(worldX, worldY) {
-    try {
-        const currentViewportX = dependencies.getViewportX ? dependencies.getViewportX() : viewportX;
-        const currentViewportY = dependencies.getViewportY ? dependencies.getViewportY() : viewportY;
-        const currentZoomLevel = dependencies.getZoomLevel ? dependencies.getZoomLevel() : zoomLevel;
-        
-        return {
-            x: (worldX * currentZoomLevel) - currentViewportX,
-            y: (worldY * currentZoomLevel) - currentViewportY
-        };
-    } catch (error) {
-        console.error('Failed to convert world to screen coordinates:', error);
-        return { x: worldX, y: worldY };
-    }
-}
-
-// Clear the canvas
 export function clearCanvas() {
-    if (!ctx || !canvas) return;
-
-    try {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-    } catch (error) {
-        console.error('Failed to clear canvas:', error);
-    }
+  if (!ctx || !canvas) return;
+  // Clear in device space to avoid transform surprises
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.restore();
 }
 
-// Render an existing element to the canvas
+export function redrawCanvas() {
+  if (!canvas || !ctx) return;
+
+  try {
+    // console.log('[redraw] vx=%o vy=%o z=%o', dependencies.getViewportX?.(), dependencies.getViewportY?.(), dependencies.getZoomLevel?.());
+    
+    // 1) Clear
+    clearCanvas();
+
+    // 2) Draw world-space elements under world transform
+    ctx.save();               // save DPR baseline
+    applyViewportTransform(); // no save/restore inside
+    renderAllElements();
+    ctx.restore();            // back to DPR baseline
+
+    // 3) Draw screen-space overlays/UI
+    drawUIElements();
+    drawCursors();
+  } catch (e) {
+    console.error('Failed to redraw canvas:', e);
+  }
+}
+
+export function applyViewportTransform() {
+  const vx = currentViewportX();
+  const vy = currentViewportY();
+  const z = currentZoom();
+  ctx.translate(-vx, -vy);
+  ctx.scale(z, z);
+}
+
+// --- Element rendering ------------------------------------------------------
+
+function renderAllElements() {
+  const els = dependencies.elements;
+  if (!(els instanceof Map)) return;
+  // Sort by z (undefined -> 0). Stable enough for our needs.
+  const ordered = Array.from(els.values()).sort((a, b) => {
+    const za = (a.z ?? a.data?.z ?? 0);
+    const zb = (b.z ?? b.data?.z ?? 0);
+    if (za !== zb) return za - zb;
+    // tie-breaker: creation time/id to keep determinism
+    return (a.createdAt ?? 0) - (b.createdAt ?? 0);
+  });
+  for (const element of ordered) {
+    renderExistingElement(element);
+  }
+}
+
 export function renderExistingElement(element) {
-    if (!ctx || !element) return;
-
-    try {
-        ctx.save();
-
-        switch (element.type) {
-            case 'Rectangle':
-            case 'rectangle':
-                renderRectangle(element);
-                break;
-            case 'Shape':
-                // Shape elements can be rectangles, circles, etc.
-                renderShapeElement(element);
-                break;
-            case 'Circle':
-            case 'circle':
-                renderCircle(element);
-                break;
-            case 'Line':
-                renderLine(element);
-                break;
-            case 'Path':
-                renderPath(element);
-                break;
-            case 'Drawing':
-                // Drawing is the same as Path, just a different name from the server
-                renderPath(element);
-                break;
-            case 'triangle':
-                renderTriangle(element);
-                break;
-            case 'diamond':
-                renderDiamond(element);
-                break;
-            case 'ellipse':
-                renderEllipse(element);
-                break;
-            case 'star':
-                renderStar(element);
-                break;
-            case 'StickyNote':
-                renderStickyNote(element);
-                break;
-            case 'Text':
-                renderText(element);
-                break;
-            case 'Image':
-                renderImage(element);
-                break;
-            default:
-                console.warn('Unknown element type:', element.type);
-        }
-
-        ctx.restore();
-    } catch (error) {
-        console.error('Failed to render element:', error);
+  if (!ctx || !element) return;
+  try {
+    ctx.save();
+    switch (element.type) {
+      case 'Rectangle':
+      case 'rectangle': renderRectangle(element); break;
+      case 'Shape': renderShapeElement(element); break;
+      case 'Circle':
+      case 'circle': renderCircle(element); break;
+      case 'Line': renderLine(element); break;
+      case 'Path':
+      case 'Drawing': renderPath(element); break;
+      case 'triangle': renderTriangle(element); break;
+      case 'diamond': renderDiamond(element); break;
+      case 'ellipse': renderEllipse(element); break;
+      case 'star': renderStar(element); break;
+      case 'StickyNote': renderStickyNote(element); break;
+      case 'Text': renderText(element); break;
+      case 'Image': renderImage(element); break;
+      default: console.warn('Unknown element type:', element.type);
     }
+    ctx.restore();
+  } catch (e) {
+    console.error('Failed to render element:', e);
+  }
 }
 
-// Render element to minimap with performance optimizations
+// Minimap: world-space drawing onto a world-space minimap context (caller sets transforms)
 export function renderElementToMinimap(element, minimapCtx) {
-    if (!minimapCtx || !element) return;
+  if (!minimapCtx || !element) return;
+  try {
+    minimapCtx.save();
 
-    try {
-        minimapCtx.save();
+    const stroke = element.data?.strokeColor ?? element.data?.color ?? '#000000';
+    const fill = element.data?.fillColor ?? 'transparent';
+    minimapCtx.strokeStyle = stroke;
+    minimapCtx.fillStyle = fill;
+    minimapCtx.lineWidth = Math.max(1, (element.data?.strokeWidth || 2) * 0.5);
 
-        // Simplified rendering for minimap - basic shapes only
-        minimapCtx.strokeStyle = element.data?.color || '#000000';
-        minimapCtx.fillStyle = element.data?.fillColor || 'transparent';
-        minimapCtx.lineWidth = Math.max(1, (element.data?.strokeWidth || 2) * 0.5);
+    switch (element.type) {
+      case 'Rectangle':
+      case 'rectangle':
+      case 'triangle':
+      case 'diamond':
+      case 'ellipse':
+      case 'star':
+        if (fill !== 'transparent') minimapCtx.fillRect(element.x, element.y, element.width, element.height);
+        minimapCtx.strokeRect(element.x, element.y, element.width, element.height);
+        break;
 
-        switch (element.type) {
-            case 'Rectangle':
-            case 'rectangle':
-            case 'triangle':
-            case 'diamond':
-            case 'ellipse':
-            case 'star':
-                if (element.data?.fillColor && element.data.fillColor !== 'transparent') {
-                    minimapCtx.fillRect(element.x, element.y, element.width, element.height);
-                }
-                minimapCtx.strokeRect(element.x, element.y, element.width, element.height);
-                break;
+      case 'Circle':
+      case 'circle': {
+        minimapCtx.beginPath();
+        const r = Math.min(element.width, element.height) / 2;
+        const cx = element.x + element.width / 2;
+        const cy = element.y + element.height / 2;
+        minimapCtx.arc(cx, cy, r, 0, 2 * Math.PI);
+        if (fill !== 'transparent') minimapCtx.fill();
+        minimapCtx.stroke();
+        break;
+      }
 
-            case 'Circle':
-            case 'circle':
-                minimapCtx.beginPath();
-                const radius = Math.min(element.width, element.height) / 2;
-                const centerX = element.x + element.width / 2;
-                const centerY = element.y + element.height / 2;
-                minimapCtx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
-                if (element.data?.fillColor && element.data.fillColor !== 'transparent') {
-                    minimapCtx.fill();
-                }
-                minimapCtx.stroke();
-                break;
+      case 'Line':
+        minimapCtx.beginPath();
+        minimapCtx.moveTo(element.x, element.y);
+        minimapCtx.lineTo(element.x + element.width, element.y + element.height);
+        minimapCtx.stroke();
+        break;
 
-            case 'Line':
-                minimapCtx.beginPath();
-                minimapCtx.moveTo(element.x, element.y);
-                minimapCtx.lineTo(element.x + element.width, element.y + element.height);
-                minimapCtx.stroke();
-                break;
+      case 'Path':
+      case 'Drawing':
+        minimapCtx.strokeRect(element.x, element.y, element.width, element.height);
+        break;
 
-            case 'Path':
-            case 'Drawing':
-                // Simplified path rendering for minimap - just show bounding box
-                minimapCtx.strokeRect(element.x, element.y, element.width, element.height);
-                break;
+      case 'StickyNote':
+        minimapCtx.fillStyle = element.data?.color || '#ffeb3b';
+        minimapCtx.fillRect(element.x, element.y, element.width, element.height);
+        minimapCtx.strokeStyle = '#fbc02d';
+        minimapCtx.strokeRect(element.x, element.y, element.width, element.height);
+        break;
 
-            case 'StickyNote':
-                minimapCtx.fillStyle = element.data?.color || '#ffeb3b';
-                minimapCtx.fillRect(element.x, element.y, element.width, element.height);
-                minimapCtx.strokeStyle = '#fbc02d';
-                minimapCtx.strokeRect(element.x, element.y, element.width, element.height);
-                break;
+      case 'Text':
+        minimapCtx.fillStyle = '#333333';
+        minimapCtx.fillRect(
+          element.x,
+          element.y,
+          Math.max(element.width, 20),
+          Math.max(element.height, 10)
+        );
+        break;
 
-            case 'Text':
-                // Simple text representation as a small rectangle
-                minimapCtx.fillStyle = '#333333';
-                minimapCtx.fillRect(element.x, element.y, Math.max(element.width, 20), Math.max(element.height, 10));
-                break;
-
-            case 'Image':
-                // Simple image representation as a rectangle
-                minimapCtx.fillStyle = '#e0e0e0';
-                minimapCtx.fillRect(element.x, element.y, element.width, element.height);
-                minimapCtx.strokeStyle = '#bdbdbd';
-                minimapCtx.strokeRect(element.x, element.y, element.width, element.height);
-                break;
-        }
-
-        minimapCtx.restore();
-    } catch (error) {
-        console.error('Failed to render element to minimap:', error);
+      case 'Image':
+        minimapCtx.fillStyle = '#e0e0e0';
+        minimapCtx.fillRect(element.x, element.y, element.width, element.height);
+        minimapCtx.strokeStyle = '#bdbdbd';
+        minimapCtx.strokeRect(element.x, element.y, element.width, element.height);
+        break;
     }
+
+    minimapCtx.restore();
+  } catch (e) {
+    console.error('Failed to render element to minimap:', e);
+  }
 }
 
-// Update canvas cursor
+// --- UI overlays ------------------------------------------------------------
+
 export function updateCanvasCursor(cursorStyle) {
-    if (!canvas) return;
-
-    try {
-        canvas.style.cursor = cursorStyle || 'default';
-    } catch (error) {
-        console.error('Failed to update canvas cursor:', error);
-    }
+  if (!canvas) return;
+  try { canvas.style.cursor = cursorStyle || 'default'; }
+  catch (e) { console.error('Failed to update canvas cursor:', e); }
 }
 
-// Update cursor for resize handles
 export function updateCursorForResizeHandles(x, y) {
-    if (!canvas || !dependencies.getElementAtPoint) return;
-
-    try {
-        const element = dependencies.getElementAtPoint(x, y);
-        if (element && dependencies.selectedElementId === element.id) {
-            // This would need to be implemented based on resize handle logic
-            // For now, just set a resize cursor
-            canvas.style.cursor = 'nw-resize';
-        } else {
-            canvas.style.cursor = 'default';
-        }
-    } catch (error) {
-        console.error('Failed to update cursor for resize handles:', error);
-    }
+  if (!canvas || !dependencies.getElementAtPoint) return;
+  try {
+    // FIXED: Convert screen coordinates to world coordinates before hit testing
+    const worldPos = screenToWorld(x, y);
+    const element = dependencies.getElementAtPoint(worldPos.x, worldPos.y);
+    const selId = dependencies.getSelectedElementId?.() ?? null;
+    canvas.style.cursor = (element && selId && selId === element.id) ? 'nw-resize' : 'default';
+  } catch (e) {
+    console.error('Failed to update cursor for resize handles:', e);
+  }
 }
 
-// Set up image upload functionality
-export function setupImageUpload() {
-    try {
-        const imageInput = document.getElementById('image-upload');
-        if (imageInput) {
-            imageInput.addEventListener('change', handleImageUpload);
-            console.log('Image upload setup complete');
-        } else {
-            console.warn('Image upload input not found');
-        }
-    } catch (error) {
-        console.error('Failed to setup image upload:', error);
-    }
+// Robust screen-space AABB (avoids skew/drift at non-1 zoom)
+function elementScreenAABB(el) {
+  // Use the same worldToScreen conversion that the rest of the system uses
+  const topLeft = worldToScreen(el.x, el.y);
+  const bottomRight = worldToScreen(el.x + el.width, el.y + el.height);
+
+  const left = Math.min(topLeft.x, bottomRight.x);
+  const top = Math.min(topLeft.y, bottomRight.y);
+  const w = Math.abs(bottomRight.x - topLeft.x);
+  const h = Math.abs(bottomRight.y - topLeft.y);
+  
+  return { x: left, y: top, w, h, z: currentZoom() };
 }
 
-// Handle image upload (placeholder - actual implementation would be in element-factory)
-function handleImageUpload(event) {
-    console.log('Image upload triggered:', event);
-    // Implementation would be moved to element-factory module
-}
-
-// Draw UI elements (selection handles, etc.)
 function drawUIElements() {
-    try {
-        const selectedElementId = dependencies.getSelectedElementId ? dependencies.getSelectedElementId() : null;
-        if (selectedElementId && dependencies.elements && dependencies.drawResizeHandles) {
-            const selectedElement = dependencies.elements.get(selectedElementId);
-            if (selectedElement) {
-                const screenPos = worldToScreen(selectedElement.x, selectedElement.y);
-                const selectionRect = {
-                    x: screenPos.x,
-                    y: screenPos.y,
-                    width: selectedElement.width * zoomLevel,
-                    height: selectedElement.height * zoomLevel
-                };
-                dependencies.drawResizeHandles(selectionRect);
-
-                // Draw line endpoint handles if it's a line
-                if (selectedElement.type === 'Line' && dependencies.drawLineEndpointHandles) {
-                    dependencies.drawLineEndpointHandles(selectedElement);
-                }
-            }
+  try {
+    const selId = dependencies.getSelectedElementId?.() ?? null;
+    if (selId && dependencies.elements && dependencies.drawResizeHandles) {
+      const el = dependencies.elements.get(selId);
+      if (el) {
+        // EXPERIMENTAL: Draw resize handles in world space using the same transform as elements
+        ctx.save();
+        applyViewportTransform();
+        
+        // Draw a simple rectangle around the element in world coordinates
+        const sw = el.data?.strokeWidth ?? 2;
+        const inflate = sw * 0.5;
+        
+        ctx.strokeStyle = '#007bff';
+        ctx.lineWidth = 2 / currentZoom(); // Adjust line width for zoom
+        ctx.strokeRect(
+          el.x - inflate, 
+          el.y - inflate, 
+          el.width + 2 * inflate, 
+          el.height + 2 * inflate
+        );
+        
+        // Draw handles as small rectangles in world space
+        const handleSize = 8 / currentZoom(); // Adjust handle size for zoom
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#007bff';
+        ctx.lineWidth = 1 / currentZoom();
+        
+        const handles = [
+          { x: el.x, y: el.y }, // Top-left
+          { x: el.x + el.width, y: el.y }, // Top-right
+          { x: el.x, y: el.y + el.height }, // Bottom-left
+          { x: el.x + el.width, y: el.y + el.height }, // Bottom-right
+          { x: el.x + el.width / 2, y: el.y }, // Top-center
+          { x: el.x + el.width / 2, y: el.y + el.height }, // Bottom-center
+          { x: el.x, y: el.y + el.height / 2 }, // Left-center
+          { x: el.x + el.width, y: el.y + el.height / 2 } // Right-center
+        ];
+        
+        for (const handle of handles) {
+          ctx.fillRect(handle.x - handleSize / 2, handle.y - handleSize / 2, handleSize, handleSize);
+          ctx.strokeRect(handle.x - handleSize / 2, handle.y - handleSize / 2, handleSize, handleSize);
         }
+        
+        // DEBUG: Draw a small cross at the element's stored coordinates
+        ctx.strokeStyle = '#ff0000';
+        ctx.lineWidth = 2 / currentZoom();
+        const crossSize = 10 / currentZoom();
+        ctx.beginPath();
+        ctx.moveTo(el.x - crossSize, el.y);
+        ctx.lineTo(el.x + crossSize, el.y);
+        ctx.moveTo(el.x, el.y - crossSize);
+        ctx.lineTo(el.x, el.y + crossSize);
+        ctx.stroke();
+        
+        ctx.restore();
 
-        // Draw collaborative selections
-        if (dependencies.drawCollaborativeSelections) {
-            dependencies.drawCollaborativeSelections();
+        if (el.type === 'Line' && dependencies.drawLineEndpointHandles) {
+          dependencies.drawLineEndpointHandles(el);
         }
-    } catch (error) {
-        console.error('Failed to draw UI elements:', error);
+      }
     }
+
+    dependencies.drawCollaborativeSelections?.();
+  } catch (e) {
+    console.error('Failed to draw UI elements:', e);
+  }
 }
 
-// Draw cursors
 function drawCursors() {
-    try {
-        if (dependencies.cursors && dependencies.cursors instanceof Map) {
-            for (const [connectionId, cursor] of dependencies.cursors) {
-                const screenPos = worldToScreen(cursor.x, cursor.y);
-                
-                ctx.save();
-                ctx.fillStyle = cursor.color || '#ff0000';
-                ctx.beginPath();
-                ctx.arc(screenPos.x, screenPos.y, 5, 0, 2 * Math.PI);
-                ctx.fill();
-                
-                // Draw cursor label
-                if (cursor.userName) {
-                    ctx.fillStyle = '#000000';
-                    ctx.font = '12px Arial';
-                    ctx.fillText(cursor.userName, screenPos.x + 10, screenPos.y - 5);
-                }
-                
-                ctx.restore();
-            }
-        }
-    } catch (error) {
-        console.error('Failed to draw cursors:', error);
+  try {
+    const cursors = dependencies.cursors;
+    if (!(cursors instanceof Map)) return;
+
+    for (const [, cursor] of cursors) {
+      const p = worldToScreen(cursor.x, cursor.y);
+      ctx.save();
+      ctx.fillStyle = cursor.color || '#ff0000';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 5, 0, 2 * Math.PI);
+      ctx.fill();
+
+      if (cursor.userName) {
+        ctx.fillStyle = '#000000';
+        ctx.font = '12px Arial';
+        ctx.fillText(cursor.userName, p.x + 10, p.y - 5);
+      }
+      ctx.restore();
     }
+  } catch (e) {
+    console.error('Failed to draw cursors:', e);
+  }
 }
 
-// Rendering functions for different element types
-function renderRectangle(element) {
-    ctx.strokeStyle = element.data?.color || '#000000';
-    ctx.fillStyle = element.data?.fillColor || 'transparent';
-    ctx.lineWidth = element.data?.strokeWidth || 2;
+// --- Renderers --------------------------------------------------------------
 
-    if (element.data?.fillColor && element.data.fillColor !== 'transparent') {
-        ctx.fillRect(element.x, element.y, element.width, element.height);
+function strokeFillFrom(el) {
+  const stroke = el.data?.strokeColor ?? el.data?.color ?? '#000000';
+  const fill = el.data?.fillColor ?? 'transparent';
+  const width = el.data?.strokeWidth ?? 2;
+  return { stroke, fill, width };
+}
+
+function renderRectangle(el) {
+  const { stroke, fill, width } = strokeFillFrom(el);
+  ctx.strokeStyle = stroke;
+  ctx.fillStyle = fill;
+  ctx.lineWidth = width;
+
+  if (fill !== 'transparent') ctx.fillRect(el.x, el.y, el.width, el.height);
+  ctx.strokeRect(el.x, el.y, el.width, el.height);
+}
+
+function renderCircle(el) {
+  const { stroke, fill, width } = strokeFillFrom(el);
+  ctx.strokeStyle = stroke;
+  ctx.fillStyle = fill;
+  ctx.lineWidth = width;
+
+  ctx.beginPath();
+  const r = Math.min(el.width, el.height) / 2;
+  const cx = el.x + el.width / 2;
+  const cy = el.y + el.height / 2;
+  ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+  if (fill !== 'transparent') ctx.fill();
+  ctx.stroke();
+}
+
+function renderShapeElement(el) {
+  const shapeType = el.data?.shapeType || el.data?.type || 'rectangle';
+  switch (shapeType) {
+    case 'rectangle': renderRectangle(el); break;
+    case 'circle': renderCircle(el); break;
+    case 'triangle': renderTriangle(el); break;
+    case 'diamond': renderDiamond(el); break;
+    case 'ellipse': renderEllipse(el); break;
+    case 'star': renderStar(el); break;
+    default: renderRectangle(el);
+  }
+}
+
+function renderLine(el) {
+  const { stroke, width } = strokeFillFrom(el);
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = width;
+
+  ctx.beginPath();
+  ctx.moveTo(el.x, el.y);
+  ctx.lineTo(el.x + el.width, el.y + el.height);
+  ctx.stroke();
+}
+
+function renderPath(el) {
+  const path = el.data?.path;
+  if (!Array.isArray(path) || path.length === 0) return;
+
+  const { stroke, width } = strokeFillFrom(el);
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = width;
+
+  ctx.beginPath();
+  for (let i = 0; i < path.length; i++) {
+    const p = path[i];
+    if (i === 0) ctx.moveTo(p.x, p.y);
+    else ctx.lineTo(p.x, p.y);
+  }
+  ctx.stroke();
+}
+
+function renderStickyNote(el) {
+  const bg = el.data?.color || '#ffeb3b';
+  ctx.fillStyle = bg;
+  ctx.fillRect(el.x, el.y, el.width, el.height);
+
+  ctx.strokeStyle = '#fbc02d';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(el.x, el.y, el.width, el.height);
+
+  if (el.data?.content && !el.data?.isEditing) {
+    ctx.fillStyle = '#333333';
+    const fontSize = el.data?.fontSize || 14;
+    ctx.font = `${fontSize}px Arial`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+
+    const lines = String(el.data.content).split('\n');
+    const lh = fontSize * 1.2;
+    for (let i = 0; i < lines.length; i++) {
+      ctx.fillText(lines[i], el.x + 10, el.y + 10 + i * lh);
     }
-    ctx.strokeRect(element.x, element.y, element.width, element.height);
+  }
 }
 
-function renderCircle(element) {
-    ctx.strokeStyle = element.data?.color || '#000000';
-    ctx.fillStyle = element.data?.fillColor || 'transparent';
-    ctx.lineWidth = element.data?.strokeWidth || 2;
+function renderTriangle(el) {
+  const { stroke, fill, width } = strokeFillFrom(el);
+  ctx.strokeStyle = stroke;
+  ctx.fillStyle = fill;
+  ctx.lineWidth = width;
 
-    ctx.beginPath();
-    const radius = Math.min(element.width, element.height) / 2;
-    const centerX = element.x + element.width / 2;
-    const centerY = element.y + element.height / 2;
-    ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
-    
-    if (element.data?.fillColor && element.data.fillColor !== 'transparent') {
-        ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(el.x + el.width / 2, el.y);
+  ctx.lineTo(el.x + el.width, el.y + el.height);
+  ctx.lineTo(el.x, el.y + el.height);
+  ctx.closePath();
+  if (fill !== 'transparent') ctx.fill();
+  ctx.stroke();
+}
+
+function renderDiamond(el) {
+  const { stroke, fill, width } = strokeFillFrom(el);
+  ctx.strokeStyle = stroke;
+  ctx.fillStyle = fill;
+  ctx.lineWidth = width;
+
+  ctx.beginPath();
+  ctx.moveTo(el.x + el.width / 2, el.y);
+  ctx.lineTo(el.x + el.width, el.y + el.height / 2);
+  ctx.lineTo(el.x + el.width / 2, el.y + el.height);
+  ctx.lineTo(el.x, el.y + el.height / 2);
+  ctx.closePath();
+  if (fill !== 'transparent') ctx.fill();
+  ctx.stroke();
+}
+
+function renderEllipse(el) {
+  const { stroke, fill, width } = strokeFillFrom(el);
+  ctx.strokeStyle = stroke;
+  ctx.fillStyle = fill;
+  ctx.lineWidth = width;
+
+  const cx = el.x + el.width / 2;
+  const cy = el.y + el.height / 2;
+  const rx = Math.abs(el.width / 2);
+  const ry = Math.abs(el.height / 2);
+
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, 2 * Math.PI);
+  if (fill !== 'transparent') ctx.fill();
+  ctx.stroke();
+}
+
+function renderStar(el) {
+  const { stroke, fill, width } = strokeFillFrom(el);
+  ctx.strokeStyle = stroke;
+  ctx.fillStyle = fill;
+  ctx.lineWidth = width;
+
+  const cx = el.x + el.width / 2;
+  const cy = el.y + el.height / 2;
+  const outer = Math.min(el.width, el.height) / 2;
+  const inner = outer * 0.4;
+  const points = 5;
+
+  ctx.beginPath();
+  for (let i = 0; i < points * 2; i++) {
+    const r = i % 2 === 0 ? outer : inner;
+    const a = (i * Math.PI) / points - Math.PI / 2;
+    const x = cx + Math.cos(a) * r;
+    const y = cy + Math.sin(a) * r;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  if (fill !== 'transparent') ctx.fill();
+  ctx.stroke();
+}
+
+function renderText(el) {
+  if (!el.data?.content || el.data?.isEditing) return;
+  ctx.fillStyle = el.data?.color || '#000000';
+  const fontSize = el.data?.fontSize || 16;
+  const fontFamily = el.data?.fontFamily || 'Arial';
+  ctx.font = `${fontSize}px ${fontFamily}`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+
+  const lines = String(el.data.content).split('\n');
+  const lh = fontSize * 1.2;
+  for (let i = 0; i < lines.length; i++) {
+    ctx.fillText(lines[i], el.x, el.y + i * lh);
+  }
+}
+
+// --- Image caching ----------------------------------------------------------
+
+const imageCache = new Map(); // src -> {img: HTMLImageElement, ready: boolean}
+
+function getCachedImage(src) {
+  if (!src) return null;
+  let entry = imageCache.get(src);
+  if (entry) return entry;
+
+  const img = new Image();
+  entry = { img, ready: false };
+  imageCache.set(src, entry);
+
+  img.onload = () => {
+    entry.ready = true;
+    dependencies.requestRedraw?.();
+  };
+  img.onerror = () => {
+    console.warn('Failed to load image src:', src);
+    imageCache.delete(src);
+  };
+  img.src = src;
+  return entry;
+}
+
+function renderImage(el) {
+  const src = el.data?.imageData;
+  const entry = getCachedImage(src);
+  if (!entry || !entry.ready) return;
+  ctx.drawImage(entry.img, el.x, el.y, el.width, el.height);
+}
+
+// --- Image upload wiring (placeholder) -------------------------------------
+
+export function setupImageUpload() {
+  try {
+    const imageInput = document.getElementById('image-upload');
+    if (imageInput) {
+      imageInput.addEventListener('change', handleImageUpload);
+      console.log('Image upload setup complete');
+    } else {
+      console.warn('Image upload input not found');
     }
-    ctx.stroke();
+  } catch (e) {
+    console.error('Failed to setup image upload:', e);
+  }
 }
 
-function renderShapeElement(element) {
-    // Handle generic Shape elements by checking their shape type
-    const shapeType = element.data?.shapeType || element.data?.type || 'rectangle';
-    
-    switch (shapeType) {
-        case 'rectangle':
-            renderRectangle(element);
-            break;
-        case 'circle':
-            renderCircle(element);
-            break;
-        case 'triangle':
-            renderTriangle(element);
-            break;
-        case 'diamond':
-            renderDiamond(element);
-            break;
-        case 'ellipse':
-            renderEllipse(element);
-            break;
-        case 'star':
-            renderStar(element);
-            break;
-        default:
-            // Default to rectangle if unknown
-            renderRectangle(element);
-    }
+function handleImageUpload(event) {
+  console.log('Image upload triggered:', event);
+  // Real handling should live in element-factory
 }
 
-function renderLine(element) {
-    ctx.strokeStyle = element.data?.color || '#000000';
-    ctx.lineWidth = element.data?.strokeWidth || 2;
+// --- Accessors --------------------------------------------------------------
 
-    ctx.beginPath();
-    ctx.moveTo(element.x, element.y);
-    ctx.lineTo(element.x + element.width, element.y + element.height);
-    ctx.stroke();
-}
+export function getCanvas() { return canvas; }
+export function getContext() { return ctx; }
+export function getTempCanvas() { return tempCanvas; }
+export function getTempContext() { return tempCtx; }
+export function isCanvasInitialized() { return canvas !== null && ctx !== null; }
 
-function renderPath(element) {
-    if (!element.data?.path || !Array.isArray(element.data.path)) return;
+// --- Init -------------------------------------------------------------------
 
-    ctx.strokeStyle = element.data?.color || '#000000';
-    ctx.lineWidth = element.data?.strokeWidth || 2;
-
-    ctx.beginPath();
-    const path = element.data.path;
-    
-    for (let i = 0; i < path.length; i++) {
-        const point = path[i];
-        if (i === 0) {
-            ctx.moveTo(point.x, point.y);
-        } else {
-            ctx.lineTo(point.x, point.y);
-        }
-    }
-    ctx.stroke();
-}
-
-function renderStickyNote(element) {
-    // Background
-    ctx.fillStyle = element.data?.color || '#ffeb3b';
-    ctx.fillRect(element.x, element.y, element.width, element.height);
-
-    // Border
-    ctx.strokeStyle = '#fbc02d';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(element.x, element.y, element.width, element.height);
-
-    // Content
-    if (element.data?.content && !element.data?.isEditing) {
-        ctx.fillStyle = '#333333';
-        ctx.font = `${element.data?.fontSize || 14}px Arial`;
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
-        
-        const lines = element.data.content.split('\n');
-        const lineHeight = (element.data?.fontSize || 14) * 1.2;
-        
-        for (let i = 0; i < lines.length; i++) {
-            ctx.fillText(lines[i], element.x + 10, element.y + 10 + (i * lineHeight));
-        }
-    }
-}
-
-function renderTriangle(element) {
-    ctx.strokeStyle = element.data?.strokeColor || '#000000';
-    ctx.fillStyle = element.data?.fillColor || 'transparent';
-    ctx.lineWidth = element.data?.strokeWidth || 2;
-
-    ctx.beginPath();
-    ctx.moveTo(element.x + element.width / 2, element.y);
-    ctx.lineTo(element.x + element.width, element.y + element.height);
-    ctx.lineTo(element.x, element.y + element.height);
-    ctx.closePath();
-    
-    if (element.data?.fillColor && element.data.fillColor !== 'transparent') {
-        ctx.fill();
-    }
-    ctx.stroke();
-}
-
-function renderDiamond(element) {
-    ctx.strokeStyle = element.data?.strokeColor || '#000000';
-    ctx.fillStyle = element.data?.fillColor || 'transparent';
-    ctx.lineWidth = element.data?.strokeWidth || 2;
-
-    ctx.beginPath();
-    ctx.moveTo(element.x + element.width / 2, element.y);
-    ctx.lineTo(element.x + element.width, element.y + element.height / 2);
-    ctx.lineTo(element.x + element.width / 2, element.y + element.height);
-    ctx.lineTo(element.x, element.y + element.height / 2);
-    ctx.closePath();
-    
-    if (element.data?.fillColor && element.data.fillColor !== 'transparent') {
-        ctx.fill();
-    }
-    ctx.stroke();
-}
-
-function renderEllipse(element) {
-    ctx.strokeStyle = element.data?.strokeColor || '#000000';
-    ctx.fillStyle = element.data?.fillColor || 'transparent';
-    ctx.lineWidth = element.data?.strokeWidth || 2;
-
-    ctx.beginPath();
-    const centerX = element.x + element.width / 2;
-    const centerY = element.y + element.height / 2;
-    const radiusX = element.width / 2;
-    const radiusY = element.height / 2;
-    
-    ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, 2 * Math.PI);
-    
-    if (element.data?.fillColor && element.data.fillColor !== 'transparent') {
-        ctx.fill();
-    }
-    ctx.stroke();
-}
-
-function renderStar(element) {
-    ctx.strokeStyle = element.data?.strokeColor || '#000000';
-    ctx.fillStyle = element.data?.fillColor || 'transparent';
-    ctx.lineWidth = element.data?.strokeWidth || 2;
-
-    const centerX = element.x + element.width / 2;
-    const centerY = element.y + element.height / 2;
-    const outerRadius = Math.min(element.width, element.height) / 2;
-    const innerRadius = outerRadius * 0.4;
-    const points = 5;
-
-    ctx.beginPath();
-    for (let i = 0; i < points * 2; i++) {
-        const radius = i % 2 === 0 ? outerRadius : innerRadius;
-        const angle = (i * Math.PI) / points - Math.PI / 2;
-        const x = centerX + Math.cos(angle) * radius;
-        const y = centerY + Math.sin(angle) * radius;
-        
-        if (i === 0) {
-            ctx.moveTo(x, y);
-        } else {
-            ctx.lineTo(x, y);
-        }
-    }
-    ctx.closePath();
-    
-    if (element.data?.fillColor && element.data.fillColor !== 'transparent') {
-        ctx.fill();
-    }
-    ctx.stroke();
-}
-
-function renderText(element) {
-    if (element.data?.content && !element.data?.isEditing) {
-        ctx.fillStyle = element.data?.color || '#000000';
-        ctx.font = `${element.data?.fontSize || 16}px ${element.data?.fontFamily || 'Arial'}`;
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
-        
-        const lines = element.data.content.split('\n');
-        const lineHeight = (element.data?.fontSize || 16) * 1.2;
-        
-        for (let i = 0; i < lines.length; i++) {
-            ctx.fillText(lines[i], element.x, element.y + (i * lineHeight));
-        }
-    }
-}
-
-function renderImage(element) {
-    if (element.data?.imageData) {
-        const img = new Image();
-        img.onload = function() {
-            ctx.drawImage(img, element.x, element.y, element.width, element.height);
-        };
-        img.src = element.data.imageData;
-    }
-}
-
-// Utility functions
-export function getCanvas() {
-    return canvas;
-}
-
-export function getContext() {
-    return ctx;
-}
-
-export function getTempCanvas() {
-    return tempCanvas;
-}
-
-export function getTempContext() {
-    return tempCtx;
-}
-
-export function isCanvasInitialized() {
-    return canvas !== null && ctx !== null;
-}
-
-// Initialize the module
 export function init() {
-    console.log('Canvas Manager module loaded');
+  console.log('Canvas Manager module loaded');
 }
 
-// Backward compatibility - expose to window
+// --- Backward compatibility -------------------------------------------------
+
 if (typeof window !== 'undefined') {
-    window.canvasManager = {
-        initializeCanvas,
-        resizeCanvas,
-        redrawCanvas,
-        applyViewportTransform,
-        resetCanvasTransform,
-        screenToWorld,
-        worldToScreen,
-        clearCanvas,
-        renderExistingElement,
-        renderElementToMinimap,
-        updateCanvasCursor,
-        updateCursorForResizeHandles,
-        setupImageUpload,
-        getCanvas,
-        getContext,
-        getTempCanvas,
-        getTempContext,
-        isCanvasInitialized,
-        setDependencies
-    };
+  window.canvasManager = {
+    initializeCanvas,
+    resizeCanvas,
+    redrawCanvas,
+    applyViewportTransform,
+    screenToWorld,
+    worldToScreen,
+    clearCanvas,
+    renderExistingElement,
+    renderElementToMinimap,
+    updateCanvasCursor,
+    updateCursorForResizeHandles,
+    setupImageUpload,
+    getCanvas,
+    getContext,
+    getTempCanvas,
+    getTempContext,
+    isCanvasInitialized,
+    setDependencies,
+    attachResizeObserver,
+    detachResizeObserver,
+    init,
+  };
 }
+
