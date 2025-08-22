@@ -1,0 +1,49 @@
+@using Microsoft.AspNetCore.SignalR.Client
+
+<div class="status-bar">
+    <div class="status-left">
+        <button class="home-btn" @onclick="OnGoToHome" @onclick:stopPropagation="true" title="Back to Home">
+            <span class="home-icon">«</span>
+        </button>
+        <div class="board-menu-container">
+            <button class="board-menu-trigger" @onclick="ToggleBoardMenu" @onclick:stopPropagation="true">
+                <span class="board-title">@BoardName</span>
+                <span class="dropdown-arrow">▼</span>
+            </button>
+            <div class="board-menu @(showBoardMenu ? "show" : "")" @onclick:stopPropagation="true">
+                <div class="board-menu-item" @onclick="OnClearBoard">
+                    <span class="menu-icon">🗑️</span>
+                    Clear Board
+                </div>
+                <div class="board-menu-item" @onclick="() => showBoardMenu = false">
+                    <span class="menu-icon">ℹ️</span>
+                    Board Info
+                </div>
+            </div>
+        </div>
+    </div>
+    <span class="connection-status @(IsConnected ? "connected" : "disconnected")">
+        <span class="status-dot"></span>
+        @(IsConnected ? "Connected" : "Local Mode")
+    </span>
+</div>
+
+@code {
+    [Parameter] public string BoardName { get; set; } = string.Empty;
+    [Parameter] public bool IsConnected { get; set; } = false;
+    [Parameter] public EventCallback OnGoToHome { get; set; }
+    [Parameter] public EventCallback OnClearBoard { get; set; }
+
+    private bool showBoardMenu = false;
+
+    private void ToggleBoardMenu()
+    {
+        showBoardMenu = !showBoardMenu;
+    }
+
+    protected override void OnInitialized()
+    {
+        // Close menu when clicking elsewhere
+        StateHasChanged();
+    }
+}

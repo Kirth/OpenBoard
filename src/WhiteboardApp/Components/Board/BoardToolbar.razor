@@ -1,0 +1,50 @@
+@using WhiteboardApp.Components.Board
+
+<div class="floating-toolbar">
+    <div class="toolbar-section">
+        <div class="tool-group">
+            <button class="tool-btn @(CurrentTool == "select" ? "active" : "")" @onclick="@(() => OnToolSelected.InvokeAsync("select"))" title="Select">
+                <span class="tool-icon">✋</span>
+            </button>
+            <button class="tool-btn @(CurrentTool == "pen" ? "active" : "")" @onclick="@(() => OnToolSelected.InvokeAsync("pen"))" title="Pen">
+                <span class="tool-icon">✏️</span>
+            </button>
+            <button class="tool-btn @(CurrentTool == "text" ? "active" : "")" @onclick="@(() => OnToolSelected.InvokeAsync("text"))" title="Text">
+                <span class="tool-icon">📝</span>
+            </button>
+            
+            <BoardShapeSelector 
+                SelectedShapeType="@SelectedShapeType"
+                IsActive="@IsShapeToolActive()"
+                OnShapeTypeSelected="OnShapeTypeSelected"
+                OnShapeSelected="@(() => OnToolSelected.InvokeAsync(SelectedShapeType))" />
+            
+            <button class="tool-btn @(CurrentTool == "line" ? "active" : "")" @onclick="@(() => OnToolSelected.InvokeAsync("line"))" title="Line">
+                <span class="tool-icon">📏</span>
+            </button>
+            <button class="tool-btn @(CurrentTool == "stickynote" ? "active" : "")" @onclick="@(() => OnToolSelected.InvokeAsync("stickynote"))" title="Sticky Note">
+                <span class="tool-icon">🟨</span>
+            </button>
+            <button class="tool-btn @(CurrentTool == "image" ? "active" : "")" @onclick="@(() => OnToolSelected.InvokeAsync("image"))" title="Image">
+                <span class="tool-icon">🖼️</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string CurrentTool { get; set; } = "select";
+    [Parameter] public string SelectedShapeType { get; set; } = "rectangle";
+    [Parameter] public EventCallback<string> OnToolSelected { get; set; }
+    [Parameter] public EventCallback<string> OnShapeTypeSelected { get; set; }
+
+    private readonly HashSet<string> shapeTools = new() 
+    { 
+        "rectangle", "circle", "triangle", "diamond", "ellipse", "star" 
+    };
+
+    private bool IsShapeToolActive()
+    {
+        return shapeTools.Contains(CurrentTool);
+    }
+}

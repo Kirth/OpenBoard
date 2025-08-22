@@ -1,0 +1,329 @@
+@page "/board/{BoardId}"
+@using Microsoft.AspNetCore.SignalR.Client
+@using Microsoft.JSInterop
+@using WhiteboardApp.Services
+@using WhiteboardApp.Models
+@using WhiteboardApp.Components.Board
+@using System.Text.Json
+@inject BoardService BoardService
+@inject ElementService ElementService
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+@implements IAsyncDisposable
+
+<PageTitle>OpenBoard - @boardName</PageTitle>
+
+<link href="css/board-components.css" rel="stylesheet" />
+
+<div class="board-container">
+    <!-- Status Bar Component -->
+    <BoardStatusBar 
+        BoardName="@boardName"
+        IsConnected="@signalRConnected"
+        OnGoToHome="GoToHome"
+        OnClearBoard="ClearBoard" />
+    
+    <!-- Canvas Component -->
+    <BoardCanvas 
+        BoardId="@BoardId"
+        CurrentUserName="@currentUserName"
+        OnCanvasReady="OnCanvasReady" />
+    
+    <!-- Toolbar Component -->
+    <BoardToolbar 
+        CurrentTool="@currentTool"
+        SelectedShapeType="@selectedShapeType"
+        OnToolSelected="SetTool"
+        OnShapeTypeSelected="OnShapeTypeSelected" />
+    
+    <!-- Context Menu Component -->
+    <BoardContextMenu />
+    
+    <!-- Minimap -->
+    <div class="minimap-container">
+        <canvas id="minimap-canvas" width="200" height="150"></canvas>
+        <div id="minimap-viewport" class="minimap-viewport"></div>
+    </div>
+    
+    <input type="file" id="image-upload" accept="image/*" style="display: none;" />
+</div>
+
+@code {
+    [Parameter] public string BoardId { get; set; } = "";
+    
+    private ElementReference canvasElement;
+    private string currentTool = "select";
+    private string boardName = "Loading...";
+    private bool signalRConnected = false;
+    private string currentUserName = "Anonymous";
+    
+    // Shape tool state
+    private string selectedShapeType = "rectangle";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadBoardInfo();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await InitializeCanvas();
+            await InitializeSignalR();
+        }
+    }
+
+    private async Task LoadBoardInfo()
+    {
+        if (Guid.TryParse(BoardId, out var boardGuid))
+        {
+            var board = await BoardService.GetBoardAsync(boardGuid);
+            boardName = board?.Name ?? "Unknown Board";
+        }
+    }
+
+    private async Task InitializeCanvas()
+    {
+        try
+        {
+            // Initialize the new modular system
+            await JSRuntime.InvokeVoidAsync("initializeApplication");
+            
+            // Set up reference for JavaScript to call back to Blazor
+            var dotNetRef = DotNetObjectReference.Create(this);
+            await JSRuntime.InvokeVoidAsync("setBlazorReference", dotNetRef);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Canvas initialization failed: {ex.Message}");
+        }
+    }
+
+    private async Task InitializeSignalR()
+    {
+        try
+        {
+            // Initialize SignalR using the modular JavaScript client
+            var success = await JSRuntime.InvokeAsync<bool>("initializeSignalR", BoardId);
+            signalRConnected = success;
+            
+            // Update UI to reflect connection status
+            StateHasChanged();
+            
+            // Note: Only using JavaScript SignalR client to avoid duplicate connections
+            // The JavaScript client handles all SignalR communication including cursor tracking
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"SignalR initialization failed: {ex.Message}");
+            signalRConnected = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnCanvasReady(ElementReference canvas)
+    {
+        canvasElement = canvas;
+    }
+
+    private async Task SetTool(string tool)
+    {
+        currentTool = tool;
+        await JSRuntime.InvokeVoidAsync("setCurrentTool", tool);
+        StateHasChanged();
+    }
+
+    private async Task OnShapeTypeSelected(string shapeType)
+    {
+        selectedShapeType = shapeType;
+        await SetTool(shapeType);
+    }
+
+    private void GoToHome()
+    {
+        Navigation.NavigateTo("/");
+    }
+
+    private async Task ClearBoard()
+    {
+        try
+        {
+            // Clear all elements from the database
+            if (Guid.TryParse(BoardId, out var boardGuid))
+            {
+                var elements = await BoardService.GetBoardElementsAsync(boardGuid);
+                foreach (var element in elements)
+                {
+                    await ElementService.DeleteElementAsync(element.Id);
+                }
+            }
+            
+            // Clear canvas and notify via JavaScript
+            await JSRuntime.InvokeVoidAsync("clearCanvasFromBlazor");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to clear board: {ex.Message}");
+        }
+    }
+
+    // Methods callable from JavaScript
+    [JSInvokable]
+    public void UpdateCurrentTool(string tool)
+    {
+        currentTool = tool;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void UpdateZoomLevel(int zoomPercentage)
+    {
+        // Update zoom display if needed
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task<string> SaveStickyNote(string elementId, string content, double x, double y, double width, double height)
+    {
+        try
+        {
+            var element = new BoardElement
+            {
+                BoardId = Guid.Parse(BoardId),
+                Type = ElementType.StickyNote,
+                X = x,
+                Y = y,
+                Width = width,
+                Height = height,
+                Data = JsonDocument.Parse(JsonSerializer.Serialize(new { content = content })),
+                CreatedBy = currentUserName
+            };
+
+            var savedElement = await ElementService.AddElementAsync(element);
+            return savedElement.Id.ToString();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to save sticky note: {ex.Message}");
+            return "";
+        }
+    }
+
+    [JSInvokable]
+    public async Task<string> SaveTextElement(string elementId, string content, double x, double y, double width, double height, string fontSize, string fontFamily, string textColor)
+    {
+        try
+        {
+            var element = new BoardElement
+            {
+                BoardId = Guid.Parse(BoardId),
+                Type = ElementType.Text,
+                X = x,
+                Y = y,
+                Width = width,
+                Height = height,
+                Data = JsonDocument.Parse(JsonSerializer.Serialize(new 
+                { 
+                    content = content,
+                    fontSize = fontSize,
+                    fontFamily = fontFamily,
+                    textColor = textColor
+                })),
+                CreatedBy = currentUserName
+            };
+
+            var savedElement = await ElementService.AddElementAsync(element);
+            return savedElement.Id.ToString();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to save text element: {ex.Message}");
+            return "";
+        }
+    }
+
+    [JSInvokable]
+    public async Task UpdateStickyNote(string elementId, string content)
+    {
+        try
+        {
+            if (Guid.TryParse(elementId, out var elementGuid))
+            {
+                var element = await ElementService.GetElementAsync(elementGuid);
+                if (element != null)
+                {
+                    element.Data = JsonDocument.Parse(JsonSerializer.Serialize(new { content = content }));
+                    await ElementService.UpdateElementAsync(element);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to update sticky note: {ex.Message}");
+        }
+    }
+
+    [JSInvokable]
+    public async Task UpdateTextElement(string elementId, string content, string fontSize, string fontFamily, string textColor)
+    {
+        try
+        {
+            if (Guid.TryParse(elementId, out var elementGuid))
+            {
+                var element = await ElementService.GetElementAsync(elementGuid);
+                if (element != null)
+                {
+                    element.Data = JsonDocument.Parse(JsonSerializer.Serialize(new 
+                    { 
+                        content = content,
+                        fontSize = fontSize,
+                        fontFamily = fontFamily,
+                        textColor = textColor
+                    }));
+                    await ElementService.UpdateElementAsync(element);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to update text element: {ex.Message}");
+        }
+    }
+
+    [JSInvokable]
+    public async Task<string> LoadBoardElements()
+    {
+        try
+        {
+            if (Guid.TryParse(BoardId, out var boardGuid))
+            {
+                var elements = await BoardService.GetBoardElementsAsync(boardGuid);
+                return JsonSerializer.Serialize(elements.Select(e => new
+                {
+                    id = e.Id.ToString(),
+                    type = e.Type.ToString(),
+                    x = e.X,
+                    y = e.Y,
+                    width = e.Width,
+                    height = e.Height,
+                    zIndex = e.ZIndex,
+                    data = JsonSerializer.Deserialize<object>(e.Data?.RootElement.GetRawText() ?? "{}"),
+                    createdBy = e.CreatedBy
+                }));
+            }
+            return "[]";
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to load board elements: {ex.Message}");
+            return "[]";
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        // SignalR cleanup is now handled by the JavaScript client
+        await Task.CompletedTask;
+    }
+}

@@ -1,0 +1,27 @@
+@using Microsoft.AspNetCore.SignalR.Client
+@using Microsoft.JSInterop
+
+<div class="canvas-container">
+    <canvas @ref="canvasElement" 
+            id="whiteboard-canvas">
+    </canvas>
+    <!-- Cursor tracking is now handled by the JavaScript SignalR client -->
+</div>
+
+@code {
+    [Parameter] public string BoardId { get; set; } = string.Empty;
+    [Parameter] public string CurrentUserName { get; set; } = string.Empty;
+    [Parameter] public EventCallback<ElementReference> OnCanvasReady { get; set; }
+
+    private ElementReference canvasElement;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await OnCanvasReady.InvokeAsync(canvasElement);
+        }
+    }
+
+    public ElementReference GetCanvasElement() => canvasElement;
+}

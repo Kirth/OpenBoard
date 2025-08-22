@@ -1,0 +1,128 @@
+<div class="shape-tool-container" 
+     @onmouseleave="CloseShapeMenuOnLeave"
+     @onmouseenter="CancelShapeMenuClose">
+    <button class="tool-btn shape-tool @(IsActive ? "active" : "")" 
+            @onclick="OnShapeSelected" 
+            @onmousedown="StartShapeToolHold"
+            @onmouseup="EndShapeToolHold"
+            @onmouseleave="EndShapeToolHold"
+            @onmouseenter="CancelShapeMenuClose"
+            title="@GetShapeToolTitle() (Hold for more shapes)">
+        <span class="tool-icon">@GetShapeToolIcon()</span>
+        <span class="shape-dropdown-indicator">⌃</span>
+    </button>
+    <div class="shape-menu @(showShapeMenu ? "show" : "")" 
+         @onclick:stopPropagation="true"
+         @onmouseleave="CloseShapeMenuOnLeave"
+         @onmouseenter="CancelShapeMenuClose">
+        <div class="shape-menu-item" @onclick="@(() => SelectShape("rectangle"))">
+            <span class="shape-icon">⬜</span>
+            <span class="shape-label">Rectangle</span>
+        </div>
+        <div class="shape-menu-item" @onclick="@(() => SelectShape("circle"))">
+            <span class="shape-icon">⭕</span>
+            <span class="shape-label">Circle</span>
+        </div>
+        <div class="shape-menu-item" @onclick="@(() => SelectShape("triangle"))">
+            <span class="shape-icon">🔺</span>
+            <span class="shape-label">Triangle</span>
+        </div>
+        <div class="shape-menu-item" @onclick="@(() => SelectShape("diamond"))">
+            <span class="shape-icon">💎</span>
+            <span class="shape-label">Diamond</span>
+        </div>
+        <div class="shape-menu-item" @onclick="@(() => SelectShape("ellipse"))">
+            <span class="shape-icon">🔴</span>
+            <span class="shape-label">Ellipse</span>
+        </div>
+        <div class="shape-menu-item" @onclick="@(() => SelectShape("star"))">
+            <span class="shape-icon">⭐</span>
+            <span class="shape-label">Star</span>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string SelectedShapeType { get; set; } = "rectangle";
+    [Parameter] public bool IsActive { get; set; } = false;
+    [Parameter] public EventCallback<string> OnShapeTypeSelected { get; set; }
+    [Parameter] public EventCallback OnShapeSelected { get; set; }
+
+    private bool showShapeMenu = false;
+    private Timer? shapeMenuTimer;
+    private Timer? shapeMenuCloseTimer;
+
+    private readonly Dictionary<string, (string Icon, string Title)> shapeInfo = new()
+    {
+        ["rectangle"] = ("⬜", "Rectangle"),
+        ["circle"] = ("⭕", "Circle"), 
+        ["triangle"] = ("🔺", "Triangle"),
+        ["diamond"] = ("💎", "Diamond"),
+        ["ellipse"] = ("🔴", "Ellipse"),
+        ["star"] = ("⭐", "Star")
+    };
+
+    private void StartShapeToolHold()
+    {
+        shapeMenuTimer?.Dispose();
+        shapeMenuTimer = new Timer(ShowShapeMenu, null, 250, Timeout.Infinite);
+    }
+
+    private void EndShapeToolHold()
+    {
+        shapeMenuTimer?.Dispose();
+    }
+
+    private void ShowShapeMenu(object? state)
+    {
+        InvokeAsync(() =>
+        {
+            showShapeMenu = true;
+            StateHasChanged();
+        });
+    }
+
+    private void CloseShapeMenuOnLeave()
+    {
+        shapeMenuCloseTimer?.Dispose();
+        shapeMenuCloseTimer = new Timer(CloseShapeMenu, null, 100, Timeout.Infinite);
+    }
+
+    private void CancelShapeMenuClose()
+    {
+        shapeMenuCloseTimer?.Dispose();
+    }
+
+    private void CloseShapeMenu(object? state)
+    {
+        InvokeAsync(() =>
+        {
+            showShapeMenu = false;
+            StateHasChanged();
+        });
+    }
+
+    private async Task SelectShape(string shapeType)
+    {
+        SelectedShapeType = shapeType;
+        showShapeMenu = false;
+        await OnShapeTypeSelected.InvokeAsync(shapeType);
+        StateHasChanged();
+    }
+
+    private string GetShapeToolIcon()
+    {
+        return shapeInfo.TryGetValue(SelectedShapeType, out var info) ? info.Icon : "⬜";
+    }
+
+    private string GetShapeToolTitle()
+    {
+        return shapeInfo.TryGetValue(SelectedShapeType, out var info) ? info.Title : "Rectangle";
+    }
+
+    public void Dispose()
+    {
+        shapeMenuTimer?.Dispose();
+        shapeMenuCloseTimer?.Dispose();
+    }
+}

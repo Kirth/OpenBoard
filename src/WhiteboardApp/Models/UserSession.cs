@@ -8,4 +8,6 @@ public class UserSession
     public double CursorX { get; set; }
     public double CursorY { get; set; }
     public bool IsActive { get; set; }
+    public DateTime JoinedAt { get; set; } = DateTime.UtcNow;
+    public DateTime LastActivity { get; set; } = DateTime.UtcNow;
 }

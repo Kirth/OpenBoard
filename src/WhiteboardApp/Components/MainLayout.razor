@@ -1,5 +1,17 @@
 @inherits LayoutComponentBase
 
+<!-- ES6 Module Imports -->
+<script type="module">
+    import { initializeApplication, setBlazorReference, initializeSignalRConnection, setCurrentTool, clearCanvasFromBlazor } from '/js/main.js';
+    
+    // Make functions available globally for Blazor interop
+    window.initializeApplication = initializeApplication;
+    window.setBlazorReference = setBlazorReference;
+    window.initializeSignalRConnection = initializeSignalRConnection;
+    window.setCurrentTool = setCurrentTool;
+    window.clearCanvasFromBlazor = clearCanvasFromBlazor;
+</script>
+
 <div class="page">
     <main>
         @Body

@@ -1,0 +1,138 @@
+<div id="contextMenu" class="context-menu" style="display: none;">
+    <div class="context-menu-item" onclick="bringSelectedToFront()">
+        <div class="context-item-content">
+            <span class="context-icon">⬆️</span>
+            Bring to Front
+        </div>
+    </div>
+    <div class="context-menu-item" onclick="sendSelectedToBack()">
+        <div class="context-item-content">
+            <span class="context-icon">⬇️</span>
+            Send to Back
+        </div>
+    </div>
+    <div class="context-menu-divider"></div>
+    
+    <!-- Style options for shapes -->
+    <div id="styleOptions" class="context-menu-section" style="display: none;">
+        <div id="fillColorMenu" class="context-menu-item has-submenu">
+            <div class="context-item-content">
+                <span class="context-icon">🎨</span>
+                Fill Color
+            </div>
+            <div class="submenu color-submenu">
+                <div class="color-option" onclick="updateShapeStyle('fillColor', 'transparent')" 
+                     style="background: linear-gradient(45deg, #ff0000 25%, transparent 25%, transparent 75%, #ff0000 75%); background-size: 8px 8px;" 
+                     title="Transparent"></div>
+                <div class="color-option" onclick="updateShapeStyle('fillColor', '#ffffff')" 
+                     style="background: #ffffff; border: 1px solid #ccc;" 
+                     title="White"></div>
+                <div class="color-option" onclick="updateShapeStyle('fillColor', '#000000')" 
+                     style="background: #000000;" 
+                     title="Black"></div>
+                <div class="color-option" onclick="updateShapeStyle('fillColor', '#ff0000')" 
+                     style="background: #ff0000;" 
+                     title="Red"></div>
+                <div class="color-option" onclick="updateShapeStyle('fillColor', '#00ff00')" 
+                     style="background: #00ff00;" 
+                     title="Green"></div>
+                <div class="color-option" onclick="updateShapeStyle('fillColor', '#0000ff')" 
+                     style="background: #0000ff;" 
+                     title="Blue"></div>
+                <div class="color-option" onclick="updateShapeStyle('fillColor', '#ffff00')" 
+                     style="background: #ffff00;" 
+                     title="Yellow"></div>
+                <div class="color-option" onclick="updateShapeStyle('fillColor', '#ff00ff')" 
+                     style="background: #ff00ff;" 
+                     title="Magenta"></div>
+                <div class="color-option" onclick="updateShapeStyle('fillColor', '#00ffff')" 
+                     style="background: #00ffff;" 
+                     title="Cyan"></div>
+                <div class="color-option" onclick="updateShapeStyle('fillColor', '#ffa500')" 
+                     style="background: #ffa500;" 
+                     title="Orange"></div>
+                <div class="color-option" onclick="updateShapeStyle('fillColor', '#800080')" 
+                     style="background: #800080;" 
+                     title="Purple"></div>
+                <div class="color-option" onclick="updateShapeStyle('fillColor', '#ffc0cb')" 
+                     style="background: #ffc0cb;" 
+                     title="Pink"></div>
+            </div>
+        </div>
+        
+        <div id="strokeColorMenu" class="context-menu-item has-submenu">
+            <div class="context-item-content">
+                <span class="context-icon">🖊️</span>
+                Stroke Color
+            </div>
+            <div class="submenu color-submenu">
+                <div class="color-option" onclick="updateShapeStyle('strokeColor', '#000000')" 
+                     style="background: #000000;" 
+                     title="Black"></div>
+                <div class="color-option" onclick="updateShapeStyle('strokeColor', '#ffffff')" 
+                     style="background: #ffffff; border: 1px solid #ccc;" 
+                     title="White"></div>
+                <div class="color-option" onclick="updateShapeStyle('strokeColor', '#ff0000')" 
+                     style="background: #ff0000;" 
+                     title="Red"></div>
+                <div class="color-option" onclick="updateShapeStyle('strokeColor', '#00ff00')" 
+                     style="background: #00ff00;" 
+                     title="Green"></div>
+                <div class="color-option" onclick="updateShapeStyle('strokeColor', '#0000ff')" 
+                     style="background: #0000ff;" 
+                     title="Blue"></div>
+                <div class="color-option" onclick="updateShapeStyle('strokeColor', '#ffff00')" 
+                     style="background: #ffff00;" 
+                     title="Yellow"></div>
+                <div class="color-option" onclick="updateShapeStyle('strokeColor', '#ff00ff')" 
+                     style="background: #ff00ff;" 
+                     title="Magenta"></div>
+                <div class="color-option" onclick="updateShapeStyle('strokeColor', '#00ffff')" 
+                     style="background: #00ffff;" 
+                     title="Cyan"></div>
+                <div class="color-option" onclick="updateShapeStyle('strokeColor', '#ffa500')" 
+                     style="background: #ffa500;" 
+                     title="Orange"></div>
+                <div class="color-option" onclick="updateShapeStyle('strokeColor', '#800080')" 
+                     style="background: #800080;" 
+                     title="Purple"></div>
+                <div class="color-option" onclick="updateShapeStyle('strokeColor', '#ffc0cb')" 
+                     style="background: #ffc0cb;" 
+                     title="Pink"></div>
+            </div>
+        </div>
+        
+        <div id="strokeWidthMenu" class="context-menu-item has-submenu">
+            <div class="context-item-content">
+                <span class="context-icon">📏</span>
+                Stroke Width
+            </div>
+            <div class="submenu">
+                <div class="context-menu-item" onclick="updateShapeStyle('strokeWidth', 1)">1px</div>
+                <div class="context-menu-item" onclick="updateShapeStyle('strokeWidth', 2)">2px</div>
+                <div class="context-menu-item" onclick="updateShapeStyle('strokeWidth', 3)">3px</div>
+                <div class="context-menu-item" onclick="updateShapeStyle('strokeWidth', 5)">5px</div>
+                <div class="context-menu-item" onclick="updateShapeStyle('strokeWidth', 8)">8px</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="context-menu-divider"></div>
+    <div class="context-menu-item" onclick="duplicateSelected()">
+        <div class="context-item-content">
+            <span class="context-icon">📋</span>
+            Duplicate
+        </div>
+    </div>
+    <div class="context-menu-item delete-item" onclick="deleteSelected()">
+        <div class="context-item-content">
+            <span class="context-icon">🗑️</span>
+            Delete
+        </div>
+    </div>
+</div>
+
+@code {
+    // This component is purely for HTML/CSS layout
+    // JavaScript interactions are handled in the modular system via main.js
+}
