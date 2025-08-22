@@ -176,8 +176,13 @@ export function applyViewportTransform() {
 
     try {
         ctx.save();
-        ctx.translate(-viewportX, -viewportY);
-        ctx.scale(zoomLevel, zoomLevel);
+        // Use viewport manager's values instead of local ones
+        const currentViewportX = dependencies.getViewportX ? dependencies.getViewportX() : viewportX;
+        const currentViewportY = dependencies.getViewportY ? dependencies.getViewportY() : viewportY;
+        const currentZoomLevel = dependencies.getZoomLevel ? dependencies.getZoomLevel() : zoomLevel;
+        
+        ctx.translate(-currentViewportX, -currentViewportY);
+        ctx.scale(currentZoomLevel, currentZoomLevel);
     } catch (error) {
         console.error('Failed to apply viewport transform:', error);
     }
@@ -197,9 +202,13 @@ export function resetCanvasTransform() {
 // Convert screen coordinates to world coordinates
 export function screenToWorld(screenX, screenY) {
     try {
+        const currentViewportX = dependencies.getViewportX ? dependencies.getViewportX() : viewportX;
+        const currentViewportY = dependencies.getViewportY ? dependencies.getViewportY() : viewportY;
+        const currentZoomLevel = dependencies.getZoomLevel ? dependencies.getZoomLevel() : zoomLevel;
+        
         return {
-            x: (screenX + viewportX) / zoomLevel,
-            y: (screenY + viewportY) / zoomLevel
+            x: (screenX + currentViewportX) / currentZoomLevel,
+            y: (screenY + currentViewportY) / currentZoomLevel
         };
     } catch (error) {
         console.error('Failed to convert screen to world coordinates:', error);
@@ -210,9 +219,13 @@ export function screenToWorld(screenX, screenY) {
 // Convert world coordinates to screen coordinates
 export function worldToScreen(worldX, worldY) {
     try {
+        const currentViewportX = dependencies.getViewportX ? dependencies.getViewportX() : viewportX;
+        const currentViewportY = dependencies.getViewportY ? dependencies.getViewportY() : viewportY;
+        const currentZoomLevel = dependencies.getZoomLevel ? dependencies.getZoomLevel() : zoomLevel;
+        
         return {
-            x: (worldX * zoomLevel) - viewportX,
-            y: (worldY * zoomLevel) - viewportY
+            x: (worldX * currentZoomLevel) - currentViewportX,
+            y: (worldY * currentZoomLevel) - currentViewportY
         };
     } catch (error) {
         console.error('Failed to convert world to screen coordinates:', error);
@@ -240,6 +253,7 @@ export function renderExistingElement(element) {
 
         switch (element.type) {
             case 'Rectangle':
+            case 'rectangle':
                 renderRectangle(element);
                 break;
             case 'Shape':
@@ -247,6 +261,7 @@ export function renderExistingElement(element) {
                 renderShapeElement(element);
                 break;
             case 'Circle':
+            case 'circle':
                 renderCircle(element);
                 break;
             case 'Line':
@@ -254,6 +269,22 @@ export function renderExistingElement(element) {
                 break;
             case 'Path':
                 renderPath(element);
+                break;
+            case 'Drawing':
+                // Drawing is the same as Path, just a different name from the server
+                renderPath(element);
+                break;
+            case 'triangle':
+                renderTriangle(element);
+                break;
+            case 'diamond':
+                renderDiamond(element);
+                break;
+            case 'ellipse':
+                renderEllipse(element);
+                break;
+            case 'star':
+                renderStar(element);
                 break;
             case 'StickyNote':
                 renderStickyNote(element);
@@ -288,6 +319,11 @@ export function renderElementToMinimap(element, minimapCtx) {
 
         switch (element.type) {
             case 'Rectangle':
+            case 'rectangle':
+            case 'triangle':
+            case 'diamond':
+            case 'ellipse':
+            case 'star':
                 if (element.data?.fillColor && element.data.fillColor !== 'transparent') {
                     minimapCtx.fillRect(element.x, element.y, element.width, element.height);
                 }
@@ -295,6 +331,7 @@ export function renderElementToMinimap(element, minimapCtx) {
                 break;
 
             case 'Circle':
+            case 'circle':
                 minimapCtx.beginPath();
                 const radius = Math.min(element.width, element.height) / 2;
                 const centerX = element.x + element.width / 2;
@@ -311,6 +348,12 @@ export function renderElementToMinimap(element, minimapCtx) {
                 minimapCtx.moveTo(element.x, element.y);
                 minimapCtx.lineTo(element.x + element.width, element.y + element.height);
                 minimapCtx.stroke();
+                break;
+
+            case 'Path':
+            case 'Drawing':
+                // Simplified path rendering for minimap - just show bounding box
+                minimapCtx.strokeRect(element.x, element.y, element.width, element.height);
                 break;
 
             case 'StickyNote':
@@ -394,8 +437,9 @@ function handleImageUpload(event) {
 // Draw UI elements (selection handles, etc.)
 function drawUIElements() {
     try {
-        if (dependencies.selectedElementId && dependencies.elements && dependencies.drawResizeHandles) {
-            const selectedElement = dependencies.elements.get(dependencies.selectedElementId);
+        const selectedElementId = dependencies.getSelectedElementId ? dependencies.getSelectedElementId() : null;
+        if (selectedElementId && dependencies.elements && dependencies.drawResizeHandles) {
+            const selectedElement = dependencies.elements.get(selectedElementId);
             if (selectedElement) {
                 const screenPos = worldToScreen(selectedElement.x, selectedElement.y);
                 const selectionRect = {

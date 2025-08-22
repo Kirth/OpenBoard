@@ -208,6 +208,19 @@ export class EditorManager {
         return this.state === 'EDITING';
     }
     
+    getCurrentEditingElementId() {
+        return this.editingElementId;
+    }
+    
+    updateEditingElementId(newId) {
+        if (this.editingElementId && this.state === 'EDITING') {
+            console.log(`Updating editing element ID from ${this.editingElementId} to ${newId}`);
+            this.editingElementId = newId;
+            return true;
+        }
+        return false;
+    }
+    
     isEditing() {
         return this.state === 'EDITING' && this.editingElementId !== null;
     }
@@ -239,6 +252,20 @@ export class EditorManager {
             
             this.editingElementId = elementId;
             this.element = element;
+            
+            // Handle corrupted data structure - ensure element.data is an object
+            if (typeof element.data !== 'object' || element.data === null) {
+                console.warn('Element data is not an object, attempting to fix:', element.data);
+                // If data is a string (corrupted), try to create a proper data object
+                const content = typeof element.data === 'string' ? element.data : '';
+                element.data = {
+                    content: content,
+                    color: elementType === 'StickyNote' ? '#ffeb3b' : '#ffffff',
+                    fontSize: elementType === 'StickyNote' ? 14 : 16,
+                    isEditing: false
+                };
+            }
+            
             element.data.isEditing = true;
             
             this.createInputElement(elementType);
@@ -268,16 +295,55 @@ export class EditorManager {
                 this.element.data.content = newContent;
                 this.element.data.isEditing = false;
                 
-                if (dependencies.signalRConnection && dependencies.signalRConnection.state === signalR.HubConnectionState.Connected) {
+                console.log('Debugging sticky note update dependencies:', {
+                    signalRConnection: dependencies.signalRConnection,
+                    connectionState: dependencies.signalRConnection?.state,
+                    expectedState: window.signalR?.HubConnectionState?.Connected,
+                    updateStickyNoteContent: dependencies.updateStickyNoteContent,
+                    updateTextElementContent: dependencies.updateTextElementContent,
+                    elementId: this.editingElementId,
+                    elementType: this.element.type,
+                    content: newContent
+                });
+                
+                if (dependencies.signalRConnection && dependencies.signalRConnection.state === window.signalR.HubConnectionState.Connected) {
+                    console.log(`Attempting to update element ${this.editingElementId} (${this.element.type}) with content: "${newContent}"`);
                     if (!this.editingElementId.startsWith('temp-')) {
                         if (this.element.type === 'StickyNote') {
-                            dependencies.updateStickyNoteContent?.(this.editingElementId, newContent);
+                            console.log('Calling updateStickyNoteContent via SignalR');
+                            if (dependencies.updateStickyNoteContent) {
+                                // Send the complete data object, not just the content
+                                const updatedData = {
+                                    ...this.element.data,
+                                    content: newContent
+                                };
+                                dependencies.updateStickyNoteContent(this.editingElementId, updatedData);
+                            } else {
+                                console.error('updateStickyNoteContent function not available in dependencies');
+                            }
                         } else if (this.element.type === 'Text') {
-                            dependencies.updateTextElementContent?.(this.editingElementId, newContent);
+                            console.log('Calling updateTextElementContent via SignalR');
+                            if (dependencies.updateTextElementContent) {
+                                // Send the complete data object, not just the content
+                                const updatedData = {
+                                    ...this.element.data,
+                                    content: newContent
+                                };
+                                dependencies.updateTextElementContent(this.editingElementId, updatedData);
+                            } else {
+                                console.error('updateTextElementContent function not available in dependencies');
+                            }
                         }
                     } else {
+                        console.log('Element has temp ID, marking for pending update');
                         this.element.data.pendingUpdate = true;
                     }
+                } else {
+                    console.warn('SignalR not connected or dependencies not available:', {
+                        signalRConnection: dependencies.signalRConnection,
+                        connectionState: dependencies.signalRConnection?.state,
+                        expectedState: window.signalR?.HubConnectionState?.Connected
+                    });
                 }
             }
             
@@ -341,6 +407,15 @@ export class EditorManager {
         this.editInput.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
                 this.stopEditing();
+            } else if (e.key === 'Enter') {
+                if (e.shiftKey) {
+                    // Shift+Enter: Allow newline (default behavior)
+                    return;
+                } else {
+                    // Enter: Finish editing
+                    e.preventDefault();
+                    this.stopEditing();
+                }
             }
             e.stopPropagation();
         });
@@ -390,9 +465,20 @@ export function createStickyNote(x, y) {
 }
 
 export function createShapeElement(shapeType, startX, startY, endX, endY) {
-    const width = endX - startX;
-    const height = endY - startY;
-    const element = ElementFactory.createShapeElement(shapeType, startX, startY, width, height);
+    // Handle negative dimensions by normalizing coordinates
+    const minX = Math.min(startX, endX);
+    const minY = Math.min(startY, endY);
+    const maxX = Math.max(startX, endX);
+    const maxY = Math.max(startY, endY);
+    
+    const width = maxX - minX;
+    const height = maxY - minY;
+    
+    // Ensure minimum dimensions
+    const finalWidth = Math.max(width, 1);
+    const finalHeight = Math.max(height, 1);
+    
+    const element = ElementFactory.createShapeElement(shapeType, minX, minY, finalWidth, finalHeight);
     elements.set(element.id, element);
     saveCanvasState('Create ' + shapeType);
     return element;
@@ -421,6 +507,12 @@ export function createPathElement(path) {
 
 // Element management functions
 export function drawElement(id, x, y, type, data, width, height) {
+    // Check if element already exists (to prevent duplicates from SignalR)
+    if (elements.has(id)) {
+        console.log('Element already exists, skipping duplicate:', id);
+        return;
+    }
+    
     const element = {
         id: id,
         type: type,
@@ -511,6 +603,14 @@ export function updateElementPosition(id, newX, newY) {
         if (dependencies.redrawCanvas) {
             dependencies.redrawCanvas();
         }
+    }
+}
+
+export function updateElementPositionLocal(id, newX, newY) {
+    const element = elements.get(id);
+    if (element) {
+        element.x = newX;
+        element.y = newY;
     }
 }
 
@@ -816,6 +916,10 @@ export function stopEditingTextElement() {
 // Utility functions
 export function getSelectedElement() {
     return selectedElementId ? elements.get(selectedElementId) : null;
+}
+
+export function getSelectedElementId() {
+    return selectedElementId;
 }
 
 export function hasSelection() {

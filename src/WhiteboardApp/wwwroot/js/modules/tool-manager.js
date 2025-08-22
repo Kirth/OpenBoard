@@ -683,6 +683,18 @@ export function getCurrentPath() {
     return [...currentPath];
 }
 
+export function finishDrawing() {
+    isDrawing = false;
+    currentPath = [];
+    console.log('Drawing finished and state reset');
+}
+
+export function isShapeTool(tool = null) {
+    const checkTool = tool || currentTool;
+    const shapeTools = ['rectangle', 'circle', 'triangle', 'diamond', 'ellipse', 'star'];
+    return shapeTools.includes(checkTool);
+}
+
 // Initialize the module
 export function init() {
     initializeToolManager();

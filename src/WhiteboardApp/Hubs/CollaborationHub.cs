@@ -153,9 +153,23 @@ public class CollaborationHub : Hub
                 "Line" => ElementType.Line,
                 "StickyNote" => ElementType.StickyNote,
                 "Image" => ElementType.Image,
+                "rectangle" => ElementType.Shape,
+                "circle" => ElementType.Shape,
+                "triangle" => ElementType.Shape,
+                "diamond" => ElementType.Shape,
+                "ellipse" => ElementType.Shape,
+                "star" => ElementType.Shape,
+                "Path" => ElementType.Drawing,
                 _ => ElementType.Drawing
             };
 
+            // Parse the data and preserve the original element type for shapes
+            var dataDict = JsonSerializer.Deserialize<Dictionary<string, object>>(data.GetRawText()) ?? new Dictionary<string, object>();
+            if (type == ElementType.Shape)
+            {
+                dataDict["shapeType"] = elementType; // Preserve original shape type (rectangle, circle, etc.)
+            }
+            
             var element = new BoardElement
             {
                 BoardId = Guid.Parse(boardId),
@@ -164,7 +178,7 @@ public class CollaborationHub : Hub
                 Y = y,
                 Width = width,
                 Height = height,
-                Data = JsonDocument.Parse(data.GetRawText()),
+                Data = JsonDocument.Parse(JsonSerializer.Serialize(dataDict)),
                 CreatedBy = Context.UserIdentifier ?? "Anonymous"
             };
 
@@ -450,10 +464,22 @@ public class CollaborationHub : Hub
             var element = await _elementService.GetElementAsync(elementGuid);
             if (element != null && element.Type == expectedType)
             {
-                element.Data = JsonDocument.Parse(JsonSerializer.Serialize(updatedData));
+                // Merge new data with existing data to preserve all properties
+                var existingData = element.Data?.RootElement.GetRawText() ?? "{}";
+                var existingDataObj = JsonSerializer.Deserialize<Dictionary<string, object>>(existingData) ?? new Dictionary<string, object>();
+                var updatedDataObj = JsonSerializer.Deserialize<Dictionary<string, object>>(JsonSerializer.Serialize(updatedData)) ?? new Dictionary<string, object>();
+                
+                // Merge the properties (updatedData takes precedence)
+                foreach (var kvp in updatedDataObj)
+                {
+                    existingDataObj[kvp.Key] = kvp.Value;
+                }
+                
+                element.Data = JsonDocument.Parse(JsonSerializer.Serialize(existingDataObj));
                 await _elementService.UpdateElementAsync(element);
                 
-                await Clients.Group($"Board_{boardId}").SendAsync(eventName, elementId, updatedData);
+                // Send back the merged data to all clients
+                await Clients.Group($"Board_{boardId}").SendAsync(eventName, elementId, existingDataObj);
             }
         }
         catch (Exception ex)
@@ -488,10 +514,28 @@ public class CollaborationHub : Hub
 
     private static object CreateElementResponse(BoardElement savedElement, string? tempId)
     {
+        // For shapes, return the original shape type instead of "Shape"
+        string elementType = savedElement.Type.ToString();
+        if (savedElement.Type == ElementType.Shape && savedElement.Data != null)
+        {
+            try
+            {
+                var dataDict = JsonSerializer.Deserialize<Dictionary<string, object>>(savedElement.Data.RootElement.GetRawText());
+                if (dataDict?.ContainsKey("shapeType") == true)
+                {
+                    elementType = dataDict["shapeType"]?.ToString() ?? elementType;
+                }
+            }
+            catch
+            {
+                // Fallback to enum string if parsing fails
+            }
+        }
+        
         return new
         {
             id = savedElement.Id.ToString(),
-            type = savedElement.Type.ToString(),
+            type = elementType,
             x = savedElement.X,
             y = savedElement.Y,
             width = savedElement.Width,

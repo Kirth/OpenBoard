@@ -224,6 +224,11 @@ export function endPan() {
 // Mouse wheel handler
 export function handleMouseWheel(event) {
     try {
+        if (!dependencies.canvas) {
+            console.warn('Canvas not available for mouse wheel handling');
+            return false;
+        }
+        
         event.preventDefault();
         
         const rect = dependencies.canvas.getBoundingClientRect();
@@ -322,7 +327,7 @@ export function initializeMinimap() {
     try {
         minimapCanvas = document.getElementById('minimap-canvas');
         if (!minimapCanvas) {
-            console.warn('Minimap canvas not found');
+            console.warn('Minimap canvas not found - element may not be rendered yet');
             return false;
         }
         
@@ -584,6 +589,18 @@ export function getViewportInfo() {
         zoom: zoomLevel,
         isPanning: isPanning
     };
+}
+
+export function getViewportX() {
+    return viewportX;
+}
+
+export function getViewportY() {
+    return viewportY;
+}
+
+export function getZoomLevel() {
+    return zoomLevel;
 }
 
 export function setViewport(x, y, zoom) {

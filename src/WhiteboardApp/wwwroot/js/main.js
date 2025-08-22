@@ -14,6 +14,12 @@ let pendingImagePosition = null;
 let shouldSwitchToSelectAfterEditing = false;
 let startX = 0, startY = 0;
 
+// Dragging state
+let isDragging = false;
+let draggedElementId = null;
+let dragStartX = 0, dragStartY = 0;
+let elementStartX = 0, elementStartY = 0;
+
 // Initialize all modules and set up dependencies
 export async function initializeApplication() {
     try {
@@ -26,10 +32,7 @@ export async function initializeApplication() {
         signalrClient.init();
         viewportManager.init();
 
-        // Set up cross-module dependencies
-        setupDependencies();
-
-        // Initialize core functionality
+        // Initialize core functionality first
         const canvasInitialized = canvasManager.initializeCanvas();
         if (!canvasInitialized) {
             throw new Error('Canvas initialization failed');
@@ -37,6 +40,9 @@ export async function initializeApplication() {
 
         viewportManager.initializeViewport();
         toolManager.initializeToolManager();
+
+        // Set up cross-module dependencies after initialization
+        setupDependencies();
 
         // Set up event handlers
         setupEventHandlers();
@@ -54,7 +60,7 @@ function setupDependencies() {
     // Canvas Manager Dependencies
     canvasManager.setDependencies({
         elements: elementFactory.elements,
-        selectedElementId: elementFactory.selectedElementId,
+        getSelectedElementId: elementFactory.getSelectedElementId,
         getElementAtPoint: elementFactory.getElementAtPoint,
         highlightElement: elementFactory.highlightElement,
         clearSelection: elementFactory.clearSelection,
@@ -63,7 +69,10 @@ function setupDependencies() {
         drawCollaborativeSelections: elementFactory.drawCollaborativeSelections,
         cursors: signalrClient.cursors,
         editorManager: elementFactory.editorManager,
-        minimapCtx: null // Will be set by viewport manager
+        minimapCtx: null, // Will be set by viewport manager
+        getViewportX: viewportManager.getViewportX,
+        getViewportY: viewportManager.getViewportY,
+        getZoomLevel: viewportManager.getZoomLevel
     });
 
     // Tool Manager Dependencies
@@ -128,6 +137,7 @@ function setupDependencies() {
         selectedElementId: elementFactory.selectedElementId,
         drawElement: elementFactory.drawElement,
         updateElementPosition: elementFactory.updateElementPosition,
+        updateElementPositionLocal: elementFactory.updateElementPositionLocal,
         redrawCanvas: canvasManager.redrawCanvas,
         clearCanvas: canvasManager.clearCanvas,
         highlightElement: elementFactory.highlightElement,
@@ -136,7 +146,8 @@ function setupDependencies() {
         hideElementSelection: elementFactory.hideElementSelection,
         updateMinimapImmediate: viewportManager.updateMinimapImmediate,
         showNotification: showNotification,
-        screenToWorld: canvasManager.screenToWorld
+        screenToWorld: canvasManager.screenToWorld,
+        editorManager: elementFactory.editorManager
     });
 
     // Viewport Manager Dependencies
@@ -171,10 +182,28 @@ function setupEventHandlers() {
     canvas.addEventListener('contextmenu', handleCanvasRightClick);
     canvas.addEventListener('wheel', viewportManager.handleMouseWheel);
 
-    // Window resize handler
-    window.addEventListener('resize', () => {
-        canvasManager.resizeCanvas();
-        viewportManager.updateMinimapImmediate();
+    // Window resize handler with throttling
+    let resizeTimeout;
+    const handleResize = () => {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+            console.log('Window resized, updating canvas and viewport');
+            canvasManager.resizeCanvas();
+            viewportManager.updateMinimapImmediate();
+            
+            // Redraw canvas to ensure elements are visible
+            canvasManager.redrawCanvas();
+        }, 100);
+    };
+    
+    window.addEventListener('resize', handleResize);
+    
+    // Handle fullscreen changes specifically
+    document.addEventListener('fullscreenchange', () => {
+        console.log('Fullscreen state changed');
+        setTimeout(() => {
+            handleResize();
+        }, 200); // Give extra time for fullscreen transition
     });
 
     console.log('Event handlers set up');
@@ -184,6 +213,12 @@ function setupEventHandlers() {
 function handleMouseDown(event) {
     try {
         event.preventDefault();
+        
+        // Check if this is a right-click
+        if (event.button === 2) {
+            // Right-click - don't handle tool actions, let right-click handler manage this
+            return;
+        }
         
         const rect = event.target.getBoundingClientRect();
         const screenX = event.clientX - rect.left;
@@ -201,7 +236,7 @@ function handleMouseDown(event) {
             return;
         }
 
-        // Handle different tools
+        // Handle different tools (only for left-click)
         console.log(`Handling mousedown for tool: ${currentTool} at (${worldPos.x}, ${worldPos.y})`);
         switch (currentTool) {
             case 'select':
@@ -250,6 +285,18 @@ function handleMouseMove(event) {
 
         const currentTool = toolManager.getCurrentTool();
         
+        // Handle element dragging in select mode
+        if (isDragging && draggedElementId && currentTool === 'select') {
+            const deltaX = worldPos.x - dragStartX;
+            const deltaY = worldPos.y - dragStartY;
+            const newX = elementStartX + deltaX;
+            const newY = elementStartY + deltaY;
+            
+            elementFactory.updateElementPositionLocal(draggedElementId, newX, newY);
+            canvasManager.redrawCanvas();
+            return;
+        }
+        
         // Handle tool-specific mouse move
         if (toolManager.isCurrentlyDrawing()) {
             toolManager.drawLine(worldPos.x, worldPos.y);
@@ -286,6 +333,24 @@ function handleMouseUp(event) {
 
         const currentTool = toolManager.getCurrentTool();
 
+        // Handle dragging completion
+        if (isDragging && draggedElementId) {
+            console.log('Finished dragging element:', draggedElementId);
+            
+            // Send element move to other clients
+            if (signalrClient.isConnected() && signalrClient.getCurrentBoardId()) {
+                const element = elementFactory.getElementById(draggedElementId);
+                if (element) {
+                    signalrClient.sendElementMove(signalrClient.getCurrentBoardId(), draggedElementId, element.x, element.y);
+                }
+            }
+            
+            // Reset dragging state
+            isDragging = false;
+            draggedElementId = null;
+            return;
+        }
+
         // Handle tool completion
         if (toolManager.isCurrentlyDrawing()) {
             // Finish pen/drawing tool
@@ -296,7 +361,8 @@ function handleMouseUp(event) {
                     signalrClient.sendElement(signalrClient.getCurrentBoardId(), element, element.id);
                 }
             }
-            // Reset drawing state in tool manager would be needed here
+            // Reset drawing state
+            toolManager.finishDrawing();
         } else if (toolManager.isCurrentlyDrawingShape()) {
             // Finish shape
             let element = null;
@@ -347,8 +413,23 @@ function handleCanvasRightClick(event) {
         const rect = event.target.getBoundingClientRect();
         const screenX = event.clientX - rect.left;
         const screenY = event.clientY - rect.top;
+        const worldPos = canvasManager.screenToWorld(screenX, screenY);
         
-        showContextMenu(screenX, screenY);
+        // Check if we right-clicked on an element
+        const element = elementFactory.getElementAtPoint(worldPos.x, worldPos.y);
+        
+        if (element) {
+            // Select the element first
+            elementFactory.highlightElement(element.id);
+            console.log('Right-clicked on element:', element.id);
+            
+            // Show context menu for the element
+            showContextMenu(screenX, screenY, element);
+        } else {
+            // Right-clicked on empty space
+            elementFactory.clearSelection();
+            showContextMenu(screenX, screenY, null);
+        }
         
     } catch (error) {
         console.error('Error in handleCanvasRightClick:', error);
@@ -360,10 +441,22 @@ function handleSelectMouseDown(x, y) {
     const element = elementFactory.getElementAtPoint(x, y);
     
     if (element) {
+        console.log('Element selected:', element.id);
         elementFactory.highlightElement(element.id);
-        // Start dragging logic would go here
+        
+        // Start dragging
+        isDragging = true;
+        draggedElementId = element.id;
+        dragStartX = x;
+        dragStartY = y;
+        elementStartX = element.x;
+        elementStartY = element.y;
+        console.log('Started dragging element:', element.id);
     } else {
+        console.log('Clearing selection - clicked on empty space');
         elementFactory.clearSelection();
+        isDragging = false;
+        draggedElementId = null;
     }
 }
 
@@ -384,13 +477,322 @@ function createStickyNoteAtPosition(x, y) {
 }
 
 // Utility functions
-function showContextMenu(x, y) {
-    console.log(`Context menu requested at (${x}, ${y})`);
-    // Context menu implementation
+// Context menu state
+let currentContextMenu = null;
+let contextMenuElement = null;
+
+function showContextMenu(x, y, element = null) {
+    try {
+        // Hide any existing context menu
+        hideContextMenu();
+        
+        console.log(`Context menu requested at (${x}, ${y})`, element);
+        
+        // Create context menu element
+        contextMenuElement = document.createElement('div');
+        contextMenuElement.className = 'context-menu';
+        contextMenuElement.style.cssText = `
+            position: fixed;
+            left: ${x}px;
+            top: ${y}px;
+            background: white;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            z-index: 10000;
+            min-width: 180px;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+        `;
+        
+        if (element) {
+            // Element-specific context menu
+            contextMenuElement.innerHTML = createElementContextMenu(element);
+        } else {
+            // General context menu
+            contextMenuElement.innerHTML = createGeneralContextMenu();
+        }
+        
+        document.body.appendChild(contextMenuElement);
+        currentContextMenu = element;
+        
+        // Add click listener to hide menu when clicking outside
+        setTimeout(() => {
+            document.addEventListener('click', handleContextMenuOutsideClick);
+        }, 0);
+        
+    } catch (error) {
+        console.error('Error showing context menu:', error);
+    }
 }
 
 function hideContextMenu() {
-    console.log('Hide context menu');
+    if (contextMenuElement && contextMenuElement.parentNode) {
+        contextMenuElement.parentNode.removeChild(contextMenuElement);
+        contextMenuElement = null;
+        currentContextMenu = null;
+        document.removeEventListener('click', handleContextMenuOutsideClick);
+    }
+}
+
+function handleContextMenuOutsideClick(event) {
+    if (contextMenuElement && !contextMenuElement.contains(event.target)) {
+        hideContextMenu();
+    }
+}
+
+function createElementContextMenu(element) {
+    const isShape = ['rectangle', 'circle', 'triangle', 'diamond', 'ellipse', 'star'].includes(element.type);
+    const isLine = element.type === 'Line';
+    const hasStylng = isShape || isLine;
+    
+    let menuHTML = `
+        <div class="context-menu-section">
+            <div class="context-menu-title">Element: ${element.type}</div>
+        </div>
+        <div class="context-menu-section">
+            <button class="context-menu-item" onclick="bringElementToFront('${element.id}')">
+                📤 Bring to Front
+            </button>
+            <button class="context-menu-item" onclick="sendElementToBack('${element.id}')">
+                📥 Send to Back
+            </button>
+        </div>
+    `;
+    
+    if (hasStylng) {
+        menuHTML += `
+            <div class="context-menu-section">
+                <div class="context-menu-subtitle">Styling</div>
+                ${isShape ? `
+                    <div class="context-menu-color-row">
+                        <label>Fill Color:</label>
+                        <input type="color" class="context-menu-color" value="${element.data?.fillColor || '#ffffff'}" 
+                               onchange="updateElementFillColor('${element.id}', this.value)">
+                        <button class="context-menu-btn" onclick="removeElementFill('${element.id}')">None</button>
+                    </div>
+                ` : ''}
+                <div class="context-menu-color-row">
+                    <label>Border Color:</label>
+                    <input type="color" class="context-menu-color" value="${element.data?.color || '#000000'}" 
+                           onchange="updateElementBorderColor('${element.id}', this.value)">
+                </div>
+                <div class="context-menu-range-row">
+                    <label>Border Width:</label>
+                    <input type="range" min="1" max="10" value="${element.data?.strokeWidth || 2}" 
+                           class="context-menu-range" onchange="updateElementBorderWidth('${element.id}', this.value)">
+                    <span class="range-value">${element.data?.strokeWidth || 2}px</span>
+                </div>
+            </div>
+        `;
+    }
+    
+    menuHTML += `
+        <div class="context-menu-section">
+            <button class="context-menu-item context-menu-delete" onclick="deleteElement('${element.id}')">
+                🗑️ Delete
+            </button>
+        </div>
+    `;
+    
+    return menuHTML + getContextMenuStyles();
+}
+
+function createGeneralContextMenu() {
+    return `
+        <div class="context-menu-section">
+            <button class="context-menu-item" onclick="pasteElementHere()">
+                📋 Paste
+            </button>
+            <button class="context-menu-item" onclick="clearCanvasFromBlazor()">
+                🗑️ Clear Canvas
+            </button>
+        </div>
+    ` + getContextMenuStyles();
+}
+
+function getContextMenuStyles() {
+    return `
+        <style>
+        .context-menu-section {
+            border-bottom: 1px solid #eee;
+            padding: 8px 0;
+        }
+        .context-menu-section:last-child {
+            border-bottom: none;
+        }
+        .context-menu-title {
+            font-weight: bold;
+            padding: 4px 12px;
+            color: #333;
+        }
+        .context-menu-subtitle {
+            font-weight: bold;
+            font-size: 12px;
+            color: #666;
+            padding: 4px 12px;
+            margin-bottom: 4px;
+        }
+        .context-menu-item {
+            display: block;
+            width: 100%;
+            padding: 8px 12px;
+            background: none;
+            border: none;
+            text-align: left;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .context-menu-item:hover {
+            background-color: #f0f0f0;
+        }
+        .context-menu-delete {
+            color: #dc3545;
+        }
+        .context-menu-delete:hover {
+            background-color: #ffe6e6;
+        }
+        .context-menu-color-row, .context-menu-range-row {
+            display: flex;
+            align-items: center;
+            padding: 4px 12px;
+            gap: 8px;
+        }
+        .context-menu-color-row label, .context-menu-range-row label {
+            font-size: 12px;
+            min-width: 80px;
+        }
+        .context-menu-color {
+            width: 30px;
+            height: 25px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .context-menu-range {
+            flex: 1;
+            margin: 0 4px;
+        }
+        .context-menu-btn {
+            padding: 2px 6px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            background: white;
+            font-size: 10px;
+            cursor: pointer;
+        }
+        .range-value {
+            font-size: 11px;
+            color: #666;
+            min-width: 30px;
+        }
+        </style>
+    `;
+}
+
+// Context menu action functions
+function bringElementToFront(elementId) {
+    try {
+        // Use SignalR to bring element to front
+        if (signalrClient.isConnected() && signalrClient.getCurrentBoardId()) {
+            signalrClient.sendBringToFront(signalrClient.getCurrentBoardId(), elementId);
+        }
+        hideContextMenu();
+        showNotification('Element brought to front', 'success');
+    } catch (error) {
+        console.error('Error bringing element to front:', error);
+    }
+}
+
+function sendElementToBack(elementId) {
+    try {
+        // Use SignalR to send element to back
+        if (signalrClient.isConnected() && signalrClient.getCurrentBoardId()) {
+            signalrClient.sendToBack(signalrClient.getCurrentBoardId(), elementId);
+        }
+        hideContextMenu();
+        showNotification('Element sent to back', 'success');
+    } catch (error) {
+        console.error('Error sending element to back:', error);
+    }
+}
+
+function deleteElement(elementId) {
+    try {
+        elementFactory.deleteSelectedElement();
+        hideContextMenu();
+        showNotification('Element deleted', 'success');
+    } catch (error) {
+        console.error('Error deleting element:', error);
+    }
+}
+
+function updateElementFillColor(elementId, color) {
+    try {
+        updateElementStyle(elementId, { fillColor: color });
+        console.log(`Updated fill color of ${elementId} to ${color}`);
+    } catch (error) {
+        console.error('Error updating fill color:', error);
+    }
+}
+
+function removeElementFill(elementId) {
+    try {
+        updateElementStyle(elementId, { fillColor: 'transparent' });
+        console.log(`Removed fill from ${elementId}`);
+    } catch (error) {
+        console.error('Error removing fill:', error);
+    }
+}
+
+function updateElementBorderColor(elementId, color) {
+    try {
+        updateElementStyle(elementId, { color: color });
+        console.log(`Updated border color of ${elementId} to ${color}`);
+    } catch (error) {
+        console.error('Error updating border color:', error);
+    }
+}
+
+function updateElementBorderWidth(elementId, width) {
+    try {
+        updateElementStyle(elementId, { strokeWidth: parseInt(width) });
+        
+        // Update the range value display
+        const rangeValue = contextMenuElement?.querySelector('.range-value');
+        if (rangeValue) {
+            rangeValue.textContent = `${width}px`;
+        }
+        
+        console.log(`Updated border width of ${elementId} to ${width}px`);
+    } catch (error) {
+        console.error('Error updating border width:', error);
+    }
+}
+
+function updateElementStyle(elementId, styleData) {
+    // Update local element data immediately for visual feedback
+    const element = elementFactory.getElementById(elementId);
+    if (element && element.data) {
+        Object.assign(element.data, styleData);
+        canvasManager.redrawCanvas();
+    }
+    
+    // Send update to server if connected
+    if (signalrClient.isConnected() && signalrClient.getCurrentBoardId()) {
+        // Use the existing element style update functionality
+        signalrClient.updateElementStyle(elementId, styleData);
+    }
+}
+
+function pasteElementHere() {
+    try {
+        elementFactory.pasteElement();
+        hideContextMenu();
+        showNotification('Element pasted', 'success');
+    } catch (error) {
+        console.error('Error pasting element:', error);
+    }
 }
 
 function showNotification(message, type = 'info') {
@@ -446,8 +848,25 @@ export function setBlazorReference(dotNetRef) {
     console.log('Blazor reference set across all modules');
 }
 
-export function initializeSignalRConnection(boardId) {
-    return signalrClient.initializeSignalR(boardId);
+export async function initializeSignalRConnection(boardId) {
+    const result = await signalrClient.initializeSignalR(boardId);
+    
+    // Update dependencies after SignalR connection is established
+    if (result) {
+        console.log('SignalR connection established, updating dependencies...');
+        
+        // Update element factory dependencies with the actual connection
+        elementFactory.setDependencies({
+            signalRConnection: signalrClient.getConnection(),
+            currentBoardId: signalrClient.getCurrentBoardId(),
+            updateStickyNoteContent: signalrClient.updateStickyNoteContent,
+            updateTextElementContent: signalrClient.updateTextElementContent
+        });
+        
+        console.log('Dependencies updated with SignalR connection');
+    }
+    
+    return result;
 }
 
 export function clearCanvasFromBlazor() {
@@ -491,6 +910,17 @@ if (typeof window !== 'undefined') {
     window.showNotification = showNotification;
     window.triggerImageUpload = triggerImageUpload;
     window.handleImageUpload = handleImageUpload;
+    
+    // Context menu action functions
+    window.bringElementToFront = bringElementToFront;
+    window.sendElementToBack = sendElementToBack;
+    window.deleteElement = deleteElement;
+    window.updateElementFillColor = updateElementFillColor;
+    window.removeElementFill = removeElementFill;
+    window.updateElementBorderColor = updateElementBorderColor;
+    window.updateElementBorderWidth = updateElementBorderWidth;
+    window.updateElementStyle = updateElementStyle;
+    window.pasteElementHere = pasteElementHere;
     
     // Export module references for debugging
     window.modules = {

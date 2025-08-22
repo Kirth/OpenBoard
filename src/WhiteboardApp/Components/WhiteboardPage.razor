@@ -299,17 +299,37 @@
             if (Guid.TryParse(BoardId, out var boardGuid))
             {
                 var elements = await BoardService.GetBoardElementsAsync(boardGuid);
-                return JsonSerializer.Serialize(elements.Select(e => new
-                {
-                    id = e.Id.ToString(),
-                    type = e.Type.ToString(),
-                    x = e.X,
-                    y = e.Y,
-                    width = e.Width,
-                    height = e.Height,
-                    zIndex = e.ZIndex,
-                    data = JsonSerializer.Deserialize<object>(e.Data?.RootElement.GetRawText() ?? "{}"),
-                    createdBy = e.CreatedBy
+                return JsonSerializer.Serialize(elements.Select(e => {
+                    // For shapes, return the original shape type instead of "Shape"
+                    string elementType = e.Type.ToString();
+                    if (e.Type == ElementType.Shape && e.Data != null)
+                    {
+                        try
+                        {
+                            var dataDict = JsonSerializer.Deserialize<Dictionary<string, object>>(e.Data.RootElement.GetRawText());
+                            if (dataDict?.ContainsKey("shapeType") == true)
+                            {
+                                elementType = dataDict["shapeType"]?.ToString() ?? elementType;
+                            }
+                        }
+                        catch
+                        {
+                            // Fallback to enum string if parsing fails
+                        }
+                    }
+                    
+                    return new
+                    {
+                        id = e.Id.ToString(),
+                        type = elementType,
+                        x = e.X,
+                        y = e.Y,
+                        width = e.Width,
+                        height = e.Height,
+                        zIndex = e.ZIndex,
+                        data = e.Data?.RootElement,
+                        createdBy = e.CreatedBy
+                    };
                 }));
             }
             return "[]";

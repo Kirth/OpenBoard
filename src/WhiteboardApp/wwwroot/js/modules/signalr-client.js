@@ -39,7 +39,7 @@ export async function initializeSignalR(boardId) {
         currentBoardId = boardId;
         
         // Create connection
-        signalRConnection = new signalR.HubConnectionBuilder()
+        signalRConnection = new window.signalR.HubConnectionBuilder()
             .withUrl("/collaborationhub")
             .withAutomaticReconnect()
             .build();
@@ -77,7 +77,33 @@ function setupEventHandlers() {
     // Element added handler
     signalRConnection.on("ElementAdded", (elementData, tempId) => {
         try {
+            // Extract tempId from elementData if not provided as separate parameter
+            const actualTempId = tempId || elementData.tempId;
+            console.log('Received element via SignalR:', elementData, 'tempId parameter:', tempId, 'tempId in data:', elementData.tempId);
+            
+            // Handle ID remapping if tempId is provided
+            if (actualTempId && dependencies.elements && dependencies.elements.has(actualTempId)) {
+                console.log(`Remapping element ID from ${actualTempId} to ${elementData.id}`);
+                
+                // Remove the temporary element
+                dependencies.elements.delete(actualTempId);
+                
+                // Update editor manager if it's editing this element
+                if (dependencies.editorManager && dependencies.editorManager.getCurrentEditingElementId() === actualTempId) {
+                    console.log('Updating editor manager with new element ID');
+                    dependencies.editorManager.updateEditingElementId(elementData.id);
+                }
+            }
+            
             if (dependencies.drawElement) {
+                console.log('Calling drawElement with:', {
+                    id: elementData.id,
+                    x: elementData.x,
+                    y: elementData.y,
+                    type: elementData.type,
+                    width: elementData.width,
+                    height: elementData.height
+                });
                 dependencies.drawElement(
                     elementData.id,
                     elementData.x,
@@ -87,6 +113,8 @@ function setupEventHandlers() {
                     elementData.width,
                     elementData.height
                 );
+            } else {
+                console.warn('drawElement dependency not available');
             }
 
             if (dependencies.updateMinimapImmediate) {
@@ -136,8 +164,14 @@ function setupEventHandlers() {
     // Element moved handler
     signalRConnection.on("ElementMoved", (elementId, newX, newY) => {
         try {
-            if (dependencies.updateElementPosition) {
-                dependencies.updateElementPosition(elementId, newX, newY);
+            // Use updateElementPositionLocal to avoid infinite loop
+            // (updateElementPosition would call sendElementMove again)
+            if (dependencies.updateElementPositionLocal) {
+                dependencies.updateElementPositionLocal(elementId, newX, newY);
+            }
+
+            if (dependencies.redrawCanvas) {
+                dependencies.redrawCanvas();
             }
 
             if (dependencies.updateMinimapImmediate) {
@@ -151,16 +185,24 @@ function setupEventHandlers() {
     });
 
     // Sticky note updated handler
-    signalRConnection.on("StickyNoteUpdated", (elementId, newContent) => {
+    signalRConnection.on("StickyNoteUpdated", (elementId, updatedData) => {
         try {
+            console.log(`Received StickyNoteUpdated via SignalR: ${elementId}`, updatedData);
+            
             if (dependencies.elements) {
                 const element = dependencies.elements.get(elementId);
                 if (element && element.type === 'StickyNote') {
-                    element.data.content = newContent;
+                    console.log('Updating local sticky note data');
+                    // Merge the updated data with existing data
+                    element.data = { ...element.data, ...updatedData };
                     if (dependencies.redrawCanvas) {
                         dependencies.redrawCanvas();
                     }
+                } else {
+                    console.warn('Sticky note element not found or wrong type:', element);
                 }
+            } else {
+                console.warn('Elements collection not available');
             }
 
             console.log(`Sticky note ${elementId} updated`);
@@ -170,12 +212,16 @@ function setupEventHandlers() {
     });
 
     // Text element updated handler
-    signalRConnection.on("TextElementUpdated", (elementId, newContent) => {
+    signalRConnection.on("TextElementUpdated", (elementId, updatedData) => {
         try {
+            console.log(`Received TextElementUpdated via SignalR: ${elementId}`, updatedData);
+            
             if (dependencies.elements) {
                 const element = dependencies.elements.get(elementId);
                 if (element && element.type === 'Text') {
-                    element.data.content = newContent;
+                    console.log('Updating local text element data');
+                    // Merge the updated data with existing data
+                    element.data = { ...element.data, ...updatedData };
                     if (dependencies.redrawCanvas) {
                         dependencies.redrawCanvas();
                     }
@@ -338,6 +384,14 @@ async function loadExistingElements(boardId) {
 
         // Add each element to the canvas
         for (const element of elements) {
+            console.log('Loading element:', {
+                id: element.id,
+                type: element.type,
+                data: element.data,
+                dataType: typeof element.data,
+                dataConstructor: element.data?.constructor?.name
+            });
+            
             if (dependencies.drawElement) {
                 dependencies.drawElement(
                     element.id,
@@ -369,7 +423,7 @@ async function loadExistingElements(boardId) {
 // Test SignalR connection
 export async function testSignalRConnection() {
     try {
-        if (!signalRConnection || signalRConnection.state !== signalR.HubConnectionState.Connected) {
+        if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
             console.log("SignalR not connected");
             return false;
         }
@@ -386,14 +440,16 @@ export async function testSignalRConnection() {
 // Sending functions
 export async function sendElement(boardId, elementData, tempId) {
     try {
-        if (!signalRConnection || signalRConnection.state !== signalR.HubConnectionState.Connected) {
+        if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
             console.warn("SignalR not connected, cannot send element");
             return false;
         }
 
         // Include tempId in elementData if provided
         const elementDataWithTempId = tempId ? { ...elementData, tempId: tempId } : elementData;
+        console.log('Sending element to server:', elementDataWithTempId);
         await signalRConnection.invoke("AddElement", boardId, elementDataWithTempId);
+        console.log('Element sent successfully');
         return true;
     } catch (error) {
         console.error("Failed to send element:", error);
@@ -403,11 +459,13 @@ export async function sendElement(boardId, elementData, tempId) {
 
 export async function sendElementMove(boardId, elementId, newX, newY) {
     try {
-        if (!signalRConnection || signalRConnection.state !== signalR.HubConnectionState.Connected) {
+        if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
             return false;
         }
 
+        console.log(`Sending element move: ${elementId} to (${newX}, ${newY})`);
         await signalRConnection.invoke("MoveElement", boardId, elementId, newX, newY);
+        console.log('Element move sent successfully');
         return true;
     } catch (error) {
         console.error("Failed to send element move:", error);
@@ -417,7 +475,7 @@ export async function sendElementMove(boardId, elementId, newX, newY) {
 
 export async function sendDrawingPath(boardId, pathData) {
     try {
-        if (!signalRConnection || signalRConnection.state !== signalR.HubConnectionState.Connected) {
+        if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
             return false;
         }
 
@@ -431,7 +489,7 @@ export async function sendDrawingPath(boardId, pathData) {
 
 export async function sendCursorUpdate(boardId, x, y) {
     try {
-        if (!signalRConnection || signalRConnection.state !== signalR.HubConnectionState.Connected) {
+        if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
             return false;
         }
 
@@ -445,7 +503,7 @@ export async function sendCursorUpdate(boardId, x, y) {
 
 export async function sendBoardCleared(boardId) {
     try {
-        if (!signalRConnection || signalRConnection.state !== signalR.HubConnectionState.Connected) {
+        if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
             return false;
         }
 
@@ -459,7 +517,7 @@ export async function sendBoardCleared(boardId) {
 
 export async function sendElementSelect(elementId) {
     try {
-        if (!signalRConnection || signalRConnection.state !== signalR.HubConnectionState.Connected) {
+        if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
             return false;
         }
 
@@ -473,7 +531,7 @@ export async function sendElementSelect(elementId) {
 
 export async function sendElementDeselect(elementId) {
     try {
-        if (!signalRConnection || signalRConnection.state !== signalR.HubConnectionState.Connected) {
+        if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
             return false;
         }
 
@@ -485,13 +543,31 @@ export async function sendElementDeselect(elementId) {
     }
 }
 
-export async function sendElementToBack(elementId) {
+export async function sendBringToFront(boardId, elementId) {
     try {
-        if (!signalRConnection || signalRConnection.state !== signalR.HubConnectionState.Connected) {
+        if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
             return false;
         }
 
-        await signalRConnection.invoke("SendElementToBack", elementId);
+        console.log(`Bringing element ${elementId} to front`);
+        await signalRConnection.invoke("BringToFront", boardId, elementId);
+        console.log('Element brought to front successfully');
+        return true;
+    } catch (error) {
+        console.error("Failed to bring element to front:", error);
+        return false;
+    }
+}
+
+export async function sendElementToBack(boardId, elementId) {
+    try {
+        if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
+            return false;
+        }
+
+        console.log(`Sending element ${elementId} to back`);
+        await signalRConnection.invoke("SendToBack", boardId, elementId);
+        console.log('Element sent to back successfully');
         return true;
     } catch (error) {
         console.error("Failed to send element to back:", error);
@@ -501,7 +577,7 @@ export async function sendElementToBack(elementId) {
 
 export async function sendElementResize(boardId, elementId, x, y, width, height) {
     try {
-        if (!signalRConnection || signalRConnection.state !== signalR.HubConnectionState.Connected) {
+        if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
             return false;
         }
 
@@ -514,13 +590,21 @@ export async function sendElementResize(boardId, elementId, x, y, width, height)
 }
 
 // Content update functions
-export async function updateStickyNoteContent(elementId, newContent) {
+export async function updateStickyNoteContent(elementId, updatedData) {
     try {
-        if (!signalRConnection || signalRConnection.state !== signalR.HubConnectionState.Connected) {
+        if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
+            console.warn("SignalR not connected, cannot update sticky note");
             return false;
         }
 
-        await signalRConnection.invoke("UpdateStickyNote", elementId, newContent);
+        if (!currentBoardId) {
+            console.warn("No current board ID available for sticky note update");
+            return false;
+        }
+
+        console.log(`Updating sticky note ${elementId} with data:`, updatedData);
+        await signalRConnection.invoke("UpdateStickyNote", currentBoardId, elementId, updatedData);
+        console.log('Sticky note update sent successfully');
         return true;
     } catch (error) {
         console.error("Failed to update sticky note content:", error);
@@ -528,16 +612,46 @@ export async function updateStickyNoteContent(elementId, newContent) {
     }
 }
 
-export async function updateTextElementContent(elementId, newContent) {
+export async function updateTextElementContent(elementId, updatedData) {
     try {
-        if (!signalRConnection || signalRConnection.state !== signalR.HubConnectionState.Connected) {
+        if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
+            console.warn("SignalR not connected, cannot update text element");
             return false;
         }
 
-        await signalRConnection.invoke("UpdateTextElement", elementId, newContent);
+        if (!currentBoardId) {
+            console.warn("No current board ID available for text element update");
+            return false;
+        }
+
+        console.log(`Updating text element ${elementId} with data:`, updatedData);
+        await signalRConnection.invoke("UpdateTextElement", currentBoardId, elementId, updatedData);
+        console.log('Text element update sent successfully');
         return true;
     } catch (error) {
         console.error("Failed to update text element content:", error);
+        return false;
+    }
+}
+
+export async function updateElementStyle(elementId, styleData) {
+    try {
+        if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
+            console.warn("SignalR not connected, cannot update element style");
+            return false;
+        }
+
+        if (!currentBoardId) {
+            console.warn("No current board ID available for element style update");
+            return false;
+        }
+
+        console.log(`Updating element ${elementId} style:`, styleData);
+        await signalRConnection.invoke("UpdateElementStyle", currentBoardId, elementId, styleData);
+        console.log('Element style update sent successfully');
+        return true;
+    } catch (error) {
+        console.error("Failed to update element style:", error);
         return false;
     }
 }
@@ -629,7 +743,7 @@ export function getConnection() {
 }
 
 export function isConnected() {
-    return signalRConnection && signalRConnection.state === signalR.HubConnectionState.Connected;
+    return signalRConnection && signalRConnection.state === window.signalR.HubConnectionState.Connected;
 }
 
 export function getCurrentBoardId() {
@@ -640,15 +754,15 @@ export function getConnectionState() {
     if (!signalRConnection) return 'Disconnected';
     
     switch (signalRConnection.state) {
-        case signalR.HubConnectionState.Disconnected:
+        case window.signalR.HubConnectionState.Disconnected:
             return 'Disconnected';
-        case signalR.HubConnectionState.Connecting:
+        case window.signalR.HubConnectionState.Connecting:
             return 'Connecting';
-        case signalR.HubConnectionState.Connected:
+        case window.signalR.HubConnectionState.Connected:
             return 'Connected';
-        case signalR.HubConnectionState.Disconnecting:
+        case window.signalR.HubConnectionState.Disconnecting:
             return 'Disconnecting';
-        case signalR.HubConnectionState.Reconnecting:
+        case window.signalR.HubConnectionState.Reconnecting:
             return 'Reconnecting';
         default:
             return 'Unknown';
@@ -692,4 +806,5 @@ if (typeof window !== 'undefined') {
     window.cursors = cursors;
     window.setBlazorReference = setBlazorReference;
     window.addMouseMoveListener = addMouseMoveListener;
+    window.updateElementStyle = updateElementStyle;
 }
