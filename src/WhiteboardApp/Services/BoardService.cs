@@ -53,6 +53,7 @@ public class BoardService
     public async Task<List<Board>> GetPublicBoardsAsync()
     {
         return await _context.Boards
+            .Include(b => b.Elements)
             .Where(b => b.IsPublic)
             .OrderByDescending(b => b.UpdatedAt)
             .ToListAsync();
