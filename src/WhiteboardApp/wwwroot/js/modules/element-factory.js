@@ -622,8 +622,20 @@ export function drawCollaborativeSelections() {
 export function updateElementPosition(id, newX, newY) {
     const element = elements.get(id);
     if (element) {
+        const deltaX = newX - element.x;
+        const deltaY = newY - element.y;
+        
         element.x = newX;
         element.y = newY;
+        
+        // For Path elements, we need to update the actual path coordinates
+        if (element.type === 'Path' && element.data && element.data.path) {
+            element.data.path = element.data.path.map(point => ({
+                x: point.x + deltaX,
+                y: point.y + deltaY
+            }));
+        }
+        // Note: Line elements use x,y,width,height so they move correctly by default
         
         if (dependencies.sendElementMove && dependencies.currentBoardId) {
             dependencies.sendElementMove(dependencies.currentBoardId, id, newX, newY);
@@ -638,8 +650,19 @@ export function updateElementPosition(id, newX, newY) {
 export function updateElementPositionLocal(id, newX, newY) {
     const element = elements.get(id);
     if (element) {
+        const deltaX = newX - element.x;
+        const deltaY = newY - element.y;
+        
         element.x = newX;
         element.y = newY;
+        
+        // For Path elements, we need to update the actual path coordinates
+        if (element.type === 'Path' && element.data && element.data.path) {
+            element.data.path = element.data.path.map(point => ({
+                x: point.x + deltaX,
+                y: point.y + deltaY
+            }));
+        }
     }
 }
 

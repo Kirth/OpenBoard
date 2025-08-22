@@ -23,6 +23,12 @@ let draggedElementId = null;
 let dragStartX = 0, dragStartY = 0;
 let elementStartX = 0, elementStartY = 0;
 
+// Line handle dragging state
+let isDraggingLineHandle = false;
+let draggedLineHandle = null; // 'start' or 'end'
+let lineOriginalStart = { x: 0, y: 0 };
+let lineOriginalEnd = { x: 0, y: 0 };
+
 // Multi-select state
 let selectedElementIds = new Set();
 
@@ -305,6 +311,29 @@ function handleMouseMove(event) {
 
     const currentTool = toolManager.getCurrentTool();
 
+    // Handle line handle dragging in select mode
+    if (isDraggingLineHandle && draggedElementId && currentTool === 'select') {
+      const element = elementFactory.getElementById(draggedElementId);
+      if (element && element.type === 'Line') {
+        // Update the specific handle position
+        if (draggedLineHandle === 'start') {
+          // Moving start point - update element.x and element.y
+          element.x = worldPos.x;
+          element.y = worldPos.y;
+          // Update width and height to maintain end point
+          element.width = lineOriginalEnd.x - worldPos.x;
+          element.height = lineOriginalEnd.y - worldPos.y;
+        } else if (draggedLineHandle === 'end') {
+          // Moving end point - keep start point, update width and height
+          element.width = worldPos.x - element.x;
+          element.height = worldPos.y - element.y;
+        }
+        
+        canvasManager.redrawCanvas();
+        return;
+      }
+    }
+    
     // Handle element dragging in select mode
     if (isDragging && draggedElementId && currentTool === 'select') {
       const deltaX = worldPos.x - dragStartX;
@@ -353,7 +382,33 @@ function handleMouseUp(event) {
 
     const currentTool = toolManager.getCurrentTool();
 
-    // Handle dragging completion
+    // Handle line handle dragging completion
+    if (isDraggingLineHandle && draggedElementId) {
+      // console.log('Finished dragging line handle:', draggedLineHandle);
+
+      // Send element resize to other clients (includes the new line shape with width/height)
+      if (signalrClient.isConnected() && signalrClient.getCurrentBoardId()) {
+        const element = elementFactory.getElementById(draggedElementId);
+        if (element) {
+          signalrClient.sendElementResize(
+            signalrClient.getCurrentBoardId(), 
+            draggedElementId, 
+            element.x, 
+            element.y, 
+            element.width, 
+            element.height
+          );
+        }
+      }
+
+      // Reset line handle dragging state
+      isDraggingLineHandle = false;
+      draggedLineHandle = null;
+      draggedElementId = null;
+      return;
+    }
+
+    // Handle element dragging completion
     if (isDragging && draggedElementId) {
       // console.log('Finished dragging element:', draggedElementId);
 
@@ -471,11 +526,60 @@ function handleCanvasRightClick(event) {
 }
 
 // Helper functions
+function isPointInLineHandle(x, y, handleX, handleY) {
+  // Get current zoom level to adjust handle size (same logic as in canvas-manager.js)
+  const zoom = viewportManager.getViewportInfo().zoomLevel || 1;
+  const handleSize = 8 / zoom; // Same size calculation as canvas selection handles
+  const distance = Math.sqrt((x - handleX) ** 2 + (y - handleY) ** 2);
+  return distance <= handleSize / 2;
+}
+
+function getLineHandleAt(element, x, y) {
+  if (element.type !== 'Line') return null;
+  
+  const x1 = element.x;
+  const y1 = element.y;
+  const x2 = element.x + element.width;
+  const y2 = element.y + element.height;
+  
+  // Check start handle
+  if (isPointInLineHandle(x, y, x1, y1)) {
+    return 'start';
+  }
+  
+  // Check end handle
+  if (isPointInLineHandle(x, y, x2, y2)) {
+    return 'end';
+  }
+  
+  return null;
+}
+
 function handleSelectMouseDown(x, y, event) {
   console.log('handleSelectMouseDown called with world coords:', { x, y });
   const element = elementFactory.getElementAtPoint(x, y);
 
   if (element) {
+    // Check if this is a selected line element and if we clicked on a handle
+    if (selectedElementIds.has(element.id) && element.type === 'Line') {
+      const handle = getLineHandleAt(element, x, y);
+      if (handle) {
+        // Start dragging line handle
+        isDraggingLineHandle = true;
+        draggedLineHandle = handle;
+        draggedElementId = element.id;
+        dragStartX = x;
+        dragStartY = y;
+        
+        // Store original line coordinates
+        lineOriginalStart = { x: element.x, y: element.y };
+        lineOriginalEnd = { x: element.x + element.width, y: element.y + element.height };
+        
+        // console.log(`Started dragging line ${handle} handle for element:`, element.id);
+        return;
+      }
+    }
+    
     if (event.shiftKey) {
       // Multi-select with Shift
       if (selectedElementIds.has(element.id)) {
@@ -501,7 +605,7 @@ function handleSelectMouseDown(x, y, event) {
       console.log('Single selected element:', element.id);
       elementFactory.highlightElement(element.id);
       
-      // Start dragging
+      // Start dragging (entire element)
       isDragging = true;
       draggedElementId = element.id;
       dragStartX = x;

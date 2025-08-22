@@ -424,39 +424,74 @@ function drawUIElements() {
         ctx.save();
         applyViewportTransform();
         
-        // Draw a simple rectangle around the element in world coordinates
-        const sw = el.data?.strokeWidth ?? 2;
-        const inflate = sw * 0.5;
-        
-        ctx.strokeStyle = '#007bff';
-        ctx.lineWidth = 2 / currentZoom(); // Adjust line width for zoom
-        ctx.strokeRect(
-          el.x - inflate, 
-          el.y - inflate, 
-          el.width + 2 * inflate, 
-          el.height + 2 * inflate
-        );
-        
-        // Draw handles as small rectangles in world space
         const handleSize = 8 / currentZoom(); // Adjust handle size for zoom
         ctx.fillStyle = '#ffffff';
         ctx.strokeStyle = '#007bff';
         ctx.lineWidth = 1 / currentZoom();
         
-        const handles = [
-          { x: el.x, y: el.y }, // Top-left
-          { x: el.x + el.width, y: el.y }, // Top-right
-          { x: el.x, y: el.y + el.height }, // Bottom-left
-          { x: el.x + el.width, y: el.y + el.height }, // Bottom-right
-          { x: el.x + el.width / 2, y: el.y }, // Top-center
-          { x: el.x + el.width / 2, y: el.y + el.height }, // Bottom-center
-          { x: el.x, y: el.y + el.height / 2 }, // Left-center
-          { x: el.x + el.width, y: el.y + el.height / 2 } // Right-center
-        ];
-        
-        for (const handle of handles) {
-          ctx.fillRect(handle.x - handleSize / 2, handle.y - handleSize / 2, handleSize, handleSize);
-          ctx.strokeRect(handle.x - handleSize / 2, handle.y - handleSize / 2, handleSize, handleSize);
+        if (el.type === 'Line') {
+          // For Line elements, show the actual line and endpoint handles
+          const x1 = el.x;
+          const y1 = el.y;
+          const x2 = el.x + el.width;
+          const y2 = el.y + el.height;
+          
+          // Draw the selection line
+          ctx.strokeStyle = '#007bff';
+          ctx.lineWidth = 3 / currentZoom();
+          ctx.setLineDash([5 / currentZoom(), 5 / currentZoom()]);
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+          ctx.stroke();
+          ctx.setLineDash([]); // Reset line dash
+          
+          // Draw endpoint handles as circles
+          const handles = [
+            { x: x1, y: y1 }, // Start point
+            { x: x2, y: y2 }  // End point
+          ];
+          
+          ctx.fillStyle = '#ffffff';
+          ctx.strokeStyle = '#007bff';
+          ctx.lineWidth = 2 / currentZoom();
+          
+          for (const handle of handles) {
+            ctx.beginPath();
+            ctx.arc(handle.x, handle.y, handleSize / 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+          }
+        } else {
+          // For other elements, show the traditional bounding box
+          const sw = el.data?.strokeWidth ?? 2;
+          const inflate = sw * 0.5;
+          
+          ctx.strokeStyle = '#007bff';
+          ctx.lineWidth = 2 / currentZoom();
+          ctx.strokeRect(
+            el.x - inflate, 
+            el.y - inflate, 
+            el.width + 2 * inflate, 
+            el.height + 2 * inflate
+          );
+          
+          // Draw handles as small rectangles in world space
+          const handles = [
+            { x: el.x, y: el.y }, // Top-left
+            { x: el.x + el.width, y: el.y }, // Top-right
+            { x: el.x, y: el.y + el.height }, // Bottom-left
+            { x: el.x + el.width, y: el.y + el.height }, // Bottom-right
+            { x: el.x + el.width / 2, y: el.y }, // Top-center
+            { x: el.x + el.width / 2, y: el.y + el.height }, // Bottom-center
+            { x: el.x, y: el.y + el.height / 2 }, // Left-center
+            { x: el.x + el.width, y: el.y + el.height / 2 } // Right-center
+          ];
+          
+          for (const handle of handles) {
+            ctx.fillRect(handle.x - handleSize / 2, handle.y - handleSize / 2, handleSize, handleSize);
+            ctx.strokeRect(handle.x - handleSize / 2, handle.y - handleSize / 2, handleSize, handleSize);
+          }
         }
         
         // DEBUG: Draw a small cross at the element's stored coordinates
