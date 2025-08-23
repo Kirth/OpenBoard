@@ -971,6 +971,32 @@ function getContextMenuStyles() {
             color: #666;
             min-width: 30px;
         }
+        .context-menu-color-presets {
+            display: flex;
+            gap: 4px;
+            padding: 4px 12px;
+            flex-wrap: wrap;
+        }
+        .color-preset {
+            width: 24px;
+            height: 24px;
+            border: 2px solid transparent;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        .color-preset:hover {
+            border-color: #3b82f6;
+            transform: scale(1.1);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+        }
+        .color-preset[style*="#ffffff"] {
+            border-color: #ddd;
+        }
+        .color-preset[style*="#ffffff"]:hover {
+            border-color: #3b82f6;
+        }
         </style>
     `;
 }
