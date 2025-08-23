@@ -230,6 +230,9 @@ export function redrawCanvas() {
   try {
     // console.log('[redraw] vx=%o vy=%o z=%o', dependencies.getViewportX?.(), dependencies.getViewportY?.(), dependencies.getZoomLevel?.());
     
+    // Clear clickable links array to avoid stale link hitboxes
+    clickableLinks = [];
+    
     // 1) Clear
     clearCanvas();
 
@@ -611,6 +614,351 @@ function renderPath(el) {
   ctx.stroke();
 }
 
+// Render a line of text with basic markdown support (keeping asterisks visible)
+function renderMarkdownLine(text, x, y, fontSize) {
+  ctx.save();
+  
+  let currentX = x;
+  const segments = parseMarkdownSegments(text);
+  
+  for (const segment of segments) {
+    // Set font style based on segment type (combining styles)
+    let fontStyle = '';
+    if (segment.italic) fontStyle += 'italic ';
+    if (segment.bold) fontStyle += 'bold ';
+    ctx.font = `${fontStyle}${fontSize}px Arial`;
+    
+    // Handle links with special color and underline
+    if (segment.link) {
+      ctx.save();
+      ctx.fillStyle = '#0066cc'; // Link color
+      ctx.fillText(segment.text, currentX, y);
+      
+      // Store link information for click detection
+      storeClickableLink(segment.url, currentX, y, segment.text, fontSize);
+      
+      // Underline the link
+      const textWidth = ctx.measureText(segment.text).width;
+      ctx.strokeStyle = '#0066cc';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(currentX, y + fontSize + 2);
+      ctx.lineTo(currentX + textWidth, y + fontSize + 2);
+      ctx.stroke();
+      ctx.restore();
+    } else {
+      // Render normal text
+      ctx.fillText(segment.text, currentX, y);
+      
+      // Add decorations
+      const textWidth = ctx.measureText(segment.text).width;
+      
+      // Underline
+      if (segment.underline) {
+        ctx.save();
+        ctx.strokeStyle = ctx.fillStyle;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(currentX, y + fontSize + 2);
+        ctx.lineTo(currentX + textWidth, y + fontSize + 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+      
+      // Strikethrough
+      if (segment.strikethrough) {
+        ctx.save();
+        ctx.strokeStyle = ctx.fillStyle;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(currentX, y + fontSize / 2);
+        ctx.lineTo(currentX + textWidth, y + fontSize / 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+    
+    currentX += ctx.measureText(segment.text).width;
+  }
+  
+  ctx.restore();
+}
+
+// Helper function to check if a line is a bullet point
+function isBulletLine(line) {
+  const trimmed = line.trim();
+  return trimmed.startsWith('- ') || trimmed.startsWith('* ');
+}
+
+// Word wrap a line of text to fit within maxWidth, preserving markdown
+function wrapTextWithMarkdown(text, maxWidth, fontSize) {
+  ctx.save();
+  ctx.font = `${fontSize}px Arial`; // Base font for measurement
+  
+  const words = text.split(' ');
+  const lines = [];
+  let currentLine = '';
+  
+  for (let i = 0; i < words.length; i++) {
+    const testLine = currentLine + (currentLine ? ' ' : '') + words[i];
+    const testWidth = ctx.measureText(testLine).width;
+    
+    if (testWidth <= maxWidth || currentLine === '') {
+      currentLine = testLine;
+    } else {
+      if (currentLine) {
+        lines.push(currentLine);
+      }
+      currentLine = words[i];
+    }
+  }
+  
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+  
+  ctx.restore();
+  return lines;
+}
+
+// Render a line with bullet point support and word wrapping
+function renderLineWithBullet(line, x, y, fontSize, maxWidth) {
+  if (isBulletLine(line)) {
+    // Extract bullet text (remove bullet marker)
+    const bulletText = line.replace(/^\s*[-*]\s/, '');
+    
+    // Draw bullet point
+    ctx.save();
+    ctx.fillStyle = ctx.fillStyle; // Use current text color
+    ctx.fillText('•', x, y);
+    const bulletWidth = ctx.measureText('• ').width;
+    ctx.restore();
+    
+    // Word wrap the bullet text
+    const availableWidth = maxWidth - bulletWidth;
+    const wrappedLines = wrapTextWithMarkdown(bulletText, availableWidth, fontSize);
+    
+    // Render each wrapped line with markdown
+    const lineHeight = fontSize * 1.2;
+    for (let i = 0; i < wrappedLines.length; i++) {
+      renderMarkdownLine(wrappedLines[i], x + bulletWidth, y + i * lineHeight, fontSize);
+    }
+    
+    return wrappedLines.length; // Return number of lines used
+  } else {
+    // Regular line rendering with word wrap
+    const wrappedLines = wrapTextWithMarkdown(line, maxWidth, fontSize);
+    const lineHeight = fontSize * 1.2;
+    
+    for (let i = 0; i < wrappedLines.length; i++) {
+      renderMarkdownLine(wrappedLines[i], x, y + i * lineHeight, fontSize);
+    }
+    
+    return wrappedLines.length; // Return number of lines used
+  }
+}
+
+// Parse text into segments with formatting information
+function parseMarkdownSegments(text) {
+  const segments = [];
+  let currentPos = 0;
+  
+  // Pattern to match various markdown formats (order matters - longer patterns first)
+  const patterns = [
+    { regex: /(\*\*[^*]+\*\*)/g, type: 'bold' },        // **bold** must come before *italic*
+    { regex: /(\_\_[^_]+\_\_)/g, type: 'underline' },    // __underline__
+    { regex: /(~~[^~]+~~)/g, type: 'strikethrough' },    // ~~strikethrough~~
+    { regex: /(\*[^*]+\*)/g, type: 'italic' },           // *italic* (after **bold**)
+    { regex: /(\[[^\]]+\]\([^)]+\))/g, type: 'link' }    // [text](url)
+  ];
+  
+  const matches = [];
+  
+  // Find all matches
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.regex.exec(text)) !== null) {
+      matches.push({
+        start: match.index,
+        end: match.index + match[0].length,
+        text: match[0],
+        type: pattern.type
+      });
+    }
+  }
+  
+  // Sort matches by position
+  matches.sort((a, b) => a.start - b.start);
+  
+  // Process text with matches
+  for (const match of matches) {
+    // Add text before match
+    if (currentPos < match.start) {
+      segments.push({
+        text: text.substring(currentPos, match.start),
+        bold: false,
+        italic: false,
+        underline: false,
+        strikethrough: false,
+        link: false
+      });
+    }
+    
+    // Add formatted segment
+    if (match.type === 'bold') {
+      segments.push({
+        text: match.text, // Keep asterisks visible
+        bold: true,
+        italic: false,
+        underline: false,
+        strikethrough: false,
+        link: false
+      });
+    } else if (match.type === 'italic') {
+      segments.push({
+        text: match.text, // Keep asterisks visible
+        bold: false,
+        italic: true,
+        underline: false,
+        strikethrough: false,
+        link: false
+      });
+    } else if (match.type === 'underline') {
+      segments.push({
+        text: match.text, // Keep underscores visible
+        bold: false,
+        italic: false,
+        underline: true,
+        strikethrough: false,
+        link: false
+      });
+    } else if (match.type === 'strikethrough') {
+      segments.push({
+        text: match.text, // Keep tildes visible
+        bold: false,
+        italic: false,
+        underline: false,
+        strikethrough: true,
+        link: false
+      });
+    } else if (match.type === 'link') {
+      const linkMatch = match.text.match(/\[([^\]]+)\]\(([^)]+)\)/);
+      if (linkMatch) {
+        segments.push({
+          text: match.text, // Keep [text](url) format visible
+          bold: false,
+          italic: false,
+          underline: false,
+          strikethrough: false,
+          link: true,
+          url: linkMatch[2],
+          linkText: linkMatch[1]
+        });
+      }
+    }
+    
+    currentPos = match.end;
+  }
+  
+  // Add remaining text
+  if (currentPos < text.length) {
+    segments.push({
+      text: text.substring(currentPos),
+      bold: false,
+      italic: false,
+      underline: false,
+      strikethrough: false,
+      link: false
+    });
+  }
+  
+  return segments;
+}
+
+// Store clickable link information for later click detection
+let clickableLinks = [];
+let currentElementId = null;
+
+function storeClickableLink(url, x, y, text, fontSize) {
+  const textWidth = ctx.measureText(text).width;
+  clickableLinks.push({
+    url: url,
+    x: x,
+    y: y,
+    width: textWidth,
+    height: fontSize + 4, // Add some padding for easier clicking
+    elementId: currentElementId
+  });
+}
+
+function clearLinksForElement(elementId) {
+  clickableLinks = clickableLinks.filter(link => link.elementId !== elementId);
+}
+
+// Check if a click hits any link and handle it
+export function handleLinkClick(screenX, screenY) {
+  // Convert screen coordinates to world coordinates
+  const worldPos = screenToWorld(screenX, screenY);
+  
+  for (const link of clickableLinks) {
+    if (worldPos.x >= link.x && worldPos.x <= link.x + link.width &&
+        worldPos.y >= link.y && worldPos.y <= link.y + link.height) {
+      // Open link in new tab
+      window.open(link.url, '_blank');
+      return true; // Link was clicked
+    }
+  }
+  return false; // No link clicked
+}
+
+// Canvas state validation and recovery functions
+export function validateCanvasState() {
+  try {
+    if (!ctx || !canvas) {
+      console.warn('Canvas context is missing');
+      return false;
+    }
+    
+    // Test that the canvas context is responsive
+    const testTransform = ctx.getTransform();
+    if (!testTransform) {
+      console.warn('Canvas transform is invalid');
+      return false;
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Canvas state validation failed:', error);
+    return false;
+  }
+}
+
+// Emergency canvas recovery function
+export function recoverCanvasState() {
+  try {
+    if (!ctx || !canvas) return false;
+    
+    // Reset transform to identity
+    ctx.resetTransform();
+    
+    // Clear any accumulated state
+    ctx.restore(); // Try to restore any saved states
+    
+    // Force a redraw
+    if (dependencies.requestRedraw) {
+      dependencies.requestRedraw();
+    } else {
+      redrawCanvas();
+    }
+    
+    console.log('Canvas state recovered');
+    return true;
+  } catch (error) {
+    console.error('Canvas recovery failed:', error);
+    return false;
+  }
+}
+
 function renderStickyNote(el) {
   const bg = el.data?.color || '#ffeb3b';
   ctx.fillStyle = bg;
@@ -623,14 +971,22 @@ function renderStickyNote(el) {
   if (el.data?.content && !el.data?.isEditing) {
     ctx.fillStyle = '#333333';
     const fontSize = el.data?.fontSize || 14;
-    ctx.font = `${fontSize}px Arial`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
 
+    // Clear links for this element and set context
+    clearLinksForElement(el.id);
+    currentElementId = el.id;
+
     const lines = String(el.data.content).split('\n');
     const lh = fontSize * 1.2;
+    const padding = 10;
+    const maxWidth = el.width - padding * 2; // Account for left and right padding
+    
+    let currentY = el.y + padding;
     for (let i = 0; i < lines.length; i++) {
-      ctx.fillText(lines[i], el.x + 10, el.y + 10 + i * lh);
+      const linesUsed = renderLineWithBullet(lines[i], el.x + padding, currentY, fontSize, maxWidth);
+      currentY += linesUsed * lh;
     }
   }
 }
@@ -714,14 +1070,21 @@ function renderText(el) {
   ctx.fillStyle = el.data?.color || '#000000';
   const fontSize = el.data?.fontSize || 16;
   const fontFamily = el.data?.fontFamily || 'Arial';
-  ctx.font = `${fontSize}px ${fontFamily}`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
 
+  // Clear links for this element and set context
+  clearLinksForElement(el.id);
+  currentElementId = el.id;
+
   const lines = String(el.data.content).split('\n');
   const lh = fontSize * 1.2;
+  const maxWidth = el.width > 0 ? el.width : 500; // Use element width or default
+  
+  let currentY = el.y;
   for (let i = 0; i < lines.length; i++) {
-    ctx.fillText(lines[i], el.x, el.y + i * lh);
+    const linesUsed = renderLineWithBullet(lines[i], el.x, currentY, fontSize, maxWidth);
+    currentY += linesUsed * lh;
   }
 }
 

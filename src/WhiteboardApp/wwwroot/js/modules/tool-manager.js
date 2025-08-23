@@ -416,12 +416,13 @@ export function updateShape(shapeType, startX, startY, currentX, currentY) {
         
         // Save context state
         dependencies.tempCtx.save();
-
-        // Apply viewport transformation to temp canvas
-        // Get viewport values directly from viewport manager 
-        const viewportInfo = dependencies.getViewportInfo ? dependencies.getViewportInfo() : { viewportX: 0, viewportY: 0, zoomLevel: 1 };
-        dependencies.tempCtx.translate(-viewportInfo.viewportX, -viewportInfo.viewportY);
-        dependencies.tempCtx.scale(viewportInfo.zoomLevel, viewportInfo.zoomLevel);
+        
+        try {
+            // Apply viewport transformation to temp canvas
+            // Get viewport values directly from viewport manager 
+            const viewportInfo = dependencies.getViewportInfo ? dependencies.getViewportInfo() : { viewportX: 0, viewportY: 0, zoomLevel: 1 };
+            dependencies.tempCtx.translate(-viewportInfo.viewportX, -viewportInfo.viewportY);
+            dependencies.tempCtx.scale(viewportInfo.zoomLevel, viewportInfo.zoomLevel);
 
         // Set drawing style
         dependencies.tempCtx.strokeStyle = '#000000';
@@ -479,11 +480,31 @@ export function updateShape(shapeType, startX, startY, currentX, currentY) {
                 break;
         }
 
-        // Restore context state
-        dependencies.tempCtx.restore();
+        } catch (drawError) {
+            console.error('Error during shape drawing:', drawError);
+            // Always restore context even if drawing fails
+        } finally {
+            // Ensure context state is always restored
+            dependencies.tempCtx.restore();
+        }
 
     } catch (error) {
         console.error('Failed to update shape:', error);
+        // Emergency canvas recovery if context is corrupted
+        try {
+            if (dependencies.tempCtx) {
+                dependencies.tempCtx.restore();
+            }
+            // Validate and recover main canvas if needed
+            if (dependencies.validateCanvasState && !dependencies.validateCanvasState()) {
+                console.warn('Main canvas state corrupted, attempting recovery');
+                if (dependencies.recoverCanvasState) {
+                    dependencies.recoverCanvasState();
+                }
+            }
+        } catch (restoreError) {
+            console.error('Failed to restore canvas context:', restoreError);
+        }
     }
 }
 
@@ -528,42 +549,69 @@ export function startLine(x, y) {
 
 export function updateLine(startX, startY, currentX, currentY) {
     try {
-        if (!dependencies.tempCtx || !dependencies.tempCanvas) return;
+        if (!dependencies.tempCtx || !dependencies.tempCanvas) {
+            console.warn('Missing temp canvas context for line update');
+            return;
+        }
 
         // Clear temporary canvas
         dependencies.tempCtx.clearRect(0, 0, dependencies.tempCanvas.width, dependencies.tempCanvas.height);
 
         // Save context and apply viewport transformation
         dependencies.tempCtx.save();
-        if (dependencies.applyViewportTransform) {
-            dependencies.applyViewportTransform();
-        }
-
-        // Set drawing style
-        dependencies.tempCtx.strokeStyle = '#000000';
-        dependencies.tempCtx.lineWidth = 2;
-
-        // Snap to angle if shift is held
-        let endX = currentX;
-        let endY = currentY;
         
-        if (window.isShiftHeld) {
-            const snapped = snapLineToAngle(startX, startY, currentX, currentY);
-            endX = snapped.x;
-            endY = snapped.y;
+        try {
+            // Apply viewport transformation to temp canvas
+            // Get viewport values directly from viewport manager (consistent with updateShape)
+            const viewportInfo = dependencies.getViewportInfo ? dependencies.getViewportInfo() : { viewportX: 0, viewportY: 0, zoomLevel: 1 };
+            dependencies.tempCtx.translate(-viewportInfo.viewportX, -viewportInfo.viewportY);
+            dependencies.tempCtx.scale(viewportInfo.zoomLevel, viewportInfo.zoomLevel);
+
+            // Set drawing style
+            dependencies.tempCtx.strokeStyle = '#000000';
+            dependencies.tempCtx.lineWidth = 2;
+
+            // Snap to angle if shift is held
+            let endX = currentX;
+            let endY = currentY;
+            
+            if (window.isShiftHeld) {
+                const snapped = snapLineToAngle(startX, startY, currentX, currentY);
+                endX = snapped.x;
+                endY = snapped.y;
+            }
+
+            // Draw line preview
+            dependencies.tempCtx.beginPath();
+            dependencies.tempCtx.moveTo(startX, startY);
+            dependencies.tempCtx.lineTo(endX, endY);
+            dependencies.tempCtx.stroke();
+            
+        } catch (drawError) {
+            console.error('Error during line drawing:', drawError);
+            // Always restore context even if drawing fails
+        } finally {
+            // Ensure context state is always restored
+            dependencies.tempCtx.restore();
         }
-
-        // Draw line preview
-        dependencies.tempCtx.beginPath();
-        dependencies.tempCtx.moveTo(startX, startY);
-        dependencies.tempCtx.lineTo(endX, endY);
-        dependencies.tempCtx.stroke();
-
-        // Restore context state
-        dependencies.tempCtx.restore();
 
     } catch (error) {
         console.error('Failed to update line:', error);
+        // Emergency canvas recovery if context is corrupted
+        try {
+            if (dependencies.tempCtx) {
+                dependencies.tempCtx.restore();
+            }
+            // Validate and recover main canvas if needed
+            if (dependencies.validateCanvasState && !dependencies.validateCanvasState()) {
+                console.warn('Main canvas state corrupted, attempting recovery');
+                if (dependencies.recoverCanvasState) {
+                    dependencies.recoverCanvasState();
+                }
+            }
+        } catch (restoreError) {
+            console.error('Failed to restore canvas context:', restoreError);
+        }
     }
 }
 

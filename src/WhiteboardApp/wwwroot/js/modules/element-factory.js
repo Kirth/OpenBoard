@@ -986,7 +986,15 @@ export function pointToLineDistance(px, py, x1, y1, x2, y2) {
 }
 
 export function isElementResizable(element) {
-    return element && ['Rectangle', 'Circle', 'StickyNote', 'Text', 'Image'].includes(element.type);
+    return element && [
+        'Rectangle', 'rectangle',
+        'Circle', 'circle', 
+        'Triangle', 'triangle',
+        'Diamond', 'diamond',
+        'Ellipse', 'ellipse', 
+        'Star', 'star',
+        'StickyNote', 'Text', 'Image'
+    ].includes(element.type);
 }
 
 // Get resize handle at point (in screen coordinates)
@@ -994,7 +1002,7 @@ export function getResizeHandleAt(x, y, selectionRect) {
     if (!selectionRect) return null;
     
     const handleSize = 8;
-    const tolerance = handleSize / 2;
+    const tolerance = handleSize / 2 + 2; // Small padding for easier targeting, consistent with visual
     
     const handles = [
         { type: 'nw', x: selectionRect.x, y: selectionRect.y }, // Top-left

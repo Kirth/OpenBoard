@@ -99,6 +99,8 @@ function setupDependencies() {
     applyViewportTransform: canvasManager.applyViewportTransform,
     resetCanvasTransform: canvasManager.resetCanvasTransform,
     redrawCanvas: canvasManager.redrawCanvas,
+    validateCanvasState: canvasManager.validateCanvasState,
+    recoverCanvasState: canvasManager.recoverCanvasState,
     getViewportInfo: viewportManager.getViewportInfo,
     zoomIn: () => viewportManager.zoomAtCenter(1.1),
     zoomOut: () => viewportManager.zoomAtCenter(1 / 1.1),
@@ -268,6 +270,12 @@ function handleMouseDown(event) {
     startY = worldPos.y;
 
     const currentTool = toolManager.getCurrentTool();
+
+    // Check for link clicks before any other interactions
+    const linkHandled = canvasManager.handleLinkClick(screenX, screenY);
+    if (linkHandled) {
+        return; // Stop further processing if link was clicked
+    }
 
     // Handle spacebar panning
     if (event.key === ' ' || currentTool === 'pan') {
@@ -796,6 +804,7 @@ function handleContextMenuOutsideClick(event) {
 function createElementContextMenu(element) {
   const isShape = ['rectangle', 'circle', 'triangle', 'diamond', 'ellipse', 'star'].includes(element.type);
   const isLine = element.type === 'Line';
+  const isStickyNote = element.type === 'StickyNote';
   const hasStylng = isShape || isLine;
 
   let menuHTML = `
@@ -834,6 +843,30 @@ function createElementContextMenu(element) {
                     <input type="range" min="1" max="10" value="${element.data?.strokeWidth || 2}" 
                            class="context-menu-range" onchange="updateElementBorderWidth('${element.id}', this.value)">
                     <span class="range-value">${element.data?.strokeWidth || 2}px</span>
+                </div>
+            </div>
+        `;
+  }
+
+  // Sticky note color picker section
+  if (isStickyNote) {
+    menuHTML += `
+            <div class="context-menu-section">
+                <div class="context-menu-subtitle">Sticky Color</div>
+                <div class="context-menu-color-row">
+                    <label>Background:</label>
+                    <input type="color" class="context-menu-color" value="${element.data?.color || '#ffeb3b'}" 
+                           onchange="updateStickyNoteColor('${element.id}', this.value)">
+                </div>
+                <div class="context-menu-color-presets">
+                    <button class="color-preset" style="background-color: #ffeb3b" onclick="updateStickyNoteColor('${element.id}', '#ffeb3b')" title="Yellow"></button>
+                    <button class="color-preset" style="background-color: #ff9800" onclick="updateStickyNoteColor('${element.id}', '#ff9800')" title="Orange"></button>
+                    <button class="color-preset" style="background-color: #4caf50" onclick="updateStickyNoteColor('${element.id}', '#4caf50')" title="Green"></button>
+                    <button class="color-preset" style="background-color: #2196f3" onclick="updateStickyNoteColor('${element.id}', '#2196f3')" title="Blue"></button>
+                    <button class="color-preset" style="background-color: #e91e63" onclick="updateStickyNoteColor('${element.id}', '#e91e63')" title="Pink"></button>
+                    <button class="color-preset" style="background-color: #9c27b0" onclick="updateStickyNoteColor('${element.id}', '#9c27b0')" title="Purple"></button>
+                    <button class="color-preset" style="background-color: #ffffff" onclick="updateStickyNoteColor('${element.id}', '#ffffff')" title="White"></button>
+                    <button class="color-preset" style="background-color: #f44336" onclick="updateStickyNoteColor('${element.id}', '#f44336')" title="Red"></button>
                 </div>
             </div>
         `;
@@ -1045,6 +1078,15 @@ function updateElementBorderWidth(elementId, width) {
     console.log(`Updated border width of ${elementId} to ${width}px`);
   } catch (error) {
     console.error('Error updating border width:', error);
+  }
+}
+
+function updateStickyNoteColor(elementId, color) {
+  try {
+    updateElementStyle(elementId, { color: color });
+    console.log(`Updated sticky note color of ${elementId} to ${color}`);
+  } catch (error) {
+    console.error('Error updating sticky note color:', error);
   }
 }
 
@@ -1410,6 +1452,7 @@ if (typeof window !== 'undefined') {
   window.removeElementFill = removeElementFill;
   window.updateElementBorderColor = updateElementBorderColor;
   window.updateElementBorderWidth = updateElementBorderWidth;
+  window.updateStickyNoteColor = updateStickyNoteColor;
   window.updateElementStyle = updateElementStyle;
   window.pasteElementHere = pasteElementHere;
 
