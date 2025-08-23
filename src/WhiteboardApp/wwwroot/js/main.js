@@ -396,6 +396,11 @@ function handleMouseMove(event) {
       }
     }
 
+    // Update cursor based on hover state (only when not actively dragging/resizing)
+    if (currentTool === 'select' && !isDragging && !isResizing && !isDraggingLineHandle) {
+      updateCursorForHover(worldPos.x, worldPos.y);
+    }
+
     // Send cursor update to other users
     if (signalrClient.isConnected() && signalrClient.getCurrentBoardId()) {
       signalrClient.sendCursorUpdate(signalrClient.getCurrentBoardId(), worldPos.x, worldPos.y);
@@ -1203,6 +1208,39 @@ function getElementSelectionRect(element) {
     width: bottomRight.x - topLeft.x,
     height: bottomRight.y - topLeft.y
   };
+}
+
+// Update cursor based on hover state for resize handles
+function updateCursorForHover(worldX, worldY) {
+  const selectedElementId = elementFactory.getSelectedElementId();
+  if (!selectedElementId) {
+    canvasManager.updateCanvasCursor('default');
+    return;
+  }
+  
+  const element = elementFactory.getElementById(selectedElementId);
+  if (!element || !elementFactory.isElementResizable(element)) {
+    canvasManager.updateCanvasCursor('default');
+    return;
+  }
+  
+  // Convert world coordinates to screen coordinates for handle detection
+  const screenPos = canvasManager.worldToScreen(worldX, worldY);
+  const selectionRect = getElementSelectionRect(element);
+  const resizeHandle = elementFactory.getResizeHandleAt(screenPos.x, screenPos.y, selectionRect);
+  
+  if (resizeHandle) {
+    const cursor = elementFactory.getResizeCursor(resizeHandle);
+    canvasManager.updateCanvasCursor(cursor);
+  } else {
+    // Check if we're over the element itself
+    const elementAtPoint = elementFactory.getElementAtPoint(worldX, worldY);
+    if (elementAtPoint && elementAtPoint.id === selectedElementId) {
+      canvasManager.updateCanvasCursor('move');
+    } else {
+      canvasManager.updateCanvasCursor('default');
+    }
+  }
 }
 
 function triggerImageUpload(x, y) {
