@@ -234,6 +234,12 @@ public class CollaborationHub : Hub
                 UpdateLineEndpoints(element, deltaX, deltaY);
             }
             
+            // For drawings, also update path coordinates in the data
+            if (element.Type == ElementType.Drawing && element.Data != null)
+            {
+                UpdateDrawingPathCoordinates(element, deltaX, deltaY);
+            }
+            
             await _elementService.UpdateElementAsync(element);
             
             // Broadcast to all users in the board
@@ -368,6 +374,50 @@ public class CollaborationHub : Hub
         {
             _logger.LogError(ex, "Error resizing element {ElementId} in board {BoardId}", elementId, boardId);
             await Clients.Caller.SendAsync("Error", "Failed to resize element");
+        }
+    }
+
+    public async Task UpdateLineEndpoints(string boardId, string elementId, double startX, double startY, double endX, double endY)
+    {
+        try
+        {
+            if (!await ValidateBoardAccess(boardId) || !Guid.TryParse(elementId, out var elementGuid))
+                return;
+
+            var element = await _elementService.GetElementAsync(elementGuid);
+            if (element != null && element.Type == ElementType.Line)
+            {
+                // Update relative coordinates (bounding box)
+                element.X = Math.Min(startX, endX);
+                element.Y = Math.Min(startY, endY);
+                element.Width = Math.Abs(endX - startX);
+                element.Height = Math.Abs(endY - startY);
+
+                // Update absolute coordinates in data
+                var existingData = element.Data?.RootElement.GetRawText() ?? "{}";
+                var dataObj = JsonSerializer.Deserialize<Dictionary<string, object>>(existingData) ?? new Dictionary<string, object>();
+                
+                dataObj["startX"] = startX;
+                dataObj["startY"] = startY;
+                dataObj["endX"] = endX;
+                dataObj["endY"] = endY;
+                
+                element.Data = JsonDocument.Parse(JsonSerializer.Serialize(dataObj));
+                
+                await _elementService.UpdateElementAsync(element);
+                
+                // Broadcast line endpoint update to all clients
+                await Clients.Group($"Board_{boardId}").SendAsync("LineEndpointsUpdated", elementId, startX, startY, endX, endY);
+            }
+            else
+            {
+                await Clients.Caller.SendAsync("Error", "Line element not found");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating line endpoints {ElementId} in board {BoardId}", elementId, boardId);
+            await Clients.Caller.SendAsync("Error", "Failed to update line endpoints");
         }
     }
 
@@ -562,6 +612,43 @@ public class CollaborationHub : Hub
             dataObj["endX"] = endX + deltaX;
             dataObj["endY"] = endY + deltaY;
             
+            element.Data = JsonDocument.Parse(JsonSerializer.Serialize(dataObj));
+        }
+    }
+
+    private static void UpdateDrawingPathCoordinates(BoardElement element, double deltaX, double deltaY)
+    {
+        var existingData = element.Data?.RootElement.GetRawText() ?? "{}";
+        var dataObj = JsonSerializer.Deserialize<Dictionary<string, object>>(existingData) ?? new Dictionary<string, object>();
+        
+        // Check if path data exists
+        if (dataObj.TryGetValue("path", out var pathObj) && pathObj is JsonElement pathElement && pathElement.ValueKind == JsonValueKind.Array)
+        {
+            var updatedPath = new List<Dictionary<string, object>>();
+            
+            foreach (var pointElement in pathElement.EnumerateArray())
+            {
+                if (pointElement.ValueKind == JsonValueKind.Object)
+                {
+                    var pointObj = JsonSerializer.Deserialize<Dictionary<string, object>>(pointElement.GetRawText()) ?? new Dictionary<string, object>();
+                    
+                    // Update x and y coordinates if they exist
+                    if (pointObj.TryGetValue("x", out var xObj) && double.TryParse(xObj.ToString(), out var x))
+                    {
+                        pointObj["x"] = x + deltaX;
+                    }
+                    
+                    if (pointObj.TryGetValue("y", out var yObj) && double.TryParse(yObj.ToString(), out var y))
+                    {
+                        pointObj["y"] = y + deltaY;
+                    }
+                    
+                    updatedPath.Add(pointObj);
+                }
+            }
+            
+            // Update the path in the data object
+            dataObj["path"] = updatedPath;
             element.Data = JsonDocument.Parse(JsonSerializer.Serialize(dataObj));
         }
     }

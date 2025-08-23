@@ -422,6 +422,74 @@ function setupEventHandlers() {
         }
     });
 
+    // Element Z-Index updated handler (missing handler for ElementZIndexUpdated event)
+    signalRConnection.on("ElementZIndexUpdated", (elementId, zIndex) => {
+        try {
+            console.log(`Received ElementZIndexUpdated: ${elementId} -> z=${zIndex}`);
+            
+            if (dependencies.elements) {
+                const element = dependencies.elements.get(elementId);
+                if (element) {
+                    // Update z-index in both locations for consistency
+                    element.z = zIndex;
+                    if (!element.data) {
+                        element.data = {};
+                    }
+                    element.data.z = zIndex;
+                    
+                    // Trigger redraw to apply new z-ordering
+                    if (dependencies.redrawCanvas) {
+                        dependencies.redrawCanvas();
+                    }
+                    
+                    console.log(`Element ${elementId} z-index updated to ${zIndex}`);
+                } else {
+                    console.warn(`Element ${elementId} not found for z-index update`);
+                }
+            }
+        } catch (error) {
+            console.error('Error handling ElementZIndexUpdated:', error);
+        }
+    });
+
+    // Line endpoints updated handler
+    signalRConnection.on("LineEndpointsUpdated", (elementId, startX, startY, endX, endY) => {
+        try {
+            console.log(`Received LineEndpointsUpdated: ${elementId} -> (${startX},${startY}) to (${endX},${endY})`);
+            
+            if (dependencies.elements) {
+                const element = dependencies.elements.get(elementId);
+                if (element && element.type === 'Line') {
+                    // Update relative coordinates (bounding box)
+                    element.x = Math.min(startX, endX);
+                    element.y = Math.min(startY, endY);
+                    element.width = Math.abs(endX - startX);
+                    element.height = Math.abs(endY - startY);
+                    
+                    // Update absolute coordinates in data
+                    if (!element.data) {
+                        element.data = {};
+                    }
+                    element.data.startX = startX;
+                    element.data.startY = startY;
+                    element.data.endX = endX;
+                    element.data.endY = endY;
+                    
+                    // Trigger redraw to show the updated line
+                    if (dependencies.redrawCanvas) {
+                        dependencies.redrawCanvas();
+                    }
+                    
+                    console.log(`Line ${elementId} endpoints updated successfully`);
+                } else {
+                    console.warn(`Line element ${elementId} not found for endpoint update`);
+                }
+            }
+        } catch (error) {
+            console.error('Error handling LineEndpointsUpdated:', error);
+        }
+    });
+
     // Connection events
     signalRConnection.onreconnecting(() => {
         console.log("SignalR reconnecting...");
@@ -430,7 +498,7 @@ function setupEventHandlers() {
         }
     });
 
-    signalRConnection.onreconnected(() => {
+    signalRConnection.onreconnected(async () => {
         console.log("SignalR reconnected");
         if (dependencies.showNotification) {
             dependencies.showNotification("Connection restored", "success");
@@ -438,7 +506,24 @@ function setupEventHandlers() {
         
         // Rejoin board if we have one
         if (currentBoardId) {
-            signalRConnection.invoke("JoinBoard", currentBoardId, "Anonymous User");
+            try {
+                await signalRConnection.invoke("JoinBoard", currentBoardId, "Anonymous User");
+                console.log("Rejoined board after reconnection");
+                
+                // Reload board state to ensure consistency
+                console.log("Reloading board elements after reconnection...");
+                await loadExistingElements(currentBoardId);
+                console.log("Board state reloaded successfully");
+                
+                if (dependencies.showNotification) {
+                    dependencies.showNotification("Board synchronized", "info");
+                }
+            } catch (error) {
+                console.error("Failed to rejoin board or reload state:", error);
+                if (dependencies.showNotification) {
+                    dependencies.showNotification("Failed to synchronize board state. Please refresh the page.", "warning");
+                }
+            }
         }
     });
 
@@ -448,6 +533,24 @@ function setupEventHandlers() {
             dependencies.showNotification("Connection lost", "error");
         }
     });
+
+    // Handle reconnection failure - using try/catch since method name may vary by SignalR version
+    try {
+        // Try the newer method name first
+        if (typeof signalRConnection.onreconnectionfailed === 'function') {
+            signalRConnection.onreconnectionfailed(() => {
+                console.log("SignalR reconnection failed permanently");
+                if (dependencies.showNotification) {
+                    dependencies.showNotification("Reconnection failed. Try reloading the page if you're unable to reconnect.", "error");
+                }
+            });
+        } else {
+            console.log("onreconnectionfailed not available in this SignalR version");
+            // For older versions, we can't detect permanent failure, but the onclose event will handle it
+        }
+    } catch (error) {
+        console.log("Could not set up reconnection failed handler:", error);
+    }
 }
 
 // Load existing board elements from the server
@@ -691,6 +794,23 @@ export async function sendElementToBack(boardId, elementId) {
     }
 }
 
+export async function sendElementDelete(boardId, elementId) {
+    try {
+        if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
+            console.warn("SignalR not connected, cannot delete element");
+            return false;
+        }
+
+        console.log(`Deleting element ${elementId} from board ${boardId}`);
+        await signalRConnection.invoke("DeleteElement", boardId, elementId);
+        console.log('Element deletion sent successfully');
+        return true;
+    } catch (error) {
+        console.error("Failed to send element deletion:", error);
+        return false;
+    }
+}
+
 export async function sendElementResize(boardId, elementId, x, y, width, height) {
     try {
         if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
@@ -701,6 +821,23 @@ export async function sendElementResize(boardId, elementId, x, y, width, height)
         return true;
     } catch (error) {
         console.error("Failed to send element resize:", error);
+        return false;
+    }
+}
+
+export async function sendLineEndpointUpdate(boardId, elementId, startX, startY, endX, endY) {
+    try {
+        if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
+            console.warn("SignalR not connected, cannot update line endpoints");
+            return false;
+        }
+
+        console.log(`Updating line endpoints for ${elementId}: (${startX},${startY}) to (${endX},${endY})`);
+        await signalRConnection.invoke("UpdateLineEndpoints", boardId, elementId, startX, startY, endX, endY);
+        console.log('Line endpoint update sent successfully');
+        return true;
+    } catch (error) {
+        console.error("Failed to send line endpoint update:", error);
         return false;
     }
 }
@@ -915,7 +1052,9 @@ if (typeof window !== 'undefined') {
     window.sendElementSelect = sendElementSelect;
     window.sendElementDeselect = sendElementDeselect;
     window.sendElementToBack = sendElementToBack;
+    window.sendElementDelete = sendElementDelete;
     window.sendElementResize = sendElementResize;
+    window.sendLineEndpointUpdate = sendLineEndpointUpdate;
     window.updateStickyNoteContent = updateStickyNoteContent;
     window.updateTextElementContent = updateTextElementContent;
     window.updateCursor = updateCursor;

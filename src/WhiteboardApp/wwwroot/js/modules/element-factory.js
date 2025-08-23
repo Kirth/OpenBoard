@@ -46,6 +46,7 @@ let dependencies = {
     getZoomLevel: null,
     screenToWorld: null,
     worldToScreen: null,
+    applyViewportTransform: null,
     redrawCanvas: null,
     signalRConnection: null,
     currentBoardId: null,
@@ -53,6 +54,7 @@ let dependencies = {
     sendElementMove: null,
     sendElementSelect: null,
     sendElementDeselect: null,
+    sendElementDelete: null,
     sendElementResize: null,
     updateStickyNoteContent: null,
     updateTextElementContent: null,
@@ -140,7 +142,12 @@ export class ElementFactory {
             createdAt: Date.now(),
             data: {
                 color: style.color || '#000000',
-                strokeWidth: style.strokeWidth || 2
+                strokeWidth: style.strokeWidth || 2,
+                // Store absolute coordinates for backend compatibility
+                startX: x1,
+                startY: y1,
+                endX: x2,
+                endY: y2
             }
         };
     }
@@ -669,12 +676,32 @@ export function updateElementPositionLocal(id, newX, newY) {
 export function deleteSelectedElement() {
     if (!selectedElementId) return;
     
+    const elementIdToDelete = selectedElementId;
+    
+    // Delete locally first for immediate feedback
     elements.delete(selectedElementId);
     saveCanvasState('Delete Element');
     selectedElementId = null;
     
     if (dependencies.redrawCanvas) {
         dependencies.redrawCanvas();
+    }
+    
+    // Send deletion to server to sync with other clients and persist to database
+    if (dependencies.sendElementDelete && dependencies.currentBoardId) {
+        dependencies.sendElementDelete(dependencies.currentBoardId, elementIdToDelete)
+            .catch(error => {
+                console.error('Failed to delete element on server:', error);
+                // Could optionally restore element locally if server deletion fails
+                if (dependencies.showNotification) {
+                    dependencies.showNotification('Failed to delete element - other clients may not see the change', 'warning');
+                }
+            });
+    } else {
+        console.warn('Cannot delete element on server - SignalR not available or board ID missing');
+        if (dependencies.showNotification) {
+            dependencies.showNotification('Element deleted locally only - may not be synced with other clients', 'warning');
+        }
     }
 }
 
@@ -821,6 +848,47 @@ export function drawResizeHandles(selectionRect) {
         ctx.fillRect(handle.x - handleSize / 2, handle.y - handleSize / 2, handleSize, handleSize);
         ctx.strokeRect(handle.x - handleSize / 2, handle.y - handleSize / 2, handleSize, handleSize);
     }
+    ctx.restore();
+}
+
+export function drawLineEndpointHandles(element) {
+    if (!dependencies.ctx || element.type !== 'Line') return;
+    
+    const ctx = dependencies.ctx;
+    const handleSize = 8;
+    
+    ctx.save();
+    // Draw in world coordinates for line endpoints
+    if (dependencies.applyViewportTransform) {
+        dependencies.applyViewportTransform();
+    }
+    
+    // Calculate line endpoints from element bounds
+    const x1 = element.x;
+    const y1 = element.y;
+    const x2 = element.x + element.width;
+    const y2 = element.y + element.height;
+    
+    // Adjust handle size for zoom level
+    const zoom = dependencies.getZoomLevel ? dependencies.getZoomLevel() : 1;
+    const adjustedHandleSize = handleSize / zoom;
+    
+    const endpoints = [
+        { x: x1, y: y1 }, // Start point
+        { x: x2, y: y2 }  // End point
+    ];
+    
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = '#007bff';
+    ctx.lineWidth = 2 / zoom;
+    
+    for (const endpoint of endpoints) {
+        ctx.beginPath();
+        ctx.arc(endpoint.x, endpoint.y, adjustedHandleSize / 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+    }
+    
     ctx.restore();
 }
 

@@ -137,6 +137,7 @@ function setupDependencies() {
     zoomLevel: viewportManager.zoomLevel,
     screenToWorld: canvasManager.screenToWorld,
     worldToScreen: canvasManager.worldToScreen,
+    applyViewportTransform: canvasManager.applyViewportTransform,
     redrawCanvas: canvasManager.redrawCanvas,
     signalRConnection: signalrClient.getConnection(),
     currentBoardId: signalrClient.getCurrentBoardId(),
@@ -144,7 +145,9 @@ function setupDependencies() {
     sendElementMove: signalrClient.sendElementMove,
     sendElementSelect: signalrClient.sendElementSelect,
     sendElementDeselect: signalrClient.sendElementDeselect,
+    sendElementDelete: signalrClient.sendElementDelete,
     sendElementResize: signalrClient.sendElementResize,
+    sendLineEndpointUpdate: signalrClient.sendLineEndpointUpdate,
     updateStickyNoteContent: signalrClient.updateStickyNoteContent,
     updateTextElementContent: signalrClient.updateTextElementContent,
     blazorReference: null, // Will be set by Blazor
@@ -323,10 +326,26 @@ function handleMouseMove(event) {
           // Update width and height to maintain end point
           element.width = lineOriginalEnd.x - worldPos.x;
           element.height = lineOriginalEnd.y - worldPos.y;
+          
+          // Update absolute coordinates in data for backend compatibility
+          if (element.data) {
+            element.data.startX = worldPos.x;
+            element.data.startY = worldPos.y;
+            element.data.endX = lineOriginalEnd.x;
+            element.data.endY = lineOriginalEnd.y;
+          }
         } else if (draggedLineHandle === 'end') {
           // Moving end point - keep start point, update width and height
           element.width = worldPos.x - element.x;
           element.height = worldPos.y - element.y;
+          
+          // Update absolute coordinates in data for backend compatibility
+          if (element.data) {
+            element.data.startX = element.x;
+            element.data.startY = element.y;
+            element.data.endX = worldPos.x;
+            element.data.endY = worldPos.y;
+          }
         }
         
         canvasManager.redrawCanvas();
@@ -386,17 +405,19 @@ function handleMouseUp(event) {
     if (isDraggingLineHandle && draggedElementId) {
       // console.log('Finished dragging line handle:', draggedLineHandle);
 
-      // Send element resize to other clients (includes the new line shape with width/height)
+      // Send line endpoint update to other clients (uses dedicated method with absolute coordinates)
       if (signalrClient.isConnected() && signalrClient.getCurrentBoardId()) {
         const element = elementFactory.getElementById(draggedElementId);
-        if (element) {
-          signalrClient.sendElementResize(
+        if (element && element.data && 
+            element.data.startX !== undefined && element.data.startY !== undefined &&
+            element.data.endX !== undefined && element.data.endY !== undefined) {
+          signalrClient.sendLineEndpointUpdate(
             signalrClient.getCurrentBoardId(), 
             draggedElementId, 
-            element.x, 
-            element.y, 
-            element.width, 
-            element.height
+            element.data.startX,
+            element.data.startY,
+            element.data.endX,
+            element.data.endY
           );
         }
       }
@@ -561,7 +582,7 @@ function handleSelectMouseDown(x, y, event) {
 
   if (element) {
     // Check if this is a selected line element and if we clicked on a handle
-    if (selectedElementIds.has(element.id) && element.type === 'Line') {
+    if (elementFactory.getSelectedElementId() === element.id && element.type === 'Line') {
       const handle = getLineHandleAt(element, x, y);
       if (handle) {
         // Start dragging line handle
@@ -993,9 +1014,125 @@ function pasteElementHere() {
   }
 }
 
-function showNotification(message, type = 'info') {
+// Enhanced notification system
+let notificationContainer = null;
+let activeNotifications = new Map();
+let notificationIdCounter = 0;
+
+function showNotification(message, type = 'info', duration = null) {
   console.log(`Notification [${type}]: ${message}`);
-  // This could be enhanced to show actual notifications
+  
+  // Create notification container if it doesn't exist
+  if (!notificationContainer) {
+    notificationContainer = document.createElement('div');
+    notificationContainer.id = 'notification-container';
+    notificationContainer.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 10000;
+      pointer-events: none;
+    `;
+    document.body.appendChild(notificationContainer);
+  }
+  
+  // Clear previous notifications of the same type for connection status
+  if (type === 'warning' || type === 'error' || type === 'success') {
+    clearNotificationsByType(type);
+  }
+  
+  // Create notification element
+  const notificationId = ++notificationIdCounter;
+  const notification = document.createElement('div');
+  notification.id = `notification-${notificationId}`;
+  notification.style.cssText = `
+    background: ${getNotificationColor(type)};
+    color: white;
+    padding: 12px 16px;
+    border-radius: 4px;
+    margin-bottom: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+    pointer-events: auto;
+    opacity: 0;
+    transform: translateX(100%);
+    transition: all 0.3s ease;
+    max-width: 300px;
+    word-wrap: break-word;
+  `;
+  notification.textContent = message;
+  
+  // Add close button for persistent notifications
+  if (type === 'error' || duration === 0) {
+    const closeBtn = document.createElement('span');
+    closeBtn.innerHTML = '×';
+    closeBtn.style.cssText = `
+      float: right;
+      margin-left: 12px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 18px;
+    `;
+    closeBtn.onclick = () => removeNotification(notificationId);
+    notification.appendChild(closeBtn);
+  }
+  
+  notificationContainer.appendChild(notification);
+  activeNotifications.set(notificationId, { element: notification, type });
+  
+  // Animate in
+  setTimeout(() => {
+    notification.style.opacity = '1';
+    notification.style.transform = 'translateX(0)';
+  }, 10);
+  
+  // Auto-remove after duration (if specified)
+  if (duration !== 0) {
+    const autoRemoveDuration = duration || (type === 'success' ? 3000 : type === 'warning' ? 5000 : 8000);
+    setTimeout(() => removeNotification(notificationId), autoRemoveDuration);
+  }
+  
+  return notificationId;
+}
+
+function removeNotification(notificationId) {
+  const notificationData = activeNotifications.get(notificationId);
+  if (notificationData) {
+    const element = notificationData.element;
+    element.style.opacity = '0';
+    element.style.transform = 'translateX(100%)';
+    setTimeout(() => {
+      if (element.parentNode) {
+        element.parentNode.removeChild(element);
+      }
+      activeNotifications.delete(notificationId);
+    }, 300);
+  }
+}
+
+function clearNotificationsByType(type) {
+  for (const [id, data] of activeNotifications) {
+    if (data.type === type) {
+      removeNotification(id);
+    }
+  }
+}
+
+function clearAllNotifications() {
+  for (const id of activeNotifications.keys()) {
+    removeNotification(id);
+  }
+}
+
+function getNotificationColor(type) {
+  switch (type) {
+    case 'success': return '#4caf50';
+    case 'warning': return '#ff9800';
+    case 'error': return '#f44336';
+    case 'info': 
+    default: return '#2196f3';
+  }
 }
 
 function triggerImageUpload(x, y) {
