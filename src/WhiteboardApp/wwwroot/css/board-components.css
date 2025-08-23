@@ -3,8 +3,9 @@
 .board-container {
     position: relative;
     height: 100vh;
-    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
     overflow: hidden;
+    transition: background 0.3s ease;
 }
 
 /* Status Bar Styles */
@@ -14,17 +15,24 @@
     left: 0;
     right: 0;
     height: 60px;
-    background: rgba(255, 255, 255, 0.95);
+    background: var(--toolbar-bg);
     backdrop-filter: blur(10px);
-    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    border-bottom: 1px solid var(--border-color);
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 0 30px;
     z-index: 100;
+    transition: background 0.3s ease, border-color 0.3s ease;
 }
 
 .status-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.status-right {
     display: flex;
     align-items: center;
     gap: 12px;
@@ -34,40 +42,42 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(255, 255, 255, 0.9);
-    border: 1px solid rgba(0, 0, 0, 0.1);
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
     width: 36px;
     height: 36px;
     border-radius: 6px;
     cursor: pointer;
     transition: all 0.2s ease;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 1px 3px var(--shadow-light);
     z-index: 1001;
     position: relative;
     pointer-events: auto;
 }
 
 .home-btn:hover {
-    background: rgba(255, 255, 255, 1);
-    border-color: rgba(0, 0, 0, 0.15);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+    background: var(--bg-secondary);
+    border-color: var(--border-color-hover);
+    box-shadow: 0 2px 6px var(--shadow-medium);
 }
 
 .home-btn:active {
     transform: translateY(1px);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 1px 2px var(--shadow-light);
 }
 
 .home-icon {
     font-size: 16px;
-    color: #6b7280;
+    color: var(--text-secondary);
     font-weight: bold;
+    transition: color 0.3s ease;
 }
 
 .board-title {
     font-size: 18px;
     font-weight: 600;
-    color: #2c3e50;
+    color: var(--text-primary);
+    transition: color 0.3s ease;
 }
 
 .board-menu-container {
@@ -88,13 +98,13 @@
 }
 
 .board-menu-trigger:hover {
-    background-color: rgba(0, 0, 0, 0.05);
+    background-color: var(--bg-secondary);
 }
 
 .dropdown-arrow {
     font-size: 12px;
-    color: #666;
-    transition: transform 0.2s ease;
+    color: var(--text-secondary);
+    transition: transform 0.2s ease, color 0.3s ease;
 }
 
 .board-menu-trigger:hover .dropdown-arrow,
@@ -106,14 +116,15 @@
     position: absolute;
     top: 100%;
     left: 0;
-    background: white;
-    border: 1px solid #e0e0e0;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 4px 12px var(--shadow-heavy);
     min-width: 180px;
     z-index: 1000;
     display: none;
     padding: 4px 0;
+    transition: background 0.3s ease, border-color 0.3s ease;
 }
 
 .board-menu.show {
@@ -127,12 +138,12 @@
     padding: 10px 16px;
     cursor: pointer;
     font-size: 14px;
-    color: #333;
-    transition: background-color 0.2s ease;
+    color: var(--text-primary);
+    transition: background-color 0.2s ease, color 0.3s ease;
 }
 
 .board-menu-item:hover {
-    background-color: #f5f5f5;
+    background-color: var(--bg-secondary);
 }
 
 .menu-icon {
@@ -168,6 +179,41 @@
     background: currentColor;
 }
 
+.theme-toggle-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 3px var(--shadow-light);
+}
+
+.theme-toggle-btn:hover {
+    background: var(--bg-secondary);
+    border-color: var(--border-color-hover);
+    box-shadow: 0 2px 6px var(--shadow-medium);
+    transform: scale(1.05);
+}
+
+.theme-toggle-btn:active {
+    transform: translateY(1px) scale(1.05);
+    box-shadow: 0 1px 2px var(--shadow-light);
+}
+
+.theme-icon {
+    font-size: 16px;
+    transition: transform 0.2s ease;
+}
+
+.theme-toggle-btn:hover .theme-icon {
+    transform: rotate(15deg);
+}
+
 /* Canvas Styles */
 .canvas-container {
     position: absolute;
@@ -175,9 +221,11 @@
     left: 0;
     right: 0;
     bottom: 100px;
-    background: white;
+    background: var(--canvas-bg);
     border-radius: 0;
     overflow: hidden;
+    touch-action: pan-x pan-y;
+    transition: background 0.3s ease;
 }
 
 #whiteboard-canvas {
@@ -185,6 +233,7 @@
     height: 100%;
     cursor: crosshair;
     background: transparent;
+    touch-action: pan-x pan-y;
 }
 
 /* Toolbar Styles */
@@ -193,16 +242,17 @@
     bottom: 20px;
     left: 50%;
     transform: translateX(-50%);
-    background: rgba(255, 255, 255, 0.95);
+    background: var(--toolbar-bg);
     backdrop-filter: blur(10px);
     border-radius: 50px;
     padding: 12px 20px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 8px 32px var(--shadow-heavy);
+    border: 1px solid var(--border-color);
     display: flex;
     align-items: center;
     gap: 8px;
     z-index: 100;
+    transition: background 0.3s ease, border-color 0.3s ease;
 }
 
 .toolbar-section {
@@ -233,15 +283,15 @@
 }
 
 .tool-btn:hover {
-    background: rgba(0, 0, 0, 0.05);
+    background: var(--bg-secondary);
     transform: scale(1.05);
 }
 
 .tool-btn.active {
-    background: #3b82f6;
-    color: white;
+    background: var(--accent-primary);
+    color: var(--bg-primary);
     transform: scale(1.1);
-    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+    box-shadow: 0 4px 12px var(--shadow-medium);
 }
 
 .tool-icon {
@@ -287,15 +337,16 @@
     bottom: 100%;
     left: 50%;
     transform: translateX(-50%);
-    background: white;
+    background: var(--bg-primary);
     border-radius: 12px;
-    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15);
-    border: 1px solid rgba(0, 0, 0, 0.1);
+    box-shadow: 0 12px 24px var(--shadow-heavy);
+    border: 1px solid var(--border-color);
     padding: 8px;
     margin-bottom: 8px;
     display: none;
     z-index: 1000;
     min-width: 140px;
+    transition: background 0.3s ease, border-color 0.3s ease;
 }
 
 .shape-menu.show {
@@ -314,32 +365,36 @@
 }
 
 .shape-menu-item:hover {
-    background: #f3f4f6;
+    background: var(--bg-secondary);
 }
 
 .shape-icon {
     font-size: 16px;
     width: 20px;
     text-align: center;
+    color: var(--text-primary);
+    transition: color 0.3s ease;
 }
 
 .shape-label {
     font-weight: 500;
-    color: #374151;
+    color: var(--text-primary);
+    transition: color 0.3s ease;
 }
 
 /* Context Menu Styles */
 .context-menu {
     position: fixed;
-    background: white;
-    border: 1px solid #e0e0e0;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 8px 24px var(--shadow-heavy);
     padding: 4px 0;
     min-width: 180px;
     z-index: 10000;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
     font-size: 14px;
+    transition: background 0.3s ease, border-color 0.3s ease;
 }
 
 .context-menu-item {
@@ -353,7 +408,7 @@
 }
 
 .context-menu-item:hover {
-    background-color: #f5f5f5;
+    background-color: var(--bg-secondary);
 }
 
 .context-item-content {
@@ -444,12 +499,13 @@
     right: 20px;
     width: 200px;
     height: 150px;
-    background: rgba(255, 255, 255, 0.95);
-    border: 1px solid rgba(0, 0, 0, 0.1);
+    background: var(--toolbar-bg);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     overflow: hidden;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 4px 12px var(--shadow-medium);
     z-index: 50;
+    transition: background 0.3s ease, border-color 0.3s ease;
 }
 
 #minimap-canvas {
@@ -460,16 +516,57 @@
 
 .minimap-viewport {
     position: absolute;
-    border: 2px solid #3b82f6;
-    background: rgba(59, 130, 246, 0.1);
+    border: 2px solid var(--accent-primary);
+    background: var(--accent-primary);
+    opacity: 0.1;
     pointer-events: none;
+    transition: border-color 0.3s ease;
 }
 
-/* Responsive Design */
+/* Canvas Selection and UI Elements */
+.canvas-selection-handle {
+    background: var(--accent-primary);
+    border: 2px solid var(--bg-primary);
+    transition: background 0.3s ease, border-color 0.3s ease;
+}
+
+.canvas-selection-outline {
+    border-color: var(--accent-primary);
+    transition: border-color 0.3s ease;
+}
+
+.canvas-cursor {
+    background: var(--accent-primary);
+    transition: background 0.3s ease;
+}
+
+/* Mobile Touch Improvements */
+.tool-btn, .home-btn, .shape-tool {
+    -webkit-tap-highlight-color: transparent;
+    tap-highlight-color: transparent;
+}
+
+.board-container {
+    touch-action: pan-x pan-y;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Drag support for mobile */
+@supports (touch-action: manipulation) {
+    #whiteboard-canvas {
+        touch-action: manipulation;
+    }
+    
+    .canvas-container {
+        touch-action: manipulation;
+    }
+}
+
+/* Mobile Toolbar - Slimmer Design */
 @media (max-width: 768px) {
     .status-bar {
-        padding: 0 15px;
-        height: 50px;
+        padding: 0 10px;
+        height: 45px;
     }
     
     .board-title {
@@ -477,25 +574,121 @@
     }
     
     .canvas-container {
-        top: 50px;
-        bottom: 80px;
+        top: 45px;
+        bottom: 65px;
     }
     
     .floating-toolbar {
-        bottom: 10px;
-        padding: 8px 15px;
+        bottom: 8px;
+        left: 8px;
+        right: 8px;
+        transform: none;
+        padding: 6px 10px;
+        border-radius: 25px;
+        height: 50px;
+        box-sizing: border-box;
+        overflow-x: auto;
+        overflow-y: hidden;
+        white-space: nowrap;
+        background: var(--toolbar-bg-mobile);
+        backdrop-filter: blur(12px);
+        box-shadow: 0 4px 20px var(--shadow-heavy);
+    }
+    
+    .toolbar-section {
+        gap: 4px;
+    }
+    
+    .tool-group {
+        gap: 4px;
     }
     
     .tool-btn {
         width: 40px;
         height: 40px;
-        font-size: 16px;
+        font-size: 14px;
+        min-width: 40px;
+        min-height: 40px;
+        flex-shrink: 0;
+    }
+    
+    .shape-tool {
+        width: 40px;
+        height: 40px;
+    }
+    
+    .home-btn {
+        width: 40px;
+        height: 40px;
+        min-width: 40px;
+        min-height: 40px;
     }
     
     .minimap-container {
-        width: 150px;
-        height: 110px;
-        bottom: 90px;
-        right: 10px;
+        display: none;
+    }
+    
+    .board-menu {
+        min-width: 200px;
+        font-size: 16px;
+    }
+    
+    .board-menu-item {
+        padding: 12px 16px;
+        font-size: 16px;
+        min-height: 44px;
+    }
+    
+    .context-menu {
+        min-width: 200px;
+        font-size: 16px;
+    }
+    
+    .context-menu-item {
+        padding: 12px 16px;
+        min-height: 44px;
+        font-size: 16px;
+    }
+}
+
+/* Extra small devices */
+@media (max-width: 480px) {
+    .status-bar {
+        padding: 0 8px;
+        height: 40px;
+    }
+    
+    .board-title {
+        font-size: 14px;
+    }
+    
+    .canvas-container {
+        top: 40px;
+        bottom: 60px;
+    }
+    
+    .floating-toolbar {
+        height: 45px;
+        padding: 4px 8px;
+    }
+    
+    .tool-btn {
+        width: 36px;
+        height: 36px;
+        min-width: 36px;
+        min-height: 36px;
+        font-size: 13px;
+    }
+    
+    .shape-tool {
+        width: 36px;
+        height: 36px;
+    }
+    
+    .home-btn {
+        width: 36px;
+        height: 36px;
+        min-width: 36px;
+        min-height: 36px;
     }
 }

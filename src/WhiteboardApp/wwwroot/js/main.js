@@ -59,6 +59,9 @@ export async function initializeApplication() {
     // Set up event handlers
     setupEventHandlers();
 
+    // Initialize dark mode
+    initializeDarkMode();
+
     console.log('OpenBoard application initialized successfully');
     return true;
   } catch (error) {
@@ -208,6 +211,12 @@ function setupEventHandlers() {
   canvas.addEventListener('contextmenu', handleCanvasRightClick);
   canvas.addEventListener('wheel', viewportManager.handleMouseWheel, { passive: false });
 
+  // Touch event handlers
+  canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+  canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+  canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
+  canvas.addEventListener('touchcancel', handleTouchEnd, { passive: false });
+
   // Window resize handler with throttling
   let resizeTimeout;
   const handleResize = () => {
@@ -232,6 +241,9 @@ function setupEventHandlers() {
     }, 200); // Give extra time for fullscreen transition
   });
 
+  // Add keyboard shortcuts
+  document.addEventListener('keydown', handleKeyDown);
+
   // Set up image upload handler
   const imageInput = document.getElementById('imageUpload');
   if (imageInput) {
@@ -242,6 +254,16 @@ function setupEventHandlers() {
   }
 
   console.log('Event handlers set up');
+}
+
+// Keyboard event handler for shortcuts
+function handleKeyDown(event) {
+  // Dark mode toggle: Ctrl/Cmd + Shift + D
+  if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'D') {
+    event.preventDefault();
+    toggleDarkMode();
+    return;
+  }
 }
 
 // Main mouse event handlers
@@ -591,6 +613,433 @@ function handleCanvasRightClick(event) {
   }
 }
 
+// Touch event handlers
+function handleTouchStart(event) {
+  try {
+    event.preventDefault(); // Prevent default touch behaviors
+    
+    const touchCount = getTouchCount(event);
+    lastTouchCount = touchCount;
+    touchStartTime = Date.now();
+    
+    if (touchCount === 1) {
+      // Single touch - treat like mouse down
+      const coords = getEventCoordinates(event);
+      const rect = event.target.getBoundingClientRect();
+      const screenX = coords.clientX - rect.left;
+      const screenY = coords.clientY - rect.top;
+      const worldPos = canvasManager.screenToWorld(screenX, screenY);
+
+      startX = worldPos.x;
+      startY = worldPos.y;
+      
+      const currentTool = toolManager.getCurrentTool();
+      
+      // Handle different tools for single touch
+      switch (currentTool) {
+        case 'select':
+          handleSelectTouchStart(worldPos.x, worldPos.y, event);
+          break;
+        case 'pen':
+          toolManager.startNewPath(worldPos.x, worldPos.y);
+          break;
+        case 'rectangle':
+        case 'circle':
+        case 'triangle':
+        case 'diamond':
+        case 'ellipse':
+        case 'star':
+          toolManager.startShape(currentTool, worldPos.x, worldPos.y);
+          break;
+        case 'line':
+          toolManager.startLine(worldPos.x, worldPos.y);
+          break;
+        case 'text':
+          createTextAtPosition(worldPos.x, worldPos.y);
+          break;
+        case 'stickynote':
+          createStickyNoteAtPosition(worldPos.x, worldPos.y);
+          break;
+        case 'image':
+          triggerImageUpload(worldPos.x, worldPos.y);
+          break;
+      }
+    } else if (touchCount === 2) {
+      // Two-finger touch - prepare for pinch/zoom
+      const touch1 = event.touches[0];
+      const touch2 = event.touches[1];
+      
+      // Calculate initial distance between touches
+      const deltaX = touch2.clientX - touch1.clientX;
+      const deltaY = touch2.clientY - touch1.clientY;
+      initialTouchDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+      
+      // Calculate pinch center in screen coordinates
+      const rect = event.target.getBoundingClientRect();
+      pinchCenter = {
+        x: ((touch1.clientX + touch2.clientX) / 2) - rect.left,
+        y: ((touch1.clientY + touch2.clientY) / 2) - rect.top
+      };
+      
+      // Store initial zoom level
+      initialZoomLevel = viewportManager.getZoomLevel();
+      
+      console.log('Pinch gesture started, initial distance:', initialTouchDistance);
+    }
+    
+  } catch (error) {
+    console.error('Error in handleTouchStart:', error);
+  }
+}
+
+function handleTouchMove(event) {
+  try {
+    event.preventDefault();
+    
+    const touchCount = getTouchCount(event);
+    
+    if (touchCount === 1) {
+      // Single touch - treat like mouse move
+      const coords = getEventCoordinates(event);
+      const rect = event.target.getBoundingClientRect();
+      const screenX = coords.clientX - rect.left;
+      const screenY = coords.clientY - rect.top;
+      const worldPos = canvasManager.screenToWorld(screenX, screenY);
+
+      // Handle viewport panning
+      if (viewportManager.getViewportInfo().isPanning) {
+        viewportManager.updatePan(screenX, screenY);
+        return;
+      }
+
+      const currentTool = toolManager.getCurrentTool();
+
+      // Handle line handle dragging in select mode
+      if (isDraggingLineHandle && draggedElementId && currentTool === 'select') {
+        const element = elementFactory.getElementById(draggedElementId);
+        if (element && element.type === 'Line') {
+          // Update the specific handle position
+          if (draggedLineHandle === 'start') {
+            element.x = worldPos.x;
+            element.y = worldPos.y;
+            element.width = lineOriginalEnd.x - worldPos.x;
+            element.height = lineOriginalEnd.y - worldPos.y;
+            
+            if (element.data) {
+              element.data.startX = worldPos.x;
+              element.data.startY = worldPos.y;
+              element.data.endX = lineOriginalEnd.x;
+              element.data.endY = lineOriginalEnd.y;
+            }
+          } else if (draggedLineHandle === 'end') {
+            element.width = worldPos.x - element.x;
+            element.height = worldPos.y - element.y;
+            
+            if (element.data) {
+              element.data.startX = element.x;
+              element.data.startY = element.y;
+              element.data.endX = worldPos.x;
+              element.data.endY = worldPos.y;
+            }
+          }
+          
+          canvasManager.redrawCanvas();
+          return;
+        }
+      }
+      
+      // Handle element resizing in select mode
+      if (isResizing && elementFactory.isCurrentlyResizing()) {
+        elementFactory.updateElementResize(worldPos.x, worldPos.y);
+        return;
+      }
+      
+      // Handle element dragging in select mode
+      if (isDragging && draggedElementId && currentTool === 'select') {
+        const deltaX = worldPos.x - dragStartX;
+        const deltaY = worldPos.y - dragStartY;
+        const newX = elementStartX + deltaX;
+        const newY = elementStartY + deltaY;
+
+        elementFactory.updateElementPositionLocal(draggedElementId, newX, newY);
+        canvasManager.redrawCanvas();
+        return;
+      }
+
+      // Handle tool-specific touch move
+      if (toolManager.isCurrentlyDrawing()) {
+        toolManager.drawLine(worldPos.x, worldPos.y);
+      } else if (toolManager.isCurrentlyDrawingShape()) {
+        if (currentTool === 'line') {
+          toolManager.updateLine(startX, startY, worldPos.x, worldPos.y);
+        } else if (toolManager.isShapeTool()) {
+          toolManager.updateShape(currentTool, startX, startY, worldPos.x, worldPos.y);
+        }
+      }
+
+      // Update cursor based on hover state (only when not actively dragging/resizing)
+      if (currentTool === 'select' && !isDragging && !isResizing && !isDraggingLineHandle) {
+        updateCursorForHover(worldPos.x, worldPos.y);
+      }
+
+    } else if (touchCount === 2) {
+      // Two-finger pinch/zoom
+      const touch1 = event.touches[0];
+      const touch2 = event.touches[1];
+      
+      // Calculate current distance between touches
+      const deltaX = touch2.clientX - touch1.clientX;
+      const deltaY = touch2.clientY - touch1.clientY;
+      const currentDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+      
+      if (initialTouchDistance > 0) {
+        // Calculate zoom factor
+        const zoomFactor = currentDistance / initialTouchDistance;
+        
+        // Apply zoom with focal point using the existing zoomAtPoint method
+        viewportManager.zoomAtPoint(pinchCenter.x, pinchCenter.y, zoomFactor);
+        
+        // Update initial distance for next frame
+        initialTouchDistance = currentDistance;
+      }
+    }
+    
+  } catch (error) {
+    console.error('Error in handleTouchMove:', error);
+  }
+}
+
+function handleTouchEnd(event) {
+  try {
+    event.preventDefault();
+    
+    const touchCount = getTouchCount(event);
+    const touchDuration = Date.now() - touchStartTime;
+    
+    // Handle touch end for remaining touches
+    if (touchCount === 0) {
+      // All touches ended
+      
+      // Check for double tap (similar to double click)
+      if (lastTouchCount === 1 && touchDuration < 300) {
+        // This could be the first tap of a double tap, but we'll handle it simply for now
+        setTimeout(() => {
+          if (getTouchCount(event) === 0) {
+            // No second tap detected, treat as single tap end
+            handleSingleTouchEnd(event);
+          }
+        }, 300);
+      } else {
+        handleSingleTouchEnd(event);
+      }
+      
+      // Reset pinch state
+      initialTouchDistance = 0;
+      initialZoomLevel = 1;
+      
+    } else if (touchCount === 1 && lastTouchCount === 2) {
+      // One finger lifted from pinch, reset pinch state
+      initialTouchDistance = 0;
+      initialZoomLevel = 1;
+    }
+    
+    lastTouchCount = touchCount;
+    
+  } catch (error) {
+    console.error('Error in handleTouchEnd:', error);
+  }
+}
+
+function handleSingleTouchEnd(event) {
+  const coords = getEventCoordinates(event);
+  const rect = event.target.getBoundingClientRect();
+  const screenX = coords.clientX - rect.left;
+  const screenY = coords.clientY - rect.top;
+  const worldPos = canvasManager.screenToWorld(screenX, screenY);
+
+  // Handle viewport panning
+  if (viewportManager.getViewportInfo().isPanning) {
+    viewportManager.endPan();
+    return;
+  }
+
+  const currentTool = toolManager.getCurrentTool();
+
+  // Handle line handle dragging completion
+  if (isDraggingLineHandle && draggedElementId) {
+    if (signalrClient.isConnected() && signalrClient.getCurrentBoardId()) {
+      const element = elementFactory.getElementById(draggedElementId);
+      if (element && element.data && 
+          element.data.startX !== undefined && element.data.startY !== undefined &&
+          element.data.endX !== undefined && element.data.endY !== undefined) {
+        signalrClient.sendLineEndpointUpdate(
+          signalrClient.getCurrentBoardId(), 
+          draggedElementId, 
+          element.data.startX,
+          element.data.startY,
+          element.data.endX,
+          element.data.endY
+        );
+      }
+    }
+
+    isDraggingLineHandle = false;
+    draggedLineHandle = null;
+    draggedElementId = null;
+    return;
+  }
+
+  // Handle element resizing completion
+  if (isResizing) {
+    elementFactory.finishElementResize();
+    isResizing = false;
+    canvasManager.updateCanvasCursor('default');
+    return;
+  }
+
+  // Handle element dragging completion
+  if (isDragging && draggedElementId) {
+    if (signalrClient.isConnected() && signalrClient.getCurrentBoardId()) {
+      const element = elementFactory.getElementById(draggedElementId);
+      if (element) {
+        signalrClient.sendElementMove(signalrClient.getCurrentBoardId(), draggedElementId, element.x, element.y);
+      }
+    }
+
+    isDragging = false;
+    draggedElementId = null;
+    return;
+  }
+
+  // Handle tool completion
+  if (toolManager.isCurrentlyDrawing()) {
+    const path = toolManager.getCurrentPath();
+    if (path.length > 1) {
+      const element = elementFactory.createPathElement(path);
+      if (signalrClient.isConnected() && signalrClient.getCurrentBoardId()) {
+        signalrClient.sendElement(signalrClient.getCurrentBoardId(), element, element.id);
+      }
+      
+      if (element) {
+        elementFactory.highlightElement(element.id);
+        toolManager.setCurrentTool('select');
+        canvasManager.redrawCanvas();
+      }
+    }
+    toolManager.finishDrawing();
+  } else if (toolManager.isCurrentlyDrawingShape()) {
+    let element = null;
+
+    if (currentTool === 'line') {
+      element = elementFactory.createLineElement(startX, startY, worldPos.x, worldPos.y);
+      toolManager.finishLine();
+    } else if (toolManager.isShapeTool()) {
+      element = elementFactory.createShapeElement(currentTool, startX, startY, worldPos.x, worldPos.y);
+      toolManager.finishShape();
+    }
+
+    if (element && signalrClient.isConnected() && signalrClient.getCurrentBoardId()) {
+      signalrClient.sendElement(signalrClient.getCurrentBoardId(), element, element.id);
+    }
+
+    if (element) {
+      elementFactory.highlightElement(element.id);
+      toolManager.setCurrentTool('select');
+      canvasManager.redrawCanvas();
+    }
+  }
+}
+
+function handleSelectTouchStart(x, y, event) {
+  const element = elementFactory.getElementAtPoint(x, y);
+
+  if (element) {
+    // Check if this is a selected line element and if we touched a handle
+    if (elementFactory.getSelectedElementId() === element.id && element.type === 'Line') {
+      const handle = getLineHandleAt(element, x, y);
+      if (handle) {
+        isDraggingLineHandle = true;
+        draggedLineHandle = handle;
+        draggedElementId = element.id;
+        dragStartX = x;
+        dragStartY = y;
+        
+        lineOriginalStart = { x: element.x, y: element.y };
+        lineOriginalEnd = { x: element.x + element.width, y: element.y + element.height };
+        return;
+      }
+    }
+    
+    // Check if this is a selected resizable element and if we touched a resize handle
+    if (elementFactory.getSelectedElementId() === element.id && elementFactory.isElementResizable(element)) {
+      const screenPos = canvasManager.worldToScreen(x, y);
+      const selectionRect = getElementSelectionRect(element);
+      const resizeHandle = elementFactory.getResizeHandleAt(screenPos.x, screenPos.y, selectionRect);
+      
+      if (resizeHandle) {
+        const success = elementFactory.startElementResize(element.id, resizeHandle, x, y);
+        if (success) {
+          isResizing = true;
+          const cursor = elementFactory.getResizeCursor(resizeHandle);
+          canvasManager.updateCanvasCursor(cursor);
+          return;
+        }
+      }
+    }
+    
+    // Select element and start dragging
+    selectedElementIds.clear();
+    selectedElementIds.add(element.id);
+    elementFactory.highlightElement(element.id);
+    
+    isDragging = true;
+    draggedElementId = element.id;
+    dragStartX = x;
+    dragStartY = y;
+    elementStartX = element.x;
+    elementStartY = element.y;
+  } else {
+    // Touched empty space - clear selection and start canvas panning
+    selectedElementIds.clear();
+    elementFactory.clearSelection();
+    isDragging = false;
+    draggedElementId = null;
+    
+    const coords = getEventCoordinates(event);
+    const rect = event.target.getBoundingClientRect();
+    const screenX = coords.clientX - rect.left;
+    const screenY = coords.clientY - rect.top;
+    viewportManager.startPan(screenX, screenY);
+  }
+}
+
+// Touch/Mouse utility functions
+function getEventCoordinates(event) {
+  if (event.touches && event.touches.length > 0) {
+    // Touch event
+    const touch = event.touches[0];
+    return { clientX: touch.clientX, clientY: touch.clientY };
+  } else if (event.changedTouches && event.changedTouches.length > 0) {
+    // Touch end event
+    const touch = event.changedTouches[0];
+    return { clientX: touch.clientX, clientY: touch.clientY };
+  } else {
+    // Mouse event
+    return { clientX: event.clientX, clientY: event.clientY };
+  }
+}
+
+function getTouchCount(event) {
+  return event.touches ? event.touches.length : 0;
+}
+
+// Touch state tracking
+let touchStartTime = 0;
+let lastTouchCount = 0;
+let initialTouchDistance = 0;
+let initialZoomLevel = 1;
+let pinchCenter = { x: 0, y: 0 };
+
 // Helper functions
 function isPointInLineHandle(x, y, handleX, handleY) {
   // Get current zoom level to adjust handle size (same logic as in canvas-manager.js)
@@ -884,11 +1333,19 @@ function createElementContextMenu(element) {
 }
 
 function createGeneralContextMenu() {
+  const themeIcon = getCurrentTheme() === 'dark' ? '☀️' : getCurrentTheme() === 'light' ? '🌙' : '🔄';
+  const themeName = getCurrentTheme() === 'dark' ? 'Light Mode' : getCurrentTheme() === 'light' ? 'Auto Mode' : 'Dark Mode';
+  
   return `
         <div class="context-menu-section">
             <button class="context-menu-item" onclick="pasteElementHere()">
                 📋 Paste
             </button>
+            <button class="context-menu-item" onclick="toggleDarkMode()">
+                ${themeIcon} ${themeName}
+            </button>
+        </div>
+        <div class="context-menu-section">
             <button class="context-menu-item" onclick="clearCanvasFromBlazor()">
                 🗑️ Clear Canvas
             </button>
@@ -1453,6 +1910,165 @@ export function init() {
   return initializeApplication();
 }
 
+// Dark mode functionality
+let currentTheme = 'auto'; // 'light', 'dark', 'auto'
+
+function initializeDarkMode() {
+  // Get saved theme preference or default to auto
+  currentTheme = localStorage.getItem('theme') || 'auto';
+  console.log('Initializing dark mode with theme:', currentTheme);
+  console.log('System prefers dark mode:', window.matchMedia('(prefers-color-scheme: dark)').matches);
+  
+  applyTheme(currentTheme);
+  
+  // Listen for system theme changes
+  const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  mediaQuery.addEventListener('change', handleSystemThemeChange);
+  
+  console.log('Dark mode initialized with theme:', currentTheme);
+}
+
+function handleSystemThemeChange(e) {
+  if (currentTheme === 'auto') {
+    applyTheme('auto');
+  }
+}
+
+function applyTheme(theme) {
+  const html = document.documentElement;
+  console.log('applyTheme called with:', theme);
+  console.log('Current data-theme attribute:', html.getAttribute('data-theme'));
+  
+  if (theme === 'dark') {
+    html.setAttribute('data-theme', 'dark');
+    console.log('Set data-theme to dark');
+  } else if (theme === 'light') {
+    html.removeAttribute('data-theme');
+    console.log('Removed data-theme attribute (light mode)');
+  } else if (theme === 'auto') {
+    // For auto mode, check system preference and apply accordingly
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    if (prefersDark) {
+      html.setAttribute('data-theme', 'dark');
+      console.log('Auto mode: Set data-theme to dark (system prefers dark)');
+    } else {
+      html.removeAttribute('data-theme');
+      console.log('Auto mode: Removed data-theme attribute (system prefers light)');
+    }
+  }
+  
+  console.log('New data-theme attribute:', html.getAttribute('data-theme'));
+  
+  // Update theme icon
+  updateThemeIcon();
+  
+  // Update canvas background if canvas exists
+  updateCanvasBackground();
+}
+
+function updateThemeIcon() {
+  const themeIcon = document.getElementById('theme-icon');
+  if (themeIcon) {
+    if (currentTheme === 'dark') {
+      themeIcon.textContent = '☀️';
+    } else if (currentTheme === 'light') {
+      themeIcon.textContent = '🔄';
+    } else {
+      themeIcon.textContent = '🌙';
+    }
+  }
+}
+
+function updateCanvasBackground() {
+  const canvas = canvasManager?.getCanvas();
+  if (canvas) {
+    // Force a redraw to apply new background color and color inversions
+    setTimeout(() => {
+      canvasManager.redrawCanvas();
+    }, 100);
+  }
+}
+
+function toggleDarkMode() {
+  console.log('toggleDarkMode called, current theme:', currentTheme);
+  
+  if (currentTheme === 'light') {
+    currentTheme = 'dark';
+  } else if (currentTheme === 'dark') {
+    currentTheme = 'auto';
+  } else {
+    currentTheme = 'light';
+  }
+  
+  localStorage.setItem('theme', currentTheme);
+  console.log('About to apply theme:', currentTheme);
+  applyTheme(currentTheme);
+  
+  showNotification(`Theme set to ${currentTheme}`, 'success', 2000);
+  console.log('Theme changed to:', currentTheme);
+}
+
+function getCurrentTheme() {
+  return currentTheme;
+}
+
+function setTheme(theme) {
+  if (['light', 'dark', 'auto'].includes(theme)) {
+    currentTheme = theme;
+    localStorage.setItem('theme', currentTheme);
+    applyTheme(currentTheme);
+    console.log('Theme set to:', currentTheme);
+  }
+}
+
+// Color inversion utilities for dark mode
+function isDarkModeActive() {
+  const html = document.documentElement;
+  const hasDataThemeDark = html.getAttribute('data-theme') === 'dark';
+  
+  if (currentTheme === 'dark') {
+    return true;
+  } else if (currentTheme === 'auto') {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+  
+  // Also check the actual DOM state as a fallback
+  console.log('isDarkModeActive check - theme:', currentTheme, 'hasDataThemeDark:', hasDataThemeDark);
+  return hasDataThemeDark;
+}
+
+function isBlackColor(color) {
+  if (!color) return false;
+  
+  // Handle hex colors
+  if (color === '#000000' || color === '#000' || color.toLowerCase() === '#000000') return true;
+  
+  // Handle rgb colors
+  if (color.startsWith('rgb')) {
+    const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+    if (match) {
+      const r = parseInt(match[1]);
+      const g = parseInt(match[2]);
+      const b = parseInt(match[3]);
+      return r === 0 && g === 0 && b === 0;
+    }
+  }
+  
+  // Handle named color
+  if (color.toLowerCase() === 'black') return true;
+  
+  return false;
+}
+
+function invertBlackToWhite(color) {
+  if (!isDarkModeActive() || !isBlackColor(color)) {
+    return color;
+  }
+  
+  // Convert black to white in dark mode
+  return '#ffffff';
+}
+
 // Backward compatibility - expose main functions to window
 if (typeof window !== 'undefined') {
   // Main functions
@@ -1481,6 +2097,17 @@ if (typeof window !== 'undefined') {
   window.updateStickyNoteColor = updateStickyNoteColor;
   window.updateElementStyle = updateElementStyle;
   window.pasteElementHere = pasteElementHere;
+  
+  // Dark mode functions
+  window.initializeDarkMode = initializeDarkMode;
+  window.toggleDarkMode = toggleDarkMode;
+  window.getCurrentTheme = getCurrentTheme;
+  window.setTheme = setTheme;
+  
+  // Color inversion functions
+  window.isDarkModeActive = isDarkModeActive;
+  window.isBlackColor = isBlackColor;
+  window.invertBlackToWhite = invertBlackToWhite;
 
   // Export module references for debugging
   window.modules = {

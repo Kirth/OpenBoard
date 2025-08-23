@@ -539,9 +539,16 @@ function drawCursors() {
 // --- Renderers --------------------------------------------------------------
 
 function strokeFillFrom(el) {
-  const stroke = el.data?.strokeColor ?? el.data?.color ?? '#000000';
-  const fill = el.data?.fillColor ?? 'transparent';
+  let stroke = el.data?.strokeColor ?? el.data?.color ?? '#000000';
+  let fill = el.data?.fillColor ?? 'transparent';
   const width = el.data?.strokeWidth ?? 2;
+  
+  // Convert black strokes to white in dark mode (client-side display only)
+  if (typeof window !== 'undefined' && window.invertBlackToWhite) {
+    stroke = window.invertBlackToWhite(stroke);
+    // Keep fill colors unchanged - only stroke/outline colors are inverted
+  }
+  
   return { stroke, fill, width };
 }
 
@@ -960,16 +967,26 @@ export function recoverCanvasState() {
 }
 
 function renderStickyNote(el) {
-  const bg = el.data?.color || '#ffeb3b';
+  let bg = el.data?.color || '#ffeb3b';
+  let borderColor = '#fbc02d';
+  let textColor = '#333333';
+  
+  // Convert black text to white in dark mode (client-side display only)
+  if (typeof window !== 'undefined' && window.invertBlackToWhite) {
+    // Keep sticky note backgrounds unchanged - they're usually colored
+    // Only invert the text if it's black
+    textColor = window.invertBlackToWhite(textColor);
+  }
+  
   ctx.fillStyle = bg;
   ctx.fillRect(el.x, el.y, el.width, el.height);
 
-  ctx.strokeStyle = '#fbc02d';
+  ctx.strokeStyle = borderColor;
   ctx.lineWidth = 1;
   ctx.strokeRect(el.x, el.y, el.width, el.height);
 
   if (el.data?.content && !el.data?.isEditing) {
-    ctx.fillStyle = '#333333';
+    ctx.fillStyle = textColor;
     const fontSize = el.data?.fontSize || 14;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
@@ -1067,7 +1084,14 @@ function renderStar(el) {
 
 function renderText(el) {
   if (!el.data?.content || el.data?.isEditing) return;
-  ctx.fillStyle = el.data?.color || '#000000';
+  
+  let textColor = el.data?.color || '#000000';
+  // Convert black text to white in dark mode (client-side display only)
+  if (typeof window !== 'undefined' && window.invertBlackToWhite) {
+    textColor = window.invertBlackToWhite(textColor);
+  }
+  
+  ctx.fillStyle = textColor;
   const fontSize = el.data?.fontSize || 16;
   const fontFamily = el.data?.fontFamily || 'Arial';
   ctx.textAlign = 'left';

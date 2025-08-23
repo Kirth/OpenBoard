@@ -22,11 +22,18 @@
             </div>
         </div>
     </div>
-    <span class="connection-status @(IsConnected ? "connected" : "disconnected")">
-        <span class="status-dot"></span>
-        @(IsConnected ? "Connected" : "Local Mode")
-    </span>
+    <div class="status-right">
+        <button class="theme-toggle-btn" @onclick="ToggleTheme" @onclick:stopPropagation="true" title="Toggle Dark Mode (Ctrl+Shift+D)">
+            <span class="theme-icon" id="theme-icon">🌙</span>
+        </button>
+        <span class="connection-status @(IsConnected ? "connected" : "disconnected")">
+            <span class="status-dot"></span>
+            @(IsConnected ? "Connected" : "Local Mode")
+        </span>
+    </div>
 </div>
+
+@inject IJSRuntime JSRuntime
 
 @code {
     [Parameter] public string BoardName { get; set; } = string.Empty;
@@ -39,6 +46,18 @@
     private void ToggleBoardMenu()
     {
         showBoardMenu = !showBoardMenu;
+    }
+
+    private async Task ToggleTheme()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("toggleDarkMode");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error toggling theme: {ex.Message}");
+        }
     }
 
     protected override void OnInitialized()
