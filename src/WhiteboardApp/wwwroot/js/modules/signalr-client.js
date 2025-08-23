@@ -8,6 +8,9 @@ let currentBoardId = null;
 // Cursor tracking
 export let cursors = new Map();
 
+// Collaborative selections tracking
+export let collaborativeSelections = new Map();
+
 // Blazor integration
 let blazorReference = null;
 
@@ -33,10 +36,30 @@ export function setDependencies(deps) {
     Object.assign(dependencies, deps);
 }
 
+// Wait for SignalR to be available
+function waitForSignalR() {
+    return new Promise((resolve) => {
+        const checkSignalR = () => {
+            if (window.signalR) {
+                resolve();
+            } else {
+                setTimeout(checkSignalR, 100);
+            }
+        };
+        checkSignalR();
+    });
+}
+
 // Initialize SignalR connection
 export async function initializeSignalR(boardId) {
     try {
         currentBoardId = boardId;
+        
+        // Wait for SignalR to be available
+        if (!window.signalR) {
+            console.log('Waiting for SignalR to load...');
+            await waitForSignalR();
+        }
         
         // Create connection
         signalRConnection = new window.signalR.HubConnectionBuilder()
@@ -490,6 +513,35 @@ function setupEventHandlers() {
         }
     });
 
+    // User disconnected handler
+    signalRConnection.on("UserLeft", (userData) => {
+        try {
+            const { connectionId, userName } = userData;
+            console.log(`User ${userName} left`);
+            
+            // Clean up collaborative selections for this user
+            if (dependencies.collaborativeSelections) {
+                for (const [elementId, selections] of dependencies.collaborativeSelections) {
+                    if (selections.has(connectionId)) {
+                        selections.delete(connectionId);
+                        console.log(`Removed collaborative selection for ${userName} on element ${elementId}`);
+                    }
+                    // If no more selections for this element, remove the element entry
+                    if (selections.size === 0) {
+                        dependencies.collaborativeSelections.delete(elementId);
+                    }
+                }
+                
+                // Redraw to update collaborative selections
+                if (dependencies.redrawCanvas) {
+                    dependencies.redrawCanvas();
+                }
+            }
+        } catch (error) {
+            console.error('Error handling UserLeft:', error);
+        }
+    });
+
     // Connection events
     signalRConnection.onreconnecting(() => {
         console.log("SignalR reconnecting...");
@@ -510,18 +562,43 @@ function setupEventHandlers() {
                 await signalRConnection.invoke("JoinBoard", currentBoardId, "Anonymous User");
                 console.log("Rejoined board after reconnection");
                 
-                // Reload board state to ensure consistency
-                console.log("Reloading board elements after reconnection...");
-                await loadExistingElements(currentBoardId);
-                console.log("Board state reloaded successfully");
+                // Wait a moment for Blazor connection to stabilize before reloading elements
+                await new Promise(resolve => setTimeout(resolve, 1000));
                 
-                if (dependencies.showNotification) {
-                    dependencies.showNotification("Board synchronized", "info");
+                // Reload board state to ensure consistency (with retry logic)
+                console.log("Reloading board elements after reconnection...");
+                let retryCount = 0;
+                const maxRetries = 3;
+                
+                while (retryCount < maxRetries) {
+                    try {
+                        await loadExistingElements(currentBoardId);
+                        console.log("Board state reloaded successfully");
+                        
+                        if (dependencies.showNotification) {
+                            dependencies.showNotification("Board synchronized", "info");
+                        }
+                        break; // Success, exit retry loop
+                    } catch (error) {
+                        retryCount++;
+                        console.warn(`Failed to reload elements (attempt ${retryCount}/${maxRetries}):`, error);
+                        
+                        if (retryCount < maxRetries) {
+                            // Wait before retry
+                            await new Promise(resolve => setTimeout(resolve, 2000 * retryCount));
+                        } else {
+                            // Final failure
+                            console.error("Failed to reload board elements after all retries:", error);
+                            if (dependencies.showNotification) {
+                                dependencies.showNotification("Could not synchronize board state. Please refresh the page if elements are missing.", "warning");
+                            }
+                        }
+                    }
                 }
             } catch (error) {
-                console.error("Failed to rejoin board or reload state:", error);
+                console.error("Failed to rejoin board:", error);
                 if (dependencies.showNotification) {
-                    dependencies.showNotification("Failed to synchronize board state. Please refresh the page.", "warning");
+                    dependencies.showNotification("Failed to rejoin board. Please refresh the page.", "warning");
                 }
             }
         }
@@ -563,12 +640,18 @@ async function loadExistingElements(boardId) {
         }
 
         if (!blazorRef) {
-            console.warn('Blazor reference not available, cannot load board elements');
-            return;
+            const error = new Error('Blazor reference not available, cannot load board elements');
+            console.warn(error.message);
+            throw error;
         }
 
         // Call Blazor method to load board elements
         const elementsJson = await blazorRef.invokeMethodAsync('LoadBoardElements');
+        
+        if (!elementsJson) {
+            throw new Error('No response from Blazor LoadBoardElements method');
+        }
+        
         const elements = JSON.parse(elementsJson);
 
         console.log(`Loading ${elements.length} existing elements`);
@@ -740,7 +823,7 @@ export async function sendElementSelect(elementId) {
             return false;
         }
 
-        await signalRConnection.invoke("SelectElement", elementId);
+        await signalRConnection.invoke("SelectElement", currentBoardId, elementId);
         return true;
     } catch (error) {
         console.error("Failed to send element select:", error);
@@ -754,7 +837,7 @@ export async function sendElementDeselect(elementId) {
             return false;
         }
 
-        await signalRConnection.invoke("DeselectElement", elementId);
+        await signalRConnection.invoke("DeselectElement", currentBoardId, elementId);
         return true;
     } catch (error) {
         console.error("Failed to send element deselect:", error);
@@ -952,7 +1035,7 @@ export function updateCursor(connectionId, x, y) {
 }
 
 // Generate consistent color for connection
-function getColorForConnection(connectionId) {
+export function getColorForConnection(connectionId) {
     const hash = connectionId.hashCode();
     const colors = [
         '#ff6b6b', '#4ecdc4', '#45b7d1', '#f7dc6f', 

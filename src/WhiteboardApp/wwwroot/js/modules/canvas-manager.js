@@ -602,8 +602,11 @@ function renderPath(el) {
   ctx.beginPath();
   for (let i = 0; i < path.length; i++) {
     const p = path[i];
-    if (i === 0) ctx.moveTo(p.x, p.y);
-    else ctx.lineTo(p.x, p.y);
+    // Render path points relative to element position (like other elements)
+    const worldX = el.x + p.x;
+    const worldY = el.y + p.y;
+    if (i === 0) ctx.moveTo(worldX, worldY);
+    else ctx.lineTo(worldX, worldY);
   }
   ctx.stroke();
 }
@@ -726,6 +729,10 @@ function renderText(el) {
 
 const imageCache = new Map(); // src -> {img: HTMLImageElement, ready: boolean}
 
+// Warning rate limiting to prevent console spam
+const warningTracker = new Map(); // elementId -> timestamp of last warning
+const WARNING_THROTTLE_MS = 5000; // Only warn once per 5 seconds per element
+
 function getCachedImage(src) {
   if (!src) return null;
   let entry = imageCache.get(src);
@@ -749,9 +756,62 @@ function getCachedImage(src) {
 
 function renderImage(el) {
   const src = el.data?.imageData;
+  
+  // Handle both URL paths and base64 data URLs
+  if (!src || (typeof src !== 'string') || src.trim() === '') {
+    throttledWarn(el.id, `Invalid image data for element: ${el.id}, src: ${src}`);
+    // Try to clean up the corrupted element
+    cleanupCorruptedImageElement(el);
+    return;
+  }
+  
+  // Accept both base64 data URLs and regular URL paths
+  const isValidImageSrc = src.startsWith('data:image/') || src.startsWith('/uploads/') || src.startsWith('http');
+  
+  if (!isValidImageSrc) {
+    throttledWarn(el.id, `Invalid image source for element: ${el.id}, src: ${src}`);
+    // Try to clean up the corrupted element
+    cleanupCorruptedImageElement(el);
+    return;
+  }
+  
   const entry = getCachedImage(src);
   if (!entry || !entry.ready) return;
   ctx.drawImage(entry.img, el.x, el.y, el.width, el.height);
+}
+
+// Throttled warning function to prevent console spam
+function throttledWarn(elementId, message) {
+  const now = Date.now();
+  const lastWarning = warningTracker.get(elementId);
+  
+  if (!lastWarning || (now - lastWarning) > WARNING_THROTTLE_MS) {
+    console.warn(message);
+    warningTracker.set(elementId, now);
+  }
+}
+
+// Cleanup corrupted image elements
+function cleanupCorruptedImageElement(element) {
+  if (!element || !element.id) return;
+  
+  console.log(`Attempting to cleanup corrupted image element: ${element.id}`);
+  
+  // Check if this element exists in the element factory
+  if (typeof window !== 'undefined' && window.elements && window.elements.has(element.id)) {
+    console.log(`Removing corrupted image element from local storage: ${element.id}`);
+    window.elements.delete(element.id);
+    
+    // Clear from selection if it was selected
+    if (window.selectedElementId === element.id) {
+      window.selectedElementId = null;
+    }
+    
+    // Request redraw to update canvas
+    if (dependencies.redrawCanvas) {
+      dependencies.redrawCanvas();
+    }
+  }
 }
 
 // --- Image upload wiring (placeholder) -------------------------------------

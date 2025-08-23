@@ -283,6 +283,9 @@ public class CollaborationHub : Hub
     {
         try
         {
+            if (!await ValidateBoardAccess(boardId))
+                return;
+
             var userSession = await _userSessionManager.GetSessionAsync(Context.ConnectionId);
             if (userSession != null)
             {
@@ -293,6 +296,7 @@ public class CollaborationHub : Hub
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error selecting element {ElementId} in board {BoardId}", elementId, boardId);
+            await Clients.Caller.SendAsync("Error", "Failed to select element");
         }
     }
 
@@ -300,11 +304,15 @@ public class CollaborationHub : Hub
     {
         try
         {
+            if (!await ValidateBoardAccess(boardId))
+                return;
+
             await Clients.OthersInGroup($"Board_{boardId}").SendAsync("ElementDeselected", elementId, Context.ConnectionId);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error deselecting element {ElementId} in board {BoardId}", elementId, boardId);
+            await Clients.Caller.SendAsync("Error", "Failed to deselect element");
         }
     }
 

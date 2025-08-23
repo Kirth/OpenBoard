@@ -55,7 +55,7 @@ export class ToolManager {
         this.previousTool = null;
         this.availableTools = [
             'select', 'pen', 'rectangle', 'circle', 'line', 
-            'text', 'stickynote', 'triangle', 'diamond', 'ellipse', 'star'
+            'text', 'stickynote', 'image', 'triangle', 'diamond', 'ellipse', 'star'
         ];
         this.onToolChange = null; // Callback for tool changes
     }
@@ -117,7 +117,7 @@ export class ToolManager {
 
     // Check if current tool creates elements
     isCreationTool() {
-        return ['pen', 'rectangle', 'circle', 'line', 'text', 'stickynote', 'triangle', 'diamond', 'ellipse', 'star'].includes(this.currentTool);
+        return ['pen', 'rectangle', 'circle', 'line', 'text', 'stickynote', 'image', 'triangle', 'diamond', 'ellipse', 'star'].includes(this.currentTool);
     }
 
     // Switch back to previous tool

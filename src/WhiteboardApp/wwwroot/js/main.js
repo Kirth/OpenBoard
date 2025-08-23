@@ -9,9 +9,6 @@ import * as elementFactory from './modules/element-factory.js';
 import * as signalrClient from './modules/signalr-client.js';
 import * as viewportManager from './modules/viewport-manager.js';
 
-
-console.log('[main] canvasManager keys:', Object.keys(canvasManager));
-
 // Global state variables for coordination
 let pendingImagePosition = null;
 let shouldSwitchToSelectAfterEditing = false;
@@ -31,6 +28,9 @@ let lineOriginalEnd = { x: 0, y: 0 };
 
 // Multi-select state
 let selectedElementIds = new Set();
+
+// Resize state
+let isResizing = false;
 
 // Initialize all modules and set up dependencies
 export async function initializeApplication() {
@@ -158,6 +158,7 @@ function setupDependencies() {
   signalrClient.setDependencies({
     elements: elementFactory.elements,
     selectedElementId: elementFactory.selectedElementId,
+    collaborativeSelections: elementFactory.collaborativeSelections,
     drawElement: elementFactory.drawElement,
     updateElementPosition: elementFactory.updateElementPosition,
     updateElementPositionLocal: elementFactory.updateElementPositionLocal,
@@ -229,6 +230,15 @@ function setupEventHandlers() {
     }, 200); // Give extra time for fullscreen transition
   });
 
+  // Set up image upload handler
+  const imageInput = document.getElementById('imageUpload');
+  if (imageInput) {
+    imageInput.addEventListener('change', handleImageUpload);
+    console.log('Image upload handler set up');
+  } else {
+    console.warn('Image upload input not found');
+  }
+
   console.log('Event handlers set up');
 }
 
@@ -292,6 +302,9 @@ function handleMouseDown(event) {
       case 'stickynote':
         createStickyNoteAtPosition(worldPos.x, worldPos.y);
         break;
+      case 'image':
+        triggerImageUpload(worldPos.x, worldPos.y);
+        break;
     }
 
   } catch (error) {
@@ -351,6 +364,13 @@ function handleMouseMove(event) {
         canvasManager.redrawCanvas();
         return;
       }
+    }
+    
+    // Handle element resizing in select mode
+    if (isResizing && elementFactory.isCurrentlyResizing()) {
+      elementFactory.updateElementResize(worldPos.x, worldPos.y);
+      // Redraw is handled inside updateElementResize
+      return;
     }
     
     // Handle element dragging in select mode
@@ -426,6 +446,18 @@ function handleMouseUp(event) {
       isDraggingLineHandle = false;
       draggedLineHandle = null;
       draggedElementId = null;
+      return;
+    }
+
+    // Handle element resizing completion
+    if (isResizing) {
+      elementFactory.finishElementResize();
+      isResizing = false;
+      
+      // Reset cursor to default
+      canvasManager.updateCanvasCursor('default');
+      
+      console.log('Finished resizing element');
       return;
     }
 
@@ -598,6 +630,28 @@ function handleSelectMouseDown(x, y, event) {
         
         // console.log(`Started dragging line ${handle} handle for element:`, element.id);
         return;
+      }
+    }
+    
+    // Check if this is a selected resizable element and if we clicked on a resize handle
+    if (elementFactory.getSelectedElementId() === element.id && elementFactory.isElementResizable(element)) {
+      // Convert world coordinates to screen coordinates for resize handle detection
+      const screenPos = canvasManager.worldToScreen(x, y);
+      const selectionRect = getElementSelectionRect(element);
+      const resizeHandle = elementFactory.getResizeHandleAt(screenPos.x, screenPos.y, selectionRect);
+      
+      if (resizeHandle) {
+        // Start resize operation
+        const success = elementFactory.startElementResize(element.id, resizeHandle, x, y);
+        if (success) {
+          isResizing = true;
+          console.log(`Started resizing element ${element.id} with handle ${resizeHandle}`);
+          
+          // Update cursor for resize operation
+          const cursor = elementFactory.getResizeCursor(resizeHandle);
+          canvasManager.updateCanvasCursor(cursor);
+          return;
+        }
       }
     }
     
@@ -1135,6 +1189,22 @@ function getNotificationColor(type) {
   }
 }
 
+// Get element selection rectangle in screen coordinates
+function getElementSelectionRect(element) {
+  if (!element) return null;
+  
+  // Convert world coordinates to screen coordinates
+  const topLeft = canvasManager.worldToScreen(element.x, element.y);
+  const bottomRight = canvasManager.worldToScreen(element.x + element.width, element.y + element.height);
+  
+  return {
+    x: topLeft.x,
+    y: topLeft.y,
+    width: bottomRight.x - topLeft.x,
+    height: bottomRight.y - topLeft.y
+  };
+}
+
 function triggerImageUpload(x, y) {
   pendingImagePosition = { x, y };
   const imageInput = document.getElementById('imageUpload');
@@ -1143,25 +1213,73 @@ function triggerImageUpload(x, y) {
   }
 }
 
-function handleImageUpload(event) {
+async function handleImageUpload(event) {
   const file = event.target.files[0];
   if (file && pendingImagePosition) {
-    const reader = new FileReader();
-    reader.onload = function (e) {
+    try {
+      console.log('Uploading image via HTTP API:', file.name, 'Size:', file.size);
+      
+      // Upload image via HTTP API instead of sending through SignalR
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      const response = await fetch('/api/Image/upload', {
+        method: 'POST',
+        body: formData
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+      }
+      
+      const result = await response.json();
+      
+      console.log('Image upload successful:', result);
+      
+      // Use image dimensions from server, with display scaling
+      const maxWidth = 400;
+      const maxHeight = 400;
+      let { originalWidth: width, originalHeight: height } = result;
+      
+      // Scale down display size if too large
+      if (width > maxWidth || height > maxHeight) {
+        const scale = Math.min(maxWidth / width, maxHeight / height);
+        width *= scale;
+        height *= scale;
+      }
+      
+      // Create element with image URL reference instead of base64 data
       const element = elementFactory.createImageElement(
         pendingImagePosition.x,
         pendingImagePosition.y,
-        e.target.result
+        width,
+        height,
+        result.src  // Use server URL instead of base64
       );
 
+      console.log('Created image element with URL:', element);
+
+      // Send smaller element data via SignalR (no base64 data)
       if (signalrClient.isConnected() && signalrClient.getCurrentBoardId()) {
         signalrClient.sendElement(signalrClient.getCurrentBoardId(), element, element.id);
       }
 
       pendingImagePosition = null;
-    };
-    reader.readAsDataURL(file);
+      
+      // Switch to select tool after placing image
+      toolManager.setCurrentTool('select');
+      
+    } catch (error) {
+      console.error('Image upload failed:', error);
+      alert('Failed to upload image: ' + error.message);
+      
+      // Reset pending position on error
+      pendingImagePosition = null;
+    }
   }
+  
+  // Reset the file input so the same file can be selected again
+  event.target.value = '';
 }
 
 // Blazor integration functions

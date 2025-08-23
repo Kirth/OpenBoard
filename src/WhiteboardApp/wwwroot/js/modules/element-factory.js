@@ -7,6 +7,9 @@ export let elements = new Map();
 export let selectedElementId = null;
 export let elementsToSelect = new Set();
 
+// Collaborative selections tracking - Map<elementId, Map<connectionId, {userName, color}>>
+export let collaborativeSelections = new Map();
+
 // Element editing state
 let editingElement = null; // Legacy compatibility
 let editInput = null; // Legacy compatibility
@@ -170,6 +173,14 @@ export class ElementFactory {
 
     static createPathElement(path, style = {}) {
         const bounds = this.calculatePathBounds(path);
+        
+        // Convert absolute path coordinates to relative coordinates
+        // (relative to the bounding box origin)
+        const relativePath = path.map(point => ({
+            x: point.x - bounds.minX,
+            y: point.y - bounds.minY
+        }));
+        
         return {
             id: this.createTempId(),
             type: 'Path',
@@ -180,7 +191,7 @@ export class ElementFactory {
             z: 0,
             createdAt: Date.now(),
             data: {
-                path: path,
+                path: relativePath, // Store relative coordinates
                 color: style.color || '#000000',
                 strokeWidth: style.strokeWidth || 2
             }
@@ -511,8 +522,31 @@ export function createLineElement(startX, startY, endX, endY) {
     return element;
 }
 
-export function createImageElement(x, y, imageData) {
-    const element = ElementFactory.createImageElement(x, y, 200, 200, imageData);
+export function createImageElement(x, y, width, height, imageData) {
+    // Handle both old (3 params) and new (5 params) calling conventions
+    if (typeof width === 'string') {
+        // Old calling convention: createImageElement(x, y, imageData)
+        if (width.startsWith('data:image/') || width.startsWith('/uploads/') || width.startsWith('http')) {
+            imageData = width;
+            width = 200;
+            height = 200;
+        }
+    } else if (typeof height === 'string') {
+        // Mixed calling: createImageElement(x, y, width, imageData)
+        if (height.startsWith('data:image/') || height.startsWith('/uploads/') || height.startsWith('http')) {
+            imageData = height;
+            height = width; // width becomes height
+            width = 200;    // default width
+        }
+    }
+    
+    // Validate imageData
+    if (!imageData || typeof imageData !== 'string') {
+        console.error('Invalid imageData provided to createImageElement:', imageData);
+        return null;
+    }
+    
+    const element = ElementFactory.createImageElement(x, y, width || 200, height || 200, imageData);
     elements.set(element.id, element);
     saveCanvasState('Create Image');
     return element;
@@ -525,12 +559,37 @@ export function createPathElement(path) {
     return element;
 }
 
+// Image data validation helper
+function validateImageData(imageData) {
+    if (!imageData || typeof imageData !== 'string') {
+        return false;
+    }
+    
+    // Accept base64 data URLs and server URL paths
+    const isValidImageSrc = 
+        imageData.startsWith('data:image/') || 
+        imageData.startsWith('/uploads/') || 
+        imageData.startsWith('http://') || 
+        imageData.startsWith('https://');
+    
+    return isValidImageSrc;
+}
+
 // Element management functions
 export function drawElement(id, x, y, type, data, width, height) {
     // Check if element already exists (to prevent duplicates from SignalR)
     if (elements.has(id)) {
         console.log('Element already exists, skipping duplicate:', id);
         return;
+    }
+    
+    // Validate and sanitize image data when received via SignalR
+    if (type === 'Image' && data && data.imageData) {
+        if (!validateImageData(data.imageData)) {
+            console.warn(`Invalid image data received for element ${id}, imageData:`, data.imageData);
+            // Don't add the element to prevent rendering errors
+            return;
+        }
     }
     
     const element = {
@@ -594,13 +653,31 @@ export function markElementForSelection(tempId) {
 
 // Element selection and highlighting
 export function highlightElement(id) {
+    // Deselect previous element first if there was one
+    if (selectedElementId && selectedElementId !== id) {
+        if (dependencies.sendElementDeselect && dependencies.currentBoardId) {
+            dependencies.sendElementDeselect(selectedElementId);
+        }
+    }
+    
     selectedElementId = id;
+    
+    // Send selection notification to other users
+    if (id && dependencies.sendElementSelect && dependencies.currentBoardId) {
+        dependencies.sendElementSelect(id);
+    }
+    
     if (dependencies.redrawCanvas) {
         dependencies.redrawCanvas();
     }
 }
 
 export function clearSelection() {
+    // Deselect current element if there is one
+    if (selectedElementId && dependencies.sendElementDeselect && dependencies.currentBoardId) {
+        dependencies.sendElementDeselect(selectedElementId);
+    }
+    
     selectedElementId = null;
     if (dependencies.redrawCanvas) {
         dependencies.redrawCanvas();
@@ -608,41 +685,142 @@ export function clearSelection() {
 }
 
 export function showElementSelection(elementId, userName, connectionId) {
-    // Implementation for showing collaborative selections
+    // Add this selection to collaborative selections
+    if (!collaborativeSelections.has(elementId)) {
+        collaborativeSelections.set(elementId, new Map());
+    }
+    
+    const elementSelections = collaborativeSelections.get(elementId);
+    elementSelections.set(connectionId, {
+        userName: userName,
+        color: getColorForConnection(connectionId)
+    });
+    
     console.log(`${userName} selected element ${elementId}`);
+    
+    // Trigger redraw to show the collaborative selection
+    if (dependencies.redrawCanvas) {
+        dependencies.redrawCanvas();
+    }
 }
 
 export function hideElementSelection(elementId, connectionId) {
-    // Implementation for hiding collaborative selections
+    // Remove this selection from collaborative selections
+    if (collaborativeSelections.has(elementId)) {
+        const elementSelections = collaborativeSelections.get(elementId);
+        elementSelections.delete(connectionId);
+        
+        // If no more selections for this element, remove the element entry
+        if (elementSelections.size === 0) {
+            collaborativeSelections.delete(elementId);
+        }
+    }
+    
     console.log(`Element ${elementId} deselected by ${connectionId}`);
+    
+    // Trigger redraw to hide the collaborative selection
+    if (dependencies.redrawCanvas) {
+        dependencies.redrawCanvas();
+    }
 }
 
 export function drawCollaborativeSelections() {
     // Implementation for drawing collaborative selection indicators
-    if (!dependencies.ctx) return;
+    if (!dependencies.ctx || !dependencies.applyViewportTransform) return;
     
-    // This would draw selection indicators for other users
-    // For now, just a placeholder
+    const ctx = dependencies.ctx;
+    
+    // Draw collaborative selections in world space
+    ctx.save();
+    dependencies.applyViewportTransform();
+    
+    const zoom = dependencies.getZoomLevel ? dependencies.getZoomLevel() : 1;
+    
+    for (const [elementId, selections] of collaborativeSelections) {
+        const element = elements.get(elementId);
+        if (!element) continue;
+        
+        // Don't show collaborative selection for our own selected element
+        if (elementId === selectedElementId) continue;
+        
+        let colorIndex = 0;
+        for (const [connectionId, {userName, color}] of selections) {
+            // Draw selection outline
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 3 / zoom;
+            ctx.setLineDash([8 / zoom, 4 / zoom]);
+            
+            if (element.type === 'Line') {
+                // For lines, draw the collaborative selection line
+                ctx.beginPath();
+                ctx.moveTo(element.x, element.y);
+                ctx.lineTo(element.x + element.width, element.y + element.height);
+                ctx.stroke();
+            } else {
+                // For other elements, draw a border around the element
+                const padding = 4 / zoom;
+                ctx.strokeRect(
+                    element.x - padding,
+                    element.y - padding,
+                    element.width + 2 * padding,
+                    element.height + 2 * padding
+                );
+            }
+            
+            ctx.setLineDash([]); // Reset line dash
+            
+            // Draw user name label
+            ctx.fillStyle = color;
+            ctx.font = `${12 / zoom}px Arial`;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            
+            const labelX = element.x;
+            const labelY = element.y - (20 / zoom) - (colorIndex * 16 / zoom);
+            
+            // Background for text
+            const textMetrics = ctx.measureText(userName);
+            const textWidth = textMetrics.width;
+            const textHeight = 12 / zoom;
+            
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.fillRect(labelX - 2/zoom, labelY - 2/zoom, textWidth + 4/zoom, textHeight + 4/zoom);
+            
+            // Text
+            ctx.fillStyle = color;
+            ctx.fillText(userName, labelX, labelY);
+            
+            colorIndex++;
+        }
+    }
+    
+    ctx.restore();
+}
+
+// Generate consistent color for connection
+function getColorForConnection(connectionId) {
+    const hash = connectionId.split('').reduce((acc, char) => {
+        return char.charCodeAt(0) + ((acc << 5) - acc);
+    }, 0);
+    
+    const colors = [
+        '#ff6b6b', '#4ecdc4', '#45b7d1', '#f7dc6f', 
+        '#bb8fce', '#85c1e9', '#f8c471', '#82e0aa',
+        '#f1948a', '#85c1e9', '#d7dbdd', '#fadbd8'
+    ];
+    
+    return colors[Math.abs(hash) % colors.length];
 }
 
 // Element operations
 export function updateElementPosition(id, newX, newY) {
     const element = elements.get(id);
     if (element) {
-        const deltaX = newX - element.x;
-        const deltaY = newY - element.y;
-        
         element.x = newX;
         element.y = newY;
         
-        // For Path elements, we need to update the actual path coordinates
-        if (element.type === 'Path' && element.data && element.data.path) {
-            element.data.path = element.data.path.map(point => ({
-                x: point.x + deltaX,
-                y: point.y + deltaY
-            }));
-        }
-        // Note: Line elements use x,y,width,height so they move correctly by default
+        // Path elements now use relative coordinates, so no need to update path data
+        // Line elements use x,y,width,height so they move correctly by default
         
         if (dependencies.sendElementMove && dependencies.currentBoardId) {
             dependencies.sendElementMove(dependencies.currentBoardId, id, newX, newY);
@@ -657,19 +835,10 @@ export function updateElementPosition(id, newX, newY) {
 export function updateElementPositionLocal(id, newX, newY) {
     const element = elements.get(id);
     if (element) {
-        const deltaX = newX - element.x;
-        const deltaY = newY - element.y;
-        
         element.x = newX;
         element.y = newY;
         
-        // For Path elements, we need to update the actual path coordinates
-        if (element.type === 'Path' && element.data && element.data.path) {
-            element.data.path = element.data.path.map(point => ({
-                x: point.x + deltaX,
-                y: point.y + deltaY
-            }));
-        }
+        // Path elements now use relative coordinates, so no need to update path data
     }
 }
 
@@ -820,6 +989,52 @@ export function isElementResizable(element) {
     return element && ['Rectangle', 'Circle', 'StickyNote', 'Text', 'Image'].includes(element.type);
 }
 
+// Get resize handle at point (in screen coordinates)
+export function getResizeHandleAt(x, y, selectionRect) {
+    if (!selectionRect) return null;
+    
+    const handleSize = 8;
+    const tolerance = handleSize / 2;
+    
+    const handles = [
+        { type: 'nw', x: selectionRect.x, y: selectionRect.y }, // Top-left
+        { type: 'ne', x: selectionRect.x + selectionRect.width, y: selectionRect.y }, // Top-right
+        { type: 'sw', x: selectionRect.x, y: selectionRect.y + selectionRect.height }, // Bottom-left
+        { type: 'se', x: selectionRect.x + selectionRect.width, y: selectionRect.y + selectionRect.height }, // Bottom-right
+        { type: 'n', x: selectionRect.x + selectionRect.width / 2, y: selectionRect.y }, // Top-center
+        { type: 's', x: selectionRect.x + selectionRect.width / 2, y: selectionRect.y + selectionRect.height }, // Bottom-center
+        { type: 'w', x: selectionRect.x, y: selectionRect.y + selectionRect.height / 2 }, // Left-center
+        { type: 'e', x: selectionRect.x + selectionRect.width, y: selectionRect.y + selectionRect.height / 2 } // Right-center
+    ];
+    
+    for (const handle of handles) {
+        const dx = x - handle.x;
+        const dy = y - handle.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance <= tolerance) {
+            return handle.type;
+        }
+    }
+    
+    return null;
+}
+
+// Get cursor style for resize handle type
+export function getResizeCursor(handleType) {
+    const cursors = {
+        'nw': 'nw-resize',
+        'ne': 'ne-resize', 
+        'sw': 'sw-resize',
+        'se': 'se-resize',
+        'n': 'n-resize',
+        's': 's-resize',
+        'w': 'w-resize',
+        'e': 'e-resize'
+    };
+    return cursors[handleType] || 'default';
+}
+
 // Resize handles and dragging
 export function drawResizeHandles(selectionRect) {
     if (!dependencies.ctx) return;
@@ -890,6 +1105,159 @@ export function drawLineEndpointHandles(element) {
     }
     
     ctx.restore();
+}
+
+// Element resizing operations
+export function startElementResize(elementId, handleType, startX, startY) {
+    const element = elements.get(elementId);
+    if (!element || !isElementResizable(element)) return false;
+    
+    isResizing = true;
+    activeResizeHandle = handleType;
+    resizeStartBounds = {
+        x: element.x,
+        y: element.y,
+        width: element.width,
+        height: element.height,
+        mouseX: startX,
+        mouseY: startY
+    };
+    hasResized = false;
+    
+    console.log(`Started resizing element ${elementId} with handle ${handleType}`);
+    return true;
+}
+
+export function updateElementResize(currentX, currentY) {
+    if (!isResizing || !activeResizeHandle || !resizeStartBounds || !selectedElementId) return false;
+    
+    const element = elements.get(selectedElementId);
+    if (!element) return false;
+    
+    // Calculate mouse delta from resize start position
+    const deltaX = currentX - resizeStartBounds.mouseX;
+    const deltaY = currentY - resizeStartBounds.mouseY;
+    
+    // Calculate new bounds based on handle type
+    const newBounds = calculateNewBounds(resizeStartBounds, activeResizeHandle, deltaX, deltaY);
+    
+    // Apply minimum size constraints
+    const minWidth = 20;
+    const minHeight = 20;
+    
+    if (newBounds.width < minWidth || newBounds.height < minHeight) {
+        return false;
+    }
+    
+    // Update element bounds
+    element.x = newBounds.x;
+    element.y = newBounds.y;
+    element.width = newBounds.width;
+    element.height = newBounds.height;
+    
+    hasResized = true;
+    
+    // Redraw canvas to show updated element
+    if (dependencies.redrawCanvas) {
+        dependencies.redrawCanvas();
+    }
+    
+    return true;
+}
+
+export function finishElementResize() {
+    if (!isResizing || !selectedElementId) return false;
+    
+    const wasResizing = isResizing;
+    const element = elements.get(selectedElementId);
+    
+    // Reset resize state
+    isResizing = false;
+    activeResizeHandle = null;
+    resizeStartBounds = null;
+    
+    if (wasResizing && hasResized && element) {
+        // Send resize to SignalR for network sync
+        if (dependencies.sendElementResize && dependencies.currentBoardId) {
+            dependencies.sendElementResize(
+                dependencies.currentBoardId, 
+                selectedElementId, 
+                element.x, 
+                element.y, 
+                element.width, 
+                element.height
+            );
+        }
+        
+        // Save state for undo/redo
+        saveCanvasState('Resize Element');
+        
+        console.log(`Finished resizing element ${selectedElementId}`);
+    }
+    
+    hasResized = false;
+    return wasResizing;
+}
+
+// Calculate new bounds based on resize handle and mouse delta
+function calculateNewBounds(originalBounds, handleType, deltaX, deltaY) {
+    let { x, y, width, height } = originalBounds;
+    
+    switch (handleType) {
+        case 'nw': // Top-left
+            x += deltaX;
+            y += deltaY;
+            width -= deltaX;
+            height -= deltaY;
+            break;
+            
+        case 'ne': // Top-right
+            y += deltaY;
+            width += deltaX;
+            height -= deltaY;
+            break;
+            
+        case 'sw': // Bottom-left
+            x += deltaX;
+            width -= deltaX;
+            height += deltaY;
+            break;
+            
+        case 'se': // Bottom-right
+            width += deltaX;
+            height += deltaY;
+            break;
+            
+        case 'n': // Top-center
+            y += deltaY;
+            height -= deltaY;
+            break;
+            
+        case 's': // Bottom-center
+            height += deltaY;
+            break;
+            
+        case 'w': // Left-center
+            x += deltaX;
+            width -= deltaX;
+            break;
+            
+        case 'e': // Right-center
+            width += deltaX;
+            break;
+    }
+    
+    return { x, y, width, height };
+}
+
+// Check if currently resizing
+export function isCurrentlyResizing() {
+    return isResizing;
+}
+
+// Get active resize handle
+export function getActiveResizeHandle() {
+    return activeResizeHandle;
 }
 
 // Copy/paste operations
@@ -1114,11 +1482,49 @@ export function forceMigrateElements() {
     })));
 }
 
+// Clean up corrupted image elements
+function cleanupCorruptedImageElements() {
+    let removedCount = 0;
+    const elementsToRemove = [];
+    
+    for (const [id, element] of elements) {
+        if (element.type === 'Image' && element.data && element.data.imageData) {
+            if (!validateImageData(element.data.imageData)) {
+                console.log(`Found corrupted image element ${id} with imageData:`, element.data.imageData);
+                elementsToRemove.push(id);
+                removedCount++;
+            }
+        }
+    }
+    
+    // Remove corrupted elements
+    for (const id of elementsToRemove) {
+        elements.delete(id);
+        
+        // Clear from selection if it was selected
+        if (selectedElementId === id) {
+            selectedElementId = null;
+        }
+    }
+    
+    if (removedCount > 0) {
+        console.log(`Cleaned up ${removedCount} corrupted image elements`);
+        // Force redraw to update canvas
+        if (dependencies.redrawCanvas) {
+            dependencies.redrawCanvas();
+        }
+    }
+}
+
 // Initialize the module
 export function init() {
     console.log('Element Factory module loaded');
     // Migrate any existing elements to have z-index
-    setTimeout(migrateExistingElements, 100); // delay to ensure all elements are loaded
+    setTimeout(() => {
+        migrateExistingElements();
+        // Clean up any corrupted image elements after loading
+        cleanupCorruptedImageElements();
+    }, 100); // delay to ensure all elements are loaded
 }
 
 // Backward compatibility - expose to window
@@ -1127,6 +1533,7 @@ if (typeof window !== 'undefined') {
     window.editorManager = editorManager;
     window.elements = elements;
     window.selectedElementId = selectedElementId;
+    window.collaborativeSelections = collaborativeSelections;
     window.createTextElement = createTextElement;
     window.createStickyNote = createStickyNote;
     window.createShapeElement = createShapeElement;
@@ -1137,6 +1544,9 @@ if (typeof window !== 'undefined') {
     window.getElementAtPoint = getElementAtPoint;
     window.highlightElement = highlightElement;
     window.clearSelection = clearSelection;
+    window.showElementSelection = showElementSelection;
+    window.hideElementSelection = hideElementSelection;
+    window.drawCollaborativeSelections = drawCollaborativeSelections;
     window.updateElementPosition = updateElementPosition;
     window.deleteSelectedElement = deleteSelectedElement;
     window.duplicateSelectedElement = duplicateSelectedElement;
@@ -1150,4 +1560,13 @@ if (typeof window !== 'undefined') {
     window.startEditingTextElement = startEditingTextElement;
     window.stopEditingTextElement = stopEditingTextElement;
     window.forceMigrateElements = forceMigrateElements;
+    // Resize functionality
+    window.isElementResizable = isElementResizable;
+    window.getResizeHandleAt = getResizeHandleAt;
+    window.getResizeCursor = getResizeCursor;
+    window.startElementResize = startElementResize;
+    window.updateElementResize = updateElementResize;
+    window.finishElementResize = finishElementResize;
+    window.isCurrentlyResizing = isCurrentlyResizing;
+    window.getActiveResizeHandle = getActiveResizeHandle;
 }

@@ -8,7 +8,15 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container
 builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
-builder.Services.AddSignalR();
+builder.Services.AddSignalR(options =>
+{
+    // Configure larger message size limits to handle image data
+    options.MaximumReceiveMessageSize = 10 * 1024 * 1024; // 10MB
+    options.StreamBufferCapacity = 100;
+    options.EnableDetailedErrors = true; // For debugging
+    options.KeepAliveInterval = TimeSpan.FromSeconds(15);
+    options.ClientTimeoutInterval = TimeSpan.FromSeconds(60);
+});
 builder.Services.AddControllers();
 
 // Add Entity Framework
