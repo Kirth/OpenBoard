@@ -494,17 +494,6 @@ function drawUIElements() {
           }
         }
         
-        // DEBUG: Draw a small cross at the element's stored coordinates
-        ctx.strokeStyle = '#ff0000';
-        ctx.lineWidth = 2 / currentZoom();
-        const crossSize = 10 / currentZoom();
-        ctx.beginPath();
-        ctx.moveTo(el.x - crossSize, el.y);
-        ctx.lineTo(el.x + crossSize, el.y);
-        ctx.moveTo(el.x, el.y - crossSize);
-        ctx.lineTo(el.x, el.y + crossSize);
-        ctx.stroke();
-        
         ctx.restore();
 
         if (el.type === 'Line' && dependencies.drawLineEndpointHandles) {
