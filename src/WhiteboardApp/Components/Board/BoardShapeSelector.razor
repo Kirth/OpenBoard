@@ -15,29 +15,75 @@
          @onclick:stopPropagation="true"
          @onmouseleave="CloseShapeMenuOnLeave"
          @onmouseenter="CancelShapeMenuClose">
-        <div class="shape-menu-item" @onclick="@(() => SelectShape("rectangle"))">
-            <span class="shape-icon">⬜</span>
-            <span class="shape-label">Rectangle</span>
+        <!-- Basic Shapes -->
+        <div class="shape-category">
+            <div class="shape-category-header">Basic Shapes</div>
+            <div class="shape-menu-item" @onclick="@(() => SelectShape("rectangle"))">
+                <span class="shape-icon">⬜</span>
+                <span class="shape-label">Rectangle</span>
+            </div>
+            <div class="shape-menu-item" @onclick="@(() => SelectShape("circle"))">
+                <span class="shape-icon">⭕</span>
+                <span class="shape-label">Circle</span>
+            </div>
+            <div class="shape-menu-item" @onclick="@(() => SelectShape("triangle"))">
+                <span class="shape-icon">🔺</span>
+                <span class="shape-label">Triangle</span>
+            </div>
+            <div class="shape-menu-item" @onclick="@(() => SelectShape("diamond"))">
+                <span class="shape-icon">💎</span>
+                <span class="shape-label">Diamond</span>
+            </div>
+            <div class="shape-menu-item" @onclick="@(() => SelectShape("ellipse"))">
+                <span class="shape-icon">🔴</span>
+                <span class="shape-label">Ellipse</span>
+            </div>
+            <div class="shape-menu-item" @onclick="@(() => SelectShape("star"))">
+                <span class="shape-icon">⭐</span>
+                <span class="shape-label">Star</span>
+            </div>
         </div>
-        <div class="shape-menu-item" @onclick="@(() => SelectShape("circle"))">
-            <span class="shape-icon">⭕</span>
-            <span class="shape-label">Circle</span>
+
+        <!-- Flowchart Shapes -->
+        <div class="shape-category">
+            <div class="shape-category-header">Flowchart</div>
+            <div class="shape-menu-item" @onclick="@(() => SelectShape("process"))">
+                <span class="shape-icon">⬜</span>
+                <span class="shape-label">Process</span>
+            </div>
+            <div class="shape-menu-item" @onclick="@(() => SelectShape("decision"))">
+                <span class="shape-icon">💎</span>
+                <span class="shape-label">Decision</span>
+            </div>
+            <div class="shape-menu-item" @onclick="@(() => SelectShape("startend"))">
+                <span class="shape-icon">⚪</span>
+                <span class="shape-label">Start/End</span>
+            </div>
+            <div class="shape-menu-item" @onclick="@(() => SelectShape("database"))">
+                <span class="shape-icon">🛢️</span>
+                <span class="shape-label">Database</span>
+            </div>
+            <div class="shape-menu-item" @onclick="@(() => SelectShape("document"))">
+                <span class="shape-icon">📄</span>
+                <span class="shape-label">Document</span>
+            </div>
         </div>
-        <div class="shape-menu-item" @onclick="@(() => SelectShape("triangle"))">
-            <span class="shape-icon">🔺</span>
-            <span class="shape-label">Triangle</span>
-        </div>
-        <div class="shape-menu-item" @onclick="@(() => SelectShape("diamond"))">
-            <span class="shape-icon">💎</span>
-            <span class="shape-label">Diamond</span>
-        </div>
-        <div class="shape-menu-item" @onclick="@(() => SelectShape("ellipse"))">
-            <span class="shape-icon">🔴</span>
-            <span class="shape-label">Ellipse</span>
-        </div>
-        <div class="shape-menu-item" @onclick="@(() => SelectShape("star"))">
-            <span class="shape-icon">⭐</span>
-            <span class="shape-label">Star</span>
+
+        <!-- UML Shapes -->
+        <div class="shape-category">
+            <div class="shape-category-header">UML Diagrams</div>
+            <div class="shape-menu-item" @onclick="@(() => SelectShape("class"))">
+                <span class="shape-icon">🏛️</span>
+                <span class="shape-label">Class</span>
+            </div>
+            <div class="shape-menu-item" @onclick="@(() => SelectShape("actor"))">
+                <span class="shape-icon">👤</span>
+                <span class="shape-label">Actor</span>
+            </div>
+            <div class="shape-menu-item" @onclick="@(() => SelectShape("package"))">
+                <span class="shape-icon">📦</span>
+                <span class="shape-label">Package</span>
+            </div>
         </div>
     </div>
 </div>
@@ -54,12 +100,23 @@
 
     private readonly Dictionary<string, (string Icon, string Title)> shapeInfo = new()
     {
+        // Basic shapes
         ["rectangle"] = ("⬜", "Rectangle"),
         ["circle"] = ("⭕", "Circle"), 
         ["triangle"] = ("🔺", "Triangle"),
         ["diamond"] = ("💎", "Diamond"),
         ["ellipse"] = ("🔴", "Ellipse"),
-        ["star"] = ("⭐", "Star")
+        ["star"] = ("⭐", "Star"),
+        // Flowchart shapes
+        ["process"] = ("⬜", "Process"),
+        ["decision"] = ("💎", "Decision"),
+        ["startend"] = ("⚪", "Start/End"),
+        ["database"] = ("🛢️", "Database"),
+        ["document"] = ("📄", "Document"),
+        // UML shapes
+        ["class"] = ("🏛️", "Class"),
+        ["actor"] = ("👤", "Actor"),
+        ["package"] = ("📦", "Package")
     };
 
     private void StartShapeToolHold()

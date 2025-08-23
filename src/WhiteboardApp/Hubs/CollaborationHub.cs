@@ -471,6 +471,40 @@ public class CollaborationHub : Hub
         }
     }
 
+    public async Task UpdateElementLock(string boardId, string elementId, bool locked)
+    {
+        try
+        {
+            if (!await ValidateBoardAccess(boardId) || !Guid.TryParse(elementId, out var elementGuid))
+                return;
+
+            var element = await _elementService.GetElementAsync(elementGuid);
+            if (element == null)
+                return;
+
+            // Update the locked property in the element data
+            var existingData = element.Data?.RootElement.GetRawText() ?? "{}";
+            var existingDataObj = JsonSerializer.Deserialize<Dictionary<string, object>>(existingData) ?? new Dictionary<string, object>();
+            
+            // Set the locked property
+            existingDataObj["locked"] = locked;
+            
+            element.Data = JsonDocument.Parse(JsonSerializer.Serialize(existingDataObj));
+            
+            await _elementService.UpdateElementAsync(element);
+            
+            // Broadcast to all users in the board
+            await Clients.Group($"Board_{boardId}").SendAsync("ElementLockUpdated", elementId, locked);
+            
+            _logger.LogInformation("Element {ElementId} lock state updated to {Locked} in board {BoardId}", elementId, locked, boardId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating lock state for element {ElementId} in board {BoardId}", elementId, boardId);
+            await Clients.Caller.SendAsync("Error", "Failed to update element lock state");
+        }
+    }
+
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
         try

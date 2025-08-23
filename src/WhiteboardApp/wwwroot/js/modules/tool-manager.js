@@ -287,6 +287,30 @@ export function handleKeyDown(event) {
                     // Ctrl+D = Duplicate
                     if (dependencies.duplicateSelectedElement) dependencies.duplicateSelectedElement();
                     break;
+
+                case 'l':
+                    event.preventDefault();
+                    // Ctrl+L = Toggle lock
+                    if (window.toggleElementLockAction && dependencies.selectedElementId) {
+                        window.toggleElementLockAction(dependencies.selectedElementId);
+                    }
+                    break;
+
+                case 'g':
+                    event.preventDefault();
+                    // Ctrl+G = Toggle grid
+                    if (window.toggleGrid) {
+                        window.toggleGrid();
+                    }
+                    break;
+
+                case 'h':
+                    event.preventDefault();
+                    // Ctrl+H = Toggle snap to grid
+                    if (window.toggleSnapToGrid) {
+                        window.toggleSnapToGrid();
+                    }
+                    break;
             }
         } else {
             // Non-Ctrl shortcuts
@@ -477,6 +501,66 @@ export function updateShape(shapeType, startX, startY, currentX, currentY) {
 
             case 'star':
                 drawStar(dependencies.tempCtx, startX + width / 2, startY + height / 2, 5, Math.min(Math.abs(width), Math.abs(height)) / 2, Math.min(Math.abs(width), Math.abs(height)) / 4);
+                break;
+
+            // Flowchart shapes
+            case 'process':
+                const cornerRadius = Math.min(Math.abs(width), Math.abs(height)) * 0.1;
+                dependencies.tempCtx.roundRect(startX, startY, width, height, cornerRadius);
+                dependencies.tempCtx.stroke();
+                break;
+
+            case 'decision':
+                dependencies.tempCtx.moveTo(startX + width / 2, startY);
+                dependencies.tempCtx.lineTo(startX + width, startY + height / 2);
+                dependencies.tempCtx.lineTo(startX + width / 2, startY + height);
+                dependencies.tempCtx.lineTo(startX, startY + height / 2);
+                dependencies.tempCtx.closePath();
+                dependencies.tempCtx.stroke();
+                break;
+
+            case 'startend':
+                const centerXS = startX + width / 2;
+                const centerYS = startY + height / 2;
+                const radiusXS = Math.abs(width) / 2;
+                const radiusYS = Math.abs(height) / 2;
+                dependencies.tempCtx.ellipse(centerXS, centerYS, radiusXS, radiusYS, 0, 0, 2 * Math.PI);
+                dependencies.tempCtx.stroke();
+                break;
+
+            case 'database':
+                // Simple preview - just draw rectangle for now
+                dependencies.tempCtx.strokeRect(startX, startY, width, height);
+                break;
+
+            case 'document':
+                // Simple preview - just draw rectangle for now
+                dependencies.tempCtx.strokeRect(startX, startY, width, height);
+                break;
+
+            // UML shapes
+            case 'class':
+                dependencies.tempCtx.strokeRect(startX, startY, width, height);
+                // Draw class compartment lines
+                dependencies.tempCtx.moveTo(startX, startY + height / 3);
+                dependencies.tempCtx.lineTo(startX + width, startY + height / 3);
+                dependencies.tempCtx.moveTo(startX, startY + 2 * height / 3);
+                dependencies.tempCtx.lineTo(startX + width, startY + 2 * height / 3);
+                dependencies.tempCtx.stroke();
+                break;
+
+            case 'actor':
+                // Simple preview - draw stick figure outline
+                dependencies.tempCtx.strokeRect(startX, startY, width, height);
+                break;
+
+            case 'package':
+                // Tab
+                const tabWidth = width * 0.3;
+                const tabHeight = height * 0.2;
+                dependencies.tempCtx.strokeRect(startX, startY, tabWidth, tabHeight);
+                // Main body
+                dependencies.tempCtx.strokeRect(startX, startY + tabHeight, width, height - tabHeight);
                 break;
         }
 

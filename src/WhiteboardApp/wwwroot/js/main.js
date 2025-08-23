@@ -153,6 +153,7 @@ function setupDependencies() {
     sendElementDelete: signalrClient.sendElementDelete,
     sendElementResize: signalrClient.sendElementResize,
     sendLineEndpointUpdate: signalrClient.sendLineEndpointUpdate,
+    sendElementLock: signalrClient.sendElementLock,
     updateStickyNoteContent: signalrClient.updateStickyNoteContent,
     updateTextElementContent: signalrClient.updateTextElementContent,
     blazorReference: null, // Will be set by Blazor
@@ -264,6 +265,16 @@ function handleKeyDown(event) {
     toggleDarkMode();
     return;
   }
+  
+  // Lock/unlock element: Ctrl/Cmd + L
+  if ((event.ctrlKey || event.metaKey) && event.key === 'l') {
+    event.preventDefault();
+    const selectedElementId = elementFactory.getSelectedElementId();
+    if (selectedElementId) {
+      toggleElementLockAction(selectedElementId);
+    }
+    return;
+  }
 }
 
 // Main mouse event handlers
@@ -321,6 +332,16 @@ function handleMouseDown(event) {
       case 'diamond':
       case 'ellipse':
       case 'star':
+      // Flowchart shapes
+      case 'process':
+      case 'decision':
+      case 'startend':
+      case 'database':
+      case 'document':
+      // UML shapes
+      case 'class':
+      case 'actor':
+      case 'package':
         toolManager.startShape(currentTool, worldPos.x, worldPos.y);
         break;
       case 'line':
@@ -538,10 +559,32 @@ function handleMouseUp(event) {
       let element = null;
 
       if (currentTool === 'line') {
-        element = elementFactory.createLineElement(startX, startY, worldPos.x, worldPos.y);
+        // Apply snap-to-grid for line endpoints
+        let lineStartX = startX, lineStartY = startY;
+        let lineEndX = worldPos.x, lineEndY = worldPos.y;
+        if (canvasManager.isSnapToGridEnabled()) {
+          const snappedStart = canvasManager.snapToGridPoint(startX, startY);
+          const snappedEnd = canvasManager.snapToGridPoint(worldPos.x, worldPos.y);
+          lineStartX = snappedStart.x;
+          lineStartY = snappedStart.y;
+          lineEndX = snappedEnd.x;
+          lineEndY = snappedEnd.y;
+        }
+        element = elementFactory.createLineElement(lineStartX, lineStartY, lineEndX, lineEndY);
         toolManager.finishLine();
       } else if (toolManager.isShapeTool()) {
-        element = elementFactory.createShapeElement(currentTool, startX, startY, worldPos.x, worldPos.y);
+        // Apply snap-to-grid for shape bounds
+        let shapeX = startX, shapeY = startY;
+        let shapeEndX = worldPos.x, shapeEndY = worldPos.y;
+        if (canvasManager.isSnapToGridEnabled()) {
+          const snappedStart = canvasManager.snapToGridPoint(startX, startY);
+          const snappedEnd = canvasManager.snapToGridPoint(worldPos.x, worldPos.y);
+          shapeX = snappedStart.x;
+          shapeY = snappedStart.y;
+          shapeEndX = snappedEnd.x;
+          shapeEndY = snappedEnd.y;
+        }
+        element = elementFactory.createShapeElement(currentTool, shapeX, shapeY, shapeEndX, shapeEndY);
         toolManager.finishShape();
       }
 
@@ -931,10 +974,32 @@ function handleSingleTouchEnd(event) {
     let element = null;
 
     if (currentTool === 'line') {
-      element = elementFactory.createLineElement(startX, startY, worldPos.x, worldPos.y);
+      // Apply snap-to-grid for line endpoints
+      let lineStartX = startX, lineStartY = startY;
+      let lineEndX = worldPos.x, lineEndY = worldPos.y;
+      if (canvasManager.isSnapToGridEnabled()) {
+        const snappedStart = canvasManager.snapToGridPoint(startX, startY);
+        const snappedEnd = canvasManager.snapToGridPoint(worldPos.x, worldPos.y);
+        lineStartX = snappedStart.x;
+        lineStartY = snappedStart.y;
+        lineEndX = snappedEnd.x;
+        lineEndY = snappedEnd.y;
+      }
+      element = elementFactory.createLineElement(lineStartX, lineStartY, lineEndX, lineEndY);
       toolManager.finishLine();
     } else if (toolManager.isShapeTool()) {
-      element = elementFactory.createShapeElement(currentTool, startX, startY, worldPos.x, worldPos.y);
+      // Apply snap-to-grid for shape bounds
+      let shapeX = startX, shapeY = startY;
+      let shapeEndX = worldPos.x, shapeEndY = worldPos.y;
+      if (canvasManager.isSnapToGridEnabled()) {
+        const snappedStart = canvasManager.snapToGridPoint(startX, startY);
+        const snappedEnd = canvasManager.snapToGridPoint(worldPos.x, worldPos.y);
+        shapeX = snappedStart.x;
+        shapeY = snappedStart.y;
+        shapeEndX = snappedEnd.x;
+        shapeEndY = snappedEnd.y;
+      }
+      element = elementFactory.createShapeElement(currentTool, shapeX, shapeY, shapeEndX, shapeEndY);
       toolManager.finishShape();
     }
 
@@ -1170,6 +1235,13 @@ function handleSelectMouseDown(x, y, event) {
 }
 
 function createTextAtPosition(x, y) {
+  // Apply snap-to-grid if enabled
+  if (canvasManager.isSnapToGridEnabled()) {
+    const snapped = canvasManager.snapToGridPoint(x, y);
+    x = snapped.x;
+    y = snapped.y;
+  }
+  
   const element = elementFactory.createTextElement(x, y);
   if (signalrClient.isConnected() && signalrClient.getCurrentBoardId()) {
     signalrClient.sendElement(signalrClient.getCurrentBoardId(), element, element.id);
@@ -1178,6 +1250,13 @@ function createTextAtPosition(x, y) {
 }
 
 function createStickyNoteAtPosition(x, y) {
+  // Apply snap-to-grid if enabled
+  if (canvasManager.isSnapToGridEnabled()) {
+    const snapped = canvasManager.snapToGridPoint(x, y);
+    x = snapped.x;
+    y = snapped.y;
+  }
+  
   const element = elementFactory.createStickyNote(x, y);
   if (signalrClient.isConnected() && signalrClient.getCurrentBoardId()) {
     signalrClient.sendElement(signalrClient.getCurrentBoardId(), element, element.id);
@@ -1250,6 +1329,36 @@ function handleContextMenuOutsideClick(event) {
   }
 }
 
+// Debug function to check function availability
+function debugFunctionAvailability() {
+  console.log('[DEBUG] Function availability check:');
+  console.log('  window.isElementLocked:', typeof window.isElementLocked);
+  console.log('  elementFactory.isElementLocked:', typeof elementFactory.isElementLocked);
+  console.log('  window.toggleElementLock:', typeof window.toggleElementLock);
+  console.log('  elementFactory.toggleElementLock:', typeof elementFactory.toggleElementLock);
+}
+
+// Helper function to get lock button text with browser compatibility
+function getLockButtonText(element) {
+  try {
+    // Try multiple sources for the isElementLocked function to handle browser timing differences
+    const isElementLockedFn = window.isElementLocked || elementFactory.isElementLocked;
+    
+    if (isElementLockedFn) {
+      return isElementLockedFn(element) ? '🔓 Unlock' : '🔒 Lock';
+    } else {
+      // Debug and fallback if functions aren't available yet
+      console.warn('isElementLocked function not available, using default');
+      debugFunctionAvailability();
+      return '🔒 Lock';
+    }
+  } catch (error) {
+    console.warn('Error checking lock state for context menu:', error);
+    debugFunctionAvailability();
+    return '🔒 Lock';
+  }
+}
+
 function createElementContextMenu(element) {
   const isShape = ['rectangle', 'circle', 'triangle', 'diamond', 'ellipse', 'star'].includes(element.type);
   const isLine = element.type === 'Line';
@@ -1261,6 +1370,9 @@ function createElementContextMenu(element) {
             <div class="context-menu-title">Element: ${element.type}</div>
         </div>
         <div class="context-menu-section">
+            <button class="context-menu-item" onclick="toggleElementLockAction('${element.id}')">
+                ${getLockButtonText(element)}
+            </button>
             <button class="context-menu-item" onclick="bringElementToFront('${element.id}')">
                 📤 Bring to Front
             </button>
@@ -1508,6 +1620,83 @@ function sendElementToBack(elementId) {
     showNotification('Element sent to back', 'success');
   } catch (error) {
     console.error('Error sending element to back:', error);
+  }
+}
+
+// Grid system functions
+function toggleGrid() {
+  try {
+    const currentState = canvasManager.isGridEnabled();
+    canvasManager.setGridEnabled(!currentState);
+    showNotification(currentState ? 'Grid hidden' : 'Grid shown', 'info');
+  } catch (error) {
+    console.error('Error toggling grid:', error);
+  }
+}
+
+function toggleSnapToGrid() {
+  try {
+    const currentState = canvasManager.isSnapToGridEnabled();
+    canvasManager.setSnapToGrid(!currentState);
+    showNotification(currentState ? 'Snap to grid disabled' : 'Snap to grid enabled', 'info');
+  } catch (error) {
+    console.error('Error toggling snap to grid:', error);
+  }
+}
+
+function setGridSize(size) {
+  try {
+    canvasManager.setGridSize(size);
+    showNotification(`Grid size set to ${size}px`, 'info');
+  } catch (error) {
+    console.error('Error setting grid size:', error);
+  }
+}
+
+function toggleElementLockAction(elementId) {
+  try {
+    const element = elementFactory.getElementById(elementId);
+    if (!element) return;
+    
+    // Robust function access - try multiple sources to handle browser timing differences
+    const isElementLockedFn = window.isElementLocked || elementFactory.isElementLocked;
+    const toggleElementLockFn = window.toggleElementLock || elementFactory.toggleElementLock;
+    
+    if (!isElementLockedFn || !toggleElementLockFn) {
+      console.warn('Lock functions not available yet');
+      debugFunctionAvailability();
+      
+      // Only retry once with a static flag to avoid infinite loops
+      if (!toggleElementLockAction._hasRetried) {
+        toggleElementLockAction._hasRetried = true;
+        setTimeout(() => {
+          // Don't reset the flag - only one retry allowed
+          toggleElementLockAction(elementId);
+        }, 100);
+        return;
+      } else {
+        showNotification('Lock functionality not available yet', 'warning');
+        return;
+      }
+    }
+    
+    const wasLocked = isElementLockedFn(element);
+    const success = toggleElementLockFn(elementId);
+    
+    if (success) {
+      hideContextMenu();
+      const message = wasLocked ? 'Element unlocked' : 'Element locked';
+      showNotification(message, 'success');
+      
+      // Send lock state to SignalR for synchronization
+      const newLockState = !wasLocked;
+      if (signalrClient.isConnected() && signalrClient.getCurrentBoardId()) {
+        signalrClient.sendElementLock(signalrClient.getCurrentBoardId(), elementId, newLockState);
+      }
+    }
+  } catch (error) {
+    console.error('Error toggling element lock:', error);
+    showNotification('Failed to toggle element lock', 'error');
   }
 }
 
@@ -2096,7 +2285,12 @@ if (typeof window !== 'undefined') {
   window.updateElementBorderWidth = updateElementBorderWidth;
   window.updateStickyNoteColor = updateStickyNoteColor;
   window.updateElementStyle = updateElementStyle;
+  window.toggleElementLockAction = toggleElementLockAction;
   window.pasteElementHere = pasteElementHere;
+  // Grid system
+  window.toggleGrid = toggleGrid;
+  window.toggleSnapToGrid = toggleSnapToGrid;
+  window.setGridSize = setGridSize;
   
   // Dark mode functions
   window.initializeDarkMode = initializeDarkMode;

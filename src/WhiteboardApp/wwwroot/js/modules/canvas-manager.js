@@ -31,6 +31,12 @@ let dependencies = {
 let canvasContainer = null;
 let ro = null;
 
+// Grid system configuration
+let gridEnabled = false;
+let gridSize = 20; // Grid spacing in world coordinates
+let gridColor = 'rgba(200, 200, 200, 0.3)';
+let snapToGrid = false;
+
 export function setDependencies(deps) {
   Object.assign(dependencies, deps);
   canvasContainer = deps.canvasContainer ?? null;
@@ -239,6 +245,12 @@ export function redrawCanvas() {
     // 2) Draw world-space elements under world transform
     ctx.save();               // save DPR baseline
     applyViewportTransform(); // no save/restore inside
+    
+    // Draw grid background if enabled
+    if (gridEnabled) {
+      renderGrid();
+    }
+    
     renderAllElements();
     ctx.restore();            // back to DPR baseline
 
@@ -274,6 +286,9 @@ function renderAllElements() {
   for (const element of ordered) {
     renderExistingElement(element);
   }
+  
+  // Render lock icons for locked elements
+  renderLockIcons(ordered);
 }
 
 export function renderExistingElement(element) {
@@ -293,6 +308,16 @@ export function renderExistingElement(element) {
       case 'diamond': renderDiamond(element); break;
       case 'ellipse': renderEllipse(element); break;
       case 'star': renderStar(element); break;
+      // Flowchart shapes
+      case 'process': renderProcess(element); break;
+      case 'decision': renderDecision(element); break;
+      case 'startend': renderStartEnd(element); break;
+      case 'database': renderDatabase(element); break;
+      case 'document': renderDocument(element); break;
+      // UML shapes
+      case 'class': renderClass(element); break;
+      case 'actor': renderActor(element); break;
+      case 'package': renderPackage(element); break;
       case 'StickyNote': renderStickyNote(element); break;
       case 'Text': renderText(element); break;
       case 'Image': renderImage(element); break;
@@ -301,6 +326,56 @@ export function renderExistingElement(element) {
     ctx.restore();
   } catch (e) {
     console.error('Failed to render element:', e);
+  }
+}
+
+// Render lock icons for locked elements
+function renderLockIcons(elements) {
+  if (!ctx) return;
+  
+  // Get zoom level for proper sizing
+  const zoom = currentZoom();
+  const iconSize = 16 / zoom; // 16px icon at 100% zoom
+  
+  for (const element of elements) {
+    // Check if element is locked
+    if (element.data && element.data.locked === true) {
+      ctx.save();
+      
+      // Position at top-right corner of element
+      const iconX = element.x + element.width - iconSize - (4 / zoom);
+      const iconY = element.y + (4 / zoom);
+      
+      // Draw lock icon background (semi-transparent circle)
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.strokeStyle = '#666';
+      ctx.lineWidth = 1 / zoom;
+      
+      ctx.beginPath();
+      ctx.arc(iconX + iconSize/2, iconY + iconSize/2, iconSize/2 + 2/zoom, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      
+      // Draw lock icon (simplified lock shape)
+      ctx.strokeStyle = '#333';
+      ctx.lineWidth = 1.5 / zoom;
+      ctx.fillStyle = '#333';
+      
+      const lockX = iconX + iconSize * 0.3;
+      const lockY = iconY + iconSize * 0.25;
+      const lockW = iconSize * 0.4;
+      const lockH = iconSize * 0.35;
+      
+      // Lock body (rectangle)
+      ctx.fillRect(lockX, lockY + lockH * 0.4, lockW, lockH * 0.6);
+      
+      // Lock shackle (arc)
+      ctx.beginPath();
+      ctx.arc(lockX + lockW/2, lockY + lockH * 0.3, lockW * 0.25, Math.PI, 0);
+      ctx.stroke();
+      
+      ctx.restore();
+    }
   }
 }
 
@@ -1082,6 +1157,190 @@ function renderStar(el) {
   ctx.stroke();
 }
 
+// Flowchart shape renderers
+function renderProcess(el) {
+  // Rounded rectangle for process
+  const { stroke, fill, width } = strokeFillFrom(el);
+  ctx.strokeStyle = stroke;
+  ctx.fillStyle = fill;
+  ctx.lineWidth = width;
+
+  const radius = Math.min(el.width, el.height) * 0.1;
+  ctx.beginPath();
+  ctx.roundRect(el.x, el.y, el.width, el.height, radius);
+  if (fill !== 'transparent') ctx.fill();
+  ctx.stroke();
+}
+
+function renderDecision(el) {
+  // Diamond shape for decision
+  const { stroke, fill, width } = strokeFillFrom(el);
+  ctx.strokeStyle = stroke;
+  ctx.fillStyle = fill;
+  ctx.lineWidth = width;
+
+  ctx.beginPath();
+  ctx.moveTo(el.x + el.width / 2, el.y);
+  ctx.lineTo(el.x + el.width, el.y + el.height / 2);
+  ctx.lineTo(el.x + el.width / 2, el.y + el.height);
+  ctx.lineTo(el.x, el.y + el.height / 2);
+  ctx.closePath();
+  if (fill !== 'transparent') ctx.fill();
+  ctx.stroke();
+}
+
+function renderStartEnd(el) {
+  // Oval/ellipse for start/end
+  const { stroke, fill, width } = strokeFillFrom(el);
+  ctx.strokeStyle = stroke;
+  ctx.fillStyle = fill;
+  ctx.lineWidth = width;
+
+  const cx = el.x + el.width / 2;
+  const cy = el.y + el.height / 2;
+  const rx = Math.abs(el.width / 2);
+  const ry = Math.abs(el.height / 2);
+
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, 2 * Math.PI);
+  if (fill !== 'transparent') ctx.fill();
+  ctx.stroke();
+}
+
+function renderDatabase(el) {
+  // Cylinder shape for database
+  const { stroke, fill, width } = strokeFillFrom(el);
+  ctx.strokeStyle = stroke;
+  ctx.fillStyle = fill;
+  ctx.lineWidth = width;
+
+  const ellipseHeight = el.height * 0.2;
+  const bodyHeight = el.height - ellipseHeight;
+
+  ctx.beginPath();
+  // Top ellipse
+  ctx.ellipse(el.x + el.width / 2, el.y + ellipseHeight / 2, el.width / 2, ellipseHeight / 2, 0, 0, 2 * Math.PI);
+  if (fill !== 'transparent') ctx.fill();
+  ctx.stroke();
+
+  // Body rectangle
+  ctx.beginPath();
+  ctx.rect(el.x, el.y + ellipseHeight / 2, el.width, bodyHeight);
+  if (fill !== 'transparent') ctx.fill();
+  ctx.stroke();
+
+  // Bottom ellipse
+  ctx.beginPath();
+  ctx.ellipse(el.x + el.width / 2, el.y + el.height - ellipseHeight / 2, el.width / 2, ellipseHeight / 2, 0, 0, 2 * Math.PI);
+  if (fill !== 'transparent') ctx.fill();
+  ctx.stroke();
+}
+
+function renderDocument(el) {
+  // Document shape with wavy bottom
+  const { stroke, fill, width } = strokeFillFrom(el);
+  ctx.strokeStyle = stroke;
+  ctx.fillStyle = fill;
+  ctx.lineWidth = width;
+
+  const waveHeight = el.height * 0.1;
+  
+  ctx.beginPath();
+  ctx.moveTo(el.x, el.y);
+  ctx.lineTo(el.x + el.width, el.y);
+  ctx.lineTo(el.x + el.width, el.y + el.height - waveHeight);
+  
+  // Wavy bottom
+  const waveWidth = el.width / 4;
+  ctx.quadraticCurveTo(el.x + el.width * 0.75, el.y + el.height, el.x + el.width * 0.5, el.y + el.height - waveHeight);
+  ctx.quadraticCurveTo(el.x + el.width * 0.25, el.y + el.height, el.x, el.y + el.height - waveHeight);
+  
+  ctx.closePath();
+  if (fill !== 'transparent') ctx.fill();
+  ctx.stroke();
+}
+
+// UML shape renderers
+function renderClass(el) {
+  // UML class with compartments
+  const { stroke, fill, width } = strokeFillFrom(el);
+  ctx.strokeStyle = stroke;
+  ctx.fillStyle = fill;
+  ctx.lineWidth = width;
+
+  // Main rectangle
+  ctx.beginPath();
+  ctx.rect(el.x, el.y, el.width, el.height);
+  if (fill !== 'transparent') ctx.fill();
+  ctx.stroke();
+
+  // Divider lines for class compartments
+  const titleHeight = el.height / 3;
+  const attributesHeight = el.height / 3;
+  
+  ctx.beginPath();
+  ctx.moveTo(el.x, el.y + titleHeight);
+  ctx.lineTo(el.x + el.width, el.y + titleHeight);
+  ctx.moveTo(el.x, el.y + titleHeight + attributesHeight);
+  ctx.lineTo(el.x + el.width, el.y + titleHeight + attributesHeight);
+  ctx.stroke();
+}
+
+function renderActor(el) {
+  // UML actor (stick figure)
+  const { stroke, fill, width } = strokeFillFrom(el);
+  ctx.strokeStyle = stroke;
+  ctx.fillStyle = fill;
+  ctx.lineWidth = width;
+
+  const centerX = el.x + el.width / 2;
+  const headRadius = el.height * 0.15;
+  const bodyLength = el.height * 0.4;
+  const armLength = el.width * 0.3;
+  const legLength = el.height * 0.3;
+
+  ctx.beginPath();
+  // Head
+  ctx.arc(centerX, el.y + headRadius, headRadius, 0, 2 * Math.PI);
+  ctx.stroke();
+
+  ctx.beginPath();
+  // Body
+  ctx.moveTo(centerX, el.y + headRadius * 2);
+  ctx.lineTo(centerX, el.y + headRadius * 2 + bodyLength);
+  
+  // Arms
+  ctx.moveTo(centerX - armLength / 2, el.y + headRadius * 2 + bodyLength / 3);
+  ctx.lineTo(centerX + armLength / 2, el.y + headRadius * 2 + bodyLength / 3);
+  
+  // Legs
+  ctx.moveTo(centerX, el.y + headRadius * 2 + bodyLength);
+  ctx.lineTo(centerX - armLength / 3, el.y + el.height);
+  ctx.moveTo(centerX, el.y + headRadius * 2 + bodyLength);
+  ctx.lineTo(centerX + armLength / 3, el.y + el.height);
+  
+  ctx.stroke();
+}
+
+function renderPackage(el) {
+  // UML package shape
+  const { stroke, fill, width } = strokeFillFrom(el);
+  ctx.strokeStyle = stroke;
+  ctx.fillStyle = fill;
+  ctx.lineWidth = width;
+
+  const tabWidth = el.width * 0.3;
+  const tabHeight = el.height * 0.2;
+
+  ctx.beginPath();
+  // Tab
+  ctx.rect(el.x, el.y, tabWidth, tabHeight);
+  // Main body
+  ctx.rect(el.x, el.y + tabHeight, el.width, el.height - tabHeight);
+  if (fill !== 'transparent') ctx.fill();
+  ctx.stroke();
+}
+
 function renderText(el) {
   if (!el.data?.content || el.data?.isEditing) return;
   
@@ -1222,6 +1481,106 @@ function handleImageUpload(event) {
   // Real handling should live in element-factory
 }
 
+// --- Grid System ------------------------------------------------------------
+
+// Render grid background
+function renderGrid() {
+  if (!ctx || !gridEnabled) return;
+  
+  try {
+    ctx.save();
+    
+    // Get current viewport bounds in world coordinates
+    const vx = currentViewportX();
+    const vy = currentViewportY();
+    const z = currentZoom();
+    
+    // Calculate visible area in world coordinates
+    const canvasRect = canvas.getBoundingClientRect();
+    const canvasWidth = canvasRect.width / z;
+    const canvasHeight = canvasRect.height / z;
+    
+    const startX = vx - (canvasWidth * 0.1);
+    const endX = vx + canvasWidth * 1.1;
+    const startY = vy - (canvasHeight * 0.1);
+    const endY = vy + canvasHeight * 1.1;
+    
+    // Calculate grid line positions
+    const firstVerticalLine = Math.floor(startX / gridSize) * gridSize;
+    const firstHorizontalLine = Math.floor(startY / gridSize) * gridSize;
+    
+    // Set grid style
+    ctx.strokeStyle = gridColor;
+    ctx.lineWidth = 1 / z; // Keep lines crisp at all zoom levels
+    ctx.globalAlpha = Math.min(1, z * 0.8); // Fade out grid when zoomed out
+    
+    ctx.beginPath();
+    
+    // Draw vertical lines
+    for (let x = firstVerticalLine; x <= endX; x += gridSize) {
+      ctx.moveTo(x, startY);
+      ctx.lineTo(x, endY);
+    }
+    
+    // Draw horizontal lines
+    for (let y = firstHorizontalLine; y <= endY; y += gridSize) {
+      ctx.moveTo(startX, y);
+      ctx.lineTo(endX, y);
+    }
+    
+    ctx.stroke();
+    ctx.restore();
+  } catch (error) {
+    console.error('Failed to render grid:', error);
+  }
+}
+
+// Grid configuration functions
+export function setGridEnabled(enabled) {
+  gridEnabled = enabled;
+  if (dependencies.redrawCanvas) {
+    dependencies.redrawCanvas();
+  }
+}
+
+export function isGridEnabled() {
+  return gridEnabled;
+}
+
+export function setGridSize(size) {
+  gridSize = Math.max(5, size); // Minimum grid size of 5 pixels
+  if (dependencies.redrawCanvas) {
+    dependencies.redrawCanvas();
+  }
+}
+
+export function getGridSize() {
+  return gridSize;
+}
+
+export function setSnapToGrid(enabled) {
+  snapToGrid = enabled;
+}
+
+export function isSnapToGridEnabled() {
+  return snapToGrid;
+}
+
+// Snap coordinate to grid
+export function snapToGridCoordinate(coord) {
+  if (!snapToGrid) return coord;
+  return Math.round(coord / gridSize) * gridSize;
+}
+
+// Snap point to grid
+export function snapToGridPoint(x, y) {
+  if (!snapToGrid) return { x, y };
+  return {
+    x: snapToGridCoordinate(x),
+    y: snapToGridCoordinate(y)
+  };
+}
+
 // --- Accessors --------------------------------------------------------------
 
 export function getCanvas() { return canvas; }
@@ -1261,6 +1620,15 @@ if (typeof window !== 'undefined') {
     attachResizeObserver,
     detachResizeObserver,
     init,
+    // Grid system
+    setGridEnabled,
+    isGridEnabled,
+    setGridSize,
+    getGridSize,
+    setSnapToGrid,
+    isSnapToGridEnabled,
+    snapToGridCoordinate,
+    snapToGridPoint
   };
 }
 

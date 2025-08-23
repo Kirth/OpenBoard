@@ -345,12 +345,32 @@
     margin-bottom: 8px;
     display: none;
     z-index: 1000;
-    min-width: 140px;
+    min-width: 180px;
     transition: background 0.3s ease, border-color 0.3s ease;
 }
 
 .shape-menu.show {
     display: block;
+}
+
+.shape-category {
+    margin-bottom: 8px;
+}
+
+.shape-category:last-child {
+    margin-bottom: 0;
+}
+
+.shape-category-header {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    padding: 4px 8px 4px 8px;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border-color);
+    transition: color 0.3s ease, border-color 0.3s ease;
 }
 
 .shape-menu-item {

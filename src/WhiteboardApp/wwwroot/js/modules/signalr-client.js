@@ -357,6 +357,27 @@ function setupEventHandlers() {
         }
     });
 
+    // Element lock state updated handler
+    signalRConnection.on("ElementLockUpdated", (elementId, locked) => {
+        try {
+            if (dependencies.elements) {
+                const element = dependencies.elements.get(elementId);
+                if (element) {
+                    if (!element.data) element.data = {};
+                    element.data.locked = locked;
+                    
+                    if (dependencies.redrawCanvas) {
+                        dependencies.redrawCanvas();
+                    }
+                }
+            }
+
+            console.log(`Element ${elementId} lock state updated to: ${locked}`);
+        } catch (error) {
+            console.error('Error handling ElementLockUpdated:', error);
+        }
+    });
+
     // Element brought to front handler
     signalRConnection.on("ElementBroughtToFront", (payload) => {
         // payload could be { elementId, z } OR (legacy) just elementId
@@ -988,6 +1009,24 @@ export async function updateElementStyle(elementId, styleData) {
         return true;
     } catch (error) {
         console.error("Failed to update element style:", error);
+        return false;
+    }
+}
+
+// Element lock/unlock functions
+export async function sendElementLock(boardId, elementId, locked) {
+    try {
+        if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
+            console.warn("SignalR not connected, cannot update element lock state");
+            return false;
+        }
+
+        console.log(`Updating element ${elementId} lock state to: ${locked}`);
+        await signalRConnection.invoke("UpdateElementLock", boardId, elementId, locked);
+        console.log('Element lock state update sent successfully');
+        return true;
+    } catch (error) {
+        console.error("Failed to update element lock state:", error);
         return false;
     }
 }

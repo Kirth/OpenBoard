@@ -90,7 +90,8 @@ export class ElementFactory {
                 content: content,
                 color: color,
                 fontSize: 14,
-                isEditing: false
+                isEditing: false,
+                locked: false
             }
         };
     }
@@ -110,7 +111,8 @@ export class ElementFactory {
                 fontSize: fontSize,
                 fontFamily: 'Arial',
                 color: color,
-                isEditing: false
+                isEditing: false,
+                locked: false
             }
         };
     }
@@ -128,7 +130,8 @@ export class ElementFactory {
             data: {
                 color: style.color || '#000000',
                 fillColor: style.fillColor || 'transparent',
-                strokeWidth: style.strokeWidth || 2
+                strokeWidth: style.strokeWidth || 2,
+                locked: false
             }
         };
     }
@@ -150,7 +153,8 @@ export class ElementFactory {
                 startX: x1,
                 startY: y1,
                 endX: x2,
-                endY: y2
+                endY: y2,
+                locked: false
             }
         };
     }
@@ -166,7 +170,8 @@ export class ElementFactory {
             z: 0,
             createdAt: Date.now(),
             data: {
-                imageData: imageData
+                imageData: imageData,
+                locked: false
             }
         };
     }
@@ -193,7 +198,8 @@ export class ElementFactory {
             data: {
                 path: relativePath, // Store relative coordinates
                 color: style.color || '#000000',
-                strokeWidth: style.strokeWidth || 2
+                strokeWidth: style.strokeWidth || 2,
+                locked: false
             }
         };
     }
@@ -276,6 +282,15 @@ export class EditorManager {
             
             if (elementType !== 'StickyNote' && elementType !== 'Text') {
                 throw new Error('Unsupported element type for editing: ' + elementType);
+            }
+            
+            // Check if element is locked
+            if (isElementLocked(element)) {
+                if (dependencies.showNotification) {
+                    dependencies.showNotification('Cannot edit locked element', 'warning');
+                }
+                this.setState('IDLE');
+                return false;
             }
             
             await this.cleanup();
@@ -616,7 +631,7 @@ export function drawElement(id, x, y, type, data, width, height) {
     }
 }
 
-export function getElementAtPoint(x, y) {
+export function getElementAtPoint(x, y, includeLockedElements = false) {
     // Search by z-order, highest z first (topmost element)
     const elementArray = Array.from(elements.values()).sort((a, b) => {
         const za = (a.z ?? a.data?.z ?? 0);
@@ -633,6 +648,11 @@ export function getElementAtPoint(x, y) {
     console.log(`[hit-test] using viewport state: vx=${vx?.toFixed?.(1) ?? vx} vy=${vy?.toFixed?.(1) ?? vy} z=${z?.toFixed?.(2) ?? z}`);
     
     for (const element of elementArray) {
+        // Skip locked elements unless specifically requested
+        if (!includeLockedElements && isElementLocked(element)) {
+            continue;
+        }
+        
         const isHit = isPointInElement(x, y, element);
         // console.log(`HIT TEST: point(${x.toFixed(1)},${y.toFixed(1)}) vs ${element.type}(${element.x.toFixed(1)},${element.y.toFixed(1)},${element.width}x${element.height}) z=${element.z ?? 0} = ${isHit}`);
         if (isHit) {
@@ -815,20 +835,35 @@ function getColorForConnection(connectionId) {
 // Element operations
 export function updateElementPosition(id, newX, newY) {
     const element = elements.get(id);
-    if (element) {
-        element.x = newX;
-        element.y = newY;
-        
-        // Path elements now use relative coordinates, so no need to update path data
-        // Line elements use x,y,width,height so they move correctly by default
-        
-        if (dependencies.sendElementMove && dependencies.currentBoardId) {
-            dependencies.sendElementMove(dependencies.currentBoardId, id, newX, newY);
+    if (!element) return;
+    
+    // Check if element is locked
+    if (isElementLocked(element)) {
+        if (dependencies.showNotification) {
+            dependencies.showNotification('Cannot move locked element', 'warning');
         }
-        
-        if (dependencies.redrawCanvas) {
-            dependencies.redrawCanvas();
-        }
+        return;
+    }
+    
+    // Apply snap-to-grid if enabled
+    if (window.canvasManager && window.canvasManager.isSnapToGridEnabled()) {
+        const snapped = window.canvasManager.snapToGridPoint(newX, newY);
+        newX = snapped.x;
+        newY = snapped.y;
+    }
+    
+    element.x = newX;
+    element.y = newY;
+    
+    // Path elements now use relative coordinates, so no need to update path data
+    // Line elements use x,y,width,height so they move correctly by default
+    
+    if (dependencies.sendElementMove && dependencies.currentBoardId) {
+        dependencies.sendElementMove(dependencies.currentBoardId, id, newX, newY);
+    }
+    
+    if (dependencies.redrawCanvas) {
+        dependencies.redrawCanvas();
     }
 }
 
@@ -844,6 +879,17 @@ export function updateElementPositionLocal(id, newX, newY) {
 
 export function deleteSelectedElement() {
     if (!selectedElementId) return;
+    
+    const element = elements.get(selectedElementId);
+    if (!element) return;
+    
+    // Check if element is locked
+    if (isElementLocked(element)) {
+        if (dependencies.showNotification) {
+            dependencies.showNotification('Cannot delete locked element', 'warning');
+        }
+        return;
+    }
     
     const elementIdToDelete = selectedElementId;
     
@@ -1119,6 +1165,14 @@ export function drawLineEndpointHandles(element) {
 export function startElementResize(elementId, handleType, startX, startY) {
     const element = elements.get(elementId);
     if (!element || !isElementResizable(element)) return false;
+    
+    // Check if element is locked
+    if (isElementLocked(element)) {
+        if (dependencies.showNotification) {
+            dependencies.showNotification('Cannot resize locked element', 'warning');
+        }
+        return false;
+    }
     
     isResizing = true;
     activeResizeHandle = handleType;
@@ -1427,6 +1481,54 @@ export function stopEditingTextElement() {
     return editorManager.stopEditing();
 }
 
+// Element locking functions
+export function isElementLocked(element) {
+    return element && element.data && element.data.locked === true;
+}
+
+export function lockElement(elementId) {
+    const element = elements.get(elementId);
+    if (!element) return false;
+    
+    if (!element.data) element.data = {};
+    element.data.locked = true;
+    
+    saveCanvasState('Lock Element');
+    
+    if (dependencies.redrawCanvas) {
+        dependencies.redrawCanvas();
+    }
+    
+    return true;
+}
+
+export function unlockElement(elementId) {
+    const element = elements.get(elementId);
+    if (!element) return false;
+    
+    if (!element.data) element.data = {};
+    element.data.locked = false;
+    
+    saveCanvasState('Unlock Element');
+    
+    if (dependencies.redrawCanvas) {
+        dependencies.redrawCanvas();
+    }
+    
+    return true;
+}
+
+export function toggleElementLock(elementId) {
+    const element = elements.get(elementId);
+    if (!element) return false;
+    
+    if (isElementLocked(element)) {
+        return unlockElement(elementId);
+    } else {
+        return lockElement(elementId);
+    }
+}
+
 // Utility functions
 export function getSelectedElement() {
     return selectedElementId ? elements.get(selectedElementId) : null;
@@ -1452,7 +1554,7 @@ export function getElementById(id) {
     return elements.get(id);
 }
 
-// Migrate existing elements to have z-index and createdAt
+// Migrate existing elements to have z-index, createdAt, and locked properties
 function migrateExistingElements() {
     let migrated = 0;
     for (const [id, element] of elements) {
@@ -1464,13 +1566,23 @@ function migrateExistingElements() {
             element.createdAt = Date.now() + migrated; // spread them out slightly
             migrated++;
         }
+        // Ensure element has data object
+        if (!element.data) {
+            element.data = {};
+            migrated++;
+        }
         // Also ensure data.z is set
-        if (element.data && element.data.z === undefined) {
+        if (element.data.z === undefined) {
             element.data.z = element.z;
+        }
+        // Ensure locked property exists
+        if (element.data.locked === undefined) {
+            element.data.locked = false;
+            migrated++;
         }
     }
     if (migrated > 0) {
-        console.log(`[z-migration] Updated ${migrated/2} existing elements with z-index and createdAt`);
+        console.log(`[migration] Updated ${Math.floor(migrated/3)} existing elements with z-index, createdAt, and locked properties`);
         // Force redraw
         if (dependencies.redrawCanvas) {
             dependencies.redrawCanvas();
@@ -1577,4 +1689,9 @@ if (typeof window !== 'undefined') {
     window.finishElementResize = finishElementResize;
     window.isCurrentlyResizing = isCurrentlyResizing;
     window.getActiveResizeHandle = getActiveResizeHandle;
+    // Lock functionality
+    window.isElementLocked = isElementLocked;
+    window.lockElement = lockElement;
+    window.unlockElement = unlockElement;
+    window.toggleElementLock = toggleElementLock;
 }
