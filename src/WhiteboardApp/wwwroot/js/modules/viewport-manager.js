@@ -110,15 +110,19 @@ export function zoomAtPoint(screenX, screenY, factor) {
 
     // console.log('[zoomAtPoint:before] sx=%o sy=%o oldZ=%o vx=%o vy=%o', screenX, screenY, zoomLevel, viewportX, viewportY);
 
+    // Use higher precision math for coordinate calculations to prevent drift
+    const safeOldZoom = Math.max(oldZoom, 1e-10);
+    const safeNewZoom = Math.max(newZoom, 1e-10);
+
     // screen -> world at the focal point
-    const worldX = screenX / oldZoom + viewportX;
-    const worldY = screenY / oldZoom + viewportY;
+    const worldX = Math.fround(screenX / safeOldZoom + viewportX);
+    const worldY = Math.fround(screenY / safeOldZoom + viewportY);
 
     zoomLevel = newZoom;
 
     // keep the same world point under the cursor
-    viewportX = worldX - screenX / newZoom;
-    viewportY = worldY - screenY / newZoom;
+    viewportX = Math.fround(worldX - screenX / safeNewZoom);
+    viewportY = Math.fround(worldY - screenY / safeNewZoom);
 
     // console.log('[zoomAtPoint:after] newZ=%o vx=%o vy=%o', zoomLevel, viewportX, viewportY);
 

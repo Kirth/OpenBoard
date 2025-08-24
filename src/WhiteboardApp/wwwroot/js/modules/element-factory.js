@@ -600,6 +600,9 @@ export function createStickyNote(x, y) {
 }
 
 export function createShapeElement(shapeType, startX, startY, endX, endY) {
+    // DEBUG: Log final element creation coordinates
+    console.log(`[FINAL] ${shapeType} creating element start:(${startX.toFixed(1)},${startY.toFixed(1)}) end:(${endX.toFixed(1)},${endY.toFixed(1)})`);
+    
     // Handle negative dimensions by normalizing coordinates
     const minX = Math.min(startX, endX);
     const minY = Math.min(startY, endY);
@@ -612,6 +615,8 @@ export function createShapeElement(shapeType, startX, startY, endX, endY) {
     // Ensure minimum dimensions
     const finalWidth = Math.max(width, 1);
     const finalHeight = Math.max(height, 1);
+    
+    console.log(`[FINAL] ${shapeType} normalized bounds: (${minX.toFixed(1)},${minY.toFixed(1)}) ${finalWidth.toFixed(1)}x${finalHeight.toFixed(1)}`);
     
     const element = ElementFactory.createShapeElement(shapeType, minX, minY, finalWidth, finalHeight);
     elements.set(element.id, element);
@@ -731,9 +736,9 @@ export function getElementAtPoint(x, y, includeLockedElements = false) {
     });
     
     // DEBUG: Log viewport state used for hit testing
-    const vx = dependencies.getViewportX ? dependencies.getViewportX() : dependencies.viewportX;
-    const vy = dependencies.getViewportY ? dependencies.getViewportY() : dependencies.viewportY;
-    const z = dependencies.getZoomLevel ? dependencies.getZoomLevel() : dependencies.zoomLevel;
+    const vx = dependencies.getViewportX ? dependencies.getViewportX() : (dependencies.viewportX ?? 0);
+    const vy = dependencies.getViewportY ? dependencies.getViewportY() : (dependencies.viewportY ?? 0);
+    const z = dependencies.getZoomLevel ? dependencies.getZoomLevel() : (dependencies.zoomLevel ?? 1);
     console.log(`[hit-test] using viewport state: vx=${vx?.toFixed?.(1) ?? vx} vy=${vy?.toFixed?.(1) ?? vy} z=${z?.toFixed?.(2) ?? z}`);
     
     for (const element of elementArray) {
@@ -1083,7 +1088,7 @@ export function isPointInElement(x, y, element) {
     switch (element.type) {
         case 'Line': {
             // keep visual tolerance constant in screen px, convert to world units
-            const z = dependencies.getZoomLevel ? dependencies.getZoomLevel() : 1;
+            const z = dependencies.getZoomLevel ? dependencies.getZoomLevel() : (dependencies.zoomLevel ?? 1);
             const tolWorld = LINE_TOLERANCE_PX / Math.max(z, 1e-6);
             return pointToLineDistance(
                 x, y,

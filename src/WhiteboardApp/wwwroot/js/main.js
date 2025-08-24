@@ -13,6 +13,7 @@ import * as viewportManager from './modules/viewport-manager.js';
 let pendingImagePosition = null;
 let shouldSwitchToSelectAfterEditing = false;
 let startX = 0, startY = 0;
+let startScreenX = 0, startScreenY = 0;
 
 // Dragging state
 let isDragging = false;
@@ -302,19 +303,25 @@ function handleMouseDown(event) {
       return;
     }
 
-    const rect = event.target.getBoundingClientRect();
-    const screenX = event.clientX - rect.left;
-    const screenY = event.clientY - rect.top;
+    const canvas = event.target;
+    const rect = canvas.getBoundingClientRect();
+    
+    // Calculate precise mouse coordinates accounting for DPR and canvas scaling
+    const dpr = window.devicePixelRatio || 1;
+    const scaleX = rect.width / (canvas.width / dpr);
+    const scaleY = rect.height / (canvas.height / dpr);
+    const screenX = (event.clientX - rect.left) / scaleX;
+    const screenY = (event.clientY - rect.top) / scaleY;
+    
     const worldPos = canvasManager.screenToWorld(screenX, screenY);
 
-    // Round-trip sanity check
-    // const screenCheck = canvasManager.worldToScreen(worldPos.x, worldPos.y);
-    // console.log('[roundtrip] screen->world->screen Δ=', { dx: screenCheck.x - screenX, dy: screenCheck.y - screenY });
-
-    // console.log(`CLICK: screen(${screenX},${screenY}) -> world(${worldPos.x.toFixed(1)},${worldPos.y.toFixed(1)})`);
+    // DEBUG: Log coordinate conversion chain
+    console.log(`[MOUSEDOWN] event:(${event.clientX},${event.clientY}) rect:(${rect.left.toFixed(1)},${rect.top.toFixed(1)}) screen:(${screenX.toFixed(1)},${screenY.toFixed(1)}) world:(${worldPos.x.toFixed(1)},${worldPos.y.toFixed(1)})`);
 
     startX = worldPos.x;
     startY = worldPos.y;
+    startScreenX = screenX;
+    startScreenY = screenY;
 
     const currentTool = toolManager.getCurrentTool();
 
@@ -379,10 +386,20 @@ function handleMouseDown(event) {
 
 function handleMouseMove(event) {
   try {
-    const rect = event.target.getBoundingClientRect();
-    const screenX = event.clientX - rect.left;
-    const screenY = event.clientY - rect.top;
+    const canvas = event.target;
+    const rect = canvas.getBoundingClientRect();
+    
+    // Calculate precise mouse coordinates accounting for DPR and canvas scaling
+    const dpr = window.devicePixelRatio || 1;
+    const scaleX = rect.width / (canvas.width / dpr);
+    const scaleY = rect.height / (canvas.height / dpr);
+    const screenX = (event.clientX - rect.left) / scaleX;
+    const screenY = (event.clientY - rect.top) / scaleY;
+    
     const worldPos = canvasManager.screenToWorld(screenX, screenY);
+
+    // DEBUG: Log mousemove coordinate conversion
+    console.log(`[MOUSEMOVE] screen:(${screenX.toFixed(1)},${screenY.toFixed(1)}) world:(${worldPos.x.toFixed(1)},${worldPos.y.toFixed(1)})`);
 
     // Handle viewport panning
     if (viewportManager.getViewportInfo().isPanning) {
@@ -462,9 +479,11 @@ function handleMouseMove(event) {
       toolManager.drawLine(worldPos.x, worldPos.y);
     } else if (toolManager.isCurrentlyDrawingShape()) {
       if (currentTool === 'line') {
-        toolManager.updateLine(startX, startY, worldPos.x, worldPos.y);
+        // Pass screen coordinates directly to avoid double conversion
+        toolManager.updateLineScreen(startScreenX, startScreenY, screenX, screenY);
       } else if (toolManager.isShapeTool()) {
-        toolManager.updateShape(currentTool, startX, startY, worldPos.x, worldPos.y);
+        // Pass screen coordinates directly to avoid double conversion
+        toolManager.updateShapeScreen(currentTool, startScreenX, startScreenY, screenX, screenY);
       }
     }
 
@@ -485,9 +504,16 @@ function handleMouseMove(event) {
 
 function handleMouseUp(event) {
   try {
-    const rect = event.target.getBoundingClientRect();
-    const screenX = event.clientX - rect.left;
-    const screenY = event.clientY - rect.top;
+    const canvas = event.target;
+    const rect = canvas.getBoundingClientRect();
+    
+    // Calculate precise mouse coordinates accounting for DPR and canvas scaling
+    const dpr = window.devicePixelRatio || 1;
+    const scaleX = rect.width / (canvas.width / dpr);
+    const scaleY = rect.height / (canvas.height / dpr);
+    const screenX = (event.clientX - rect.left) / scaleX;
+    const screenY = (event.clientY - rect.top) / scaleY;
+    
     const worldPos = canvasManager.screenToWorld(screenX, screenY);
 
     // Handle viewport panning
@@ -580,12 +606,29 @@ function handleMouseUp(event) {
       let element = null;
 
       if (currentTool === 'line') {
-        // Apply snap-to-grid for line endpoints
-        let lineStartX = startX, lineStartY = startY;
-        let lineEndX = worldPos.x, lineEndY = worldPos.y;
+        // FIXED: Use stored DPR-scaled screen coordinates that match the preview system
+        // Calculate current screen coordinates with same DPR scaling as mousedown
+        const rect = event.target.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        const scaleX = rect.width / (event.target.width / dpr);
+        const scaleY = rect.height / (event.target.height / dpr);
+        const currentScreenX = (event.clientX - rect.left) / scaleX;
+        const currentScreenY = (event.clientY - rect.top) / scaleY;
+        
+        // Convert screen coordinates to world coordinates using the same system as mousedown
+        const startWorldPos = canvasManager.screenToWorld(startScreenX, startScreenY);
+        const endWorldPos = canvasManager.screenToWorld(currentScreenX, currentScreenY);
+        
+        // DEBUG: Log final element coordinate conversion for precision validation
+        console.log(`[FINAL-LINE] screen start:(${startScreenX.toFixed(3)},${startScreenY.toFixed(3)}) -> world:(${startWorldPos.x.toFixed(3)},${startWorldPos.y.toFixed(3)})`);
+        console.log(`[FINAL-LINE] screen end:(${currentScreenX.toFixed(3)},${currentScreenY.toFixed(3)}) -> world:(${endWorldPos.x.toFixed(3)},${endWorldPos.y.toFixed(3)})`);
+        
+        let lineStartX = startWorldPos.x, lineStartY = startWorldPos.y;
+        let lineEndX = endWorldPos.x, lineEndY = endWorldPos.y;
+        
         if (canvasManager.isSnapToGridEnabled()) {
-          const snappedStart = canvasManager.snapToGridPoint(startX, startY);
-          const snappedEnd = canvasManager.snapToGridPoint(worldPos.x, worldPos.y);
+          const snappedStart = canvasManager.snapToGridPoint(lineStartX, lineStartY);
+          const snappedEnd = canvasManager.snapToGridPoint(lineEndX, lineEndY);
           lineStartX = snappedStart.x;
           lineStartY = snappedStart.y;
           lineEndX = snappedEnd.x;
@@ -594,12 +637,29 @@ function handleMouseUp(event) {
         element = elementFactory.createLineElement(lineStartX, lineStartY, lineEndX, lineEndY);
         toolManager.finishLine();
       } else if (toolManager.isShapeTool()) {
-        // Apply snap-to-grid for shape bounds
-        let shapeX = startX, shapeY = startY;
-        let shapeEndX = worldPos.x, shapeEndY = worldPos.y;
+        // FIXED: Use stored DPR-scaled screen coordinates that match the preview system
+        // Calculate current screen coordinates with same DPR scaling as mousedown
+        const rect = event.target.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        const scaleX = rect.width / (event.target.width / dpr);
+        const scaleY = rect.height / (event.target.height / dpr);
+        const currentScreenX = (event.clientX - rect.left) / scaleX;
+        const currentScreenY = (event.clientY - rect.top) / scaleY;
+        
+        // Convert screen coordinates to world coordinates using the same system as mousedown
+        const startWorldPos = canvasManager.screenToWorld(startScreenX, startScreenY);
+        const endWorldPos = canvasManager.screenToWorld(currentScreenX, currentScreenY);
+        
+        // DEBUG: Log final element coordinate conversion for precision validation
+        console.log(`[FINAL-${currentTool.toUpperCase()}] screen start:(${startScreenX.toFixed(3)},${startScreenY.toFixed(3)}) -> world:(${startWorldPos.x.toFixed(3)},${startWorldPos.y.toFixed(3)})`);
+        console.log(`[FINAL-${currentTool.toUpperCase()}] screen end:(${currentScreenX.toFixed(3)},${currentScreenY.toFixed(3)}) -> world:(${endWorldPos.x.toFixed(3)},${endWorldPos.y.toFixed(3)})`);
+        
+        let shapeX = startWorldPos.x, shapeY = startWorldPos.y;
+        let shapeEndX = endWorldPos.x, shapeEndY = endWorldPos.y;
+        
         if (canvasManager.isSnapToGridEnabled()) {
-          const snappedStart = canvasManager.snapToGridPoint(startX, startY);
-          const snappedEnd = canvasManager.snapToGridPoint(worldPos.x, worldPos.y);
+          const snappedStart = canvasManager.snapToGridPoint(shapeX, shapeY);
+          const snappedEnd = canvasManager.snapToGridPoint(shapeEndX, shapeEndY);
           shapeX = snappedStart.x;
           shapeY = snappedStart.y;
           shapeEndX = snappedEnd.x;
@@ -995,12 +1055,17 @@ function handleSingleTouchEnd(event) {
     let element = null;
 
     if (currentTool === 'line') {
+      // NOTE: For touch events, we need to convert screen coordinates to world coordinates
+      // But we need to use fresh screen-to-world conversion to match the working preview system
+      const currentWorldPos = canvasManager.screenToWorld(screenX, screenY);
+      
       // Apply snap-to-grid for line endpoints
       let lineStartX = startX, lineStartY = startY;
-      let lineEndX = worldPos.x, lineEndY = worldPos.y;
+      let lineEndX = currentWorldPos.x, lineEndY = currentWorldPos.y;
+      
       if (canvasManager.isSnapToGridEnabled()) {
-        const snappedStart = canvasManager.snapToGridPoint(startX, startY);
-        const snappedEnd = canvasManager.snapToGridPoint(worldPos.x, worldPos.y);
+        const snappedStart = canvasManager.snapToGridPoint(lineStartX, lineStartY);
+        const snappedEnd = canvasManager.snapToGridPoint(lineEndX, lineEndY);
         lineStartX = snappedStart.x;
         lineStartY = snappedStart.y;
         lineEndX = snappedEnd.x;
@@ -1009,12 +1074,17 @@ function handleSingleTouchEnd(event) {
       element = elementFactory.createLineElement(lineStartX, lineStartY, lineEndX, lineEndY);
       toolManager.finishLine();
     } else if (toolManager.isShapeTool()) {
+      // NOTE: For touch events, we need to convert screen coordinates to world coordinates  
+      // But we need to use fresh screen-to-world conversion to match the working preview system
+      const currentWorldPos = canvasManager.screenToWorld(screenX, screenY);
+      
       // Apply snap-to-grid for shape bounds
       let shapeX = startX, shapeY = startY;
-      let shapeEndX = worldPos.x, shapeEndY = worldPos.y;
+      let shapeEndX = currentWorldPos.x, shapeEndY = currentWorldPos.y;
+      
       if (canvasManager.isSnapToGridEnabled()) {
-        const snappedStart = canvasManager.snapToGridPoint(startX, startY);
-        const snappedEnd = canvasManager.snapToGridPoint(worldPos.x, worldPos.y);
+        const snappedStart = canvasManager.snapToGridPoint(shapeX, shapeY);
+        const snappedEnd = canvasManager.snapToGridPoint(shapeEndX, shapeEndY);
         shapeX = snappedStart.x;
         shapeY = snappedStart.y;
         shapeEndX = snappedEnd.x;

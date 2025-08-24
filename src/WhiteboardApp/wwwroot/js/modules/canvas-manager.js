@@ -105,18 +105,21 @@ function createTempCanvas() {
     console.error('Could not create temporary canvas context');
     return;
   }
-  
-  // Position temporary canvas on top of main canvas
+
+  // Position temporary canvas to exactly match main canvas position and size
   tempCanvas.style.position = 'absolute';
   tempCanvas.style.top = '0';
   tempCanvas.style.left = '0';
+  tempCanvas.style.width = '100%';
+  tempCanvas.style.height = '100%';
+  tempCanvas.style.display = 'block';
   tempCanvas.style.pointerEvents = 'none'; // Allow mouse events to pass through
   tempCanvas.style.zIndex = '10'; // Above main canvas
-  
+
   tempCtx.lineCap = 'round';
   tempCtx.lineJoin = 'round';
   tempCtx.imageSmoothingEnabled = true;
-  
+
   // Add to DOM - append to the canvas container
   const canvasContainer = canvas?.parentElement;
   if (canvasContainer) {
@@ -157,10 +160,15 @@ export function resizeCanvas() {
     // DPR baseline (1 unit == 1 CSS px)
     resetForDPR(ctx, dpr);
 
-    // Mirror temp canvas
+    // Mirror temp canvas dimensions and DPR exactly
     if (tempCanvas && tempCtx) {
-      if (tempCanvas.width !== devW) tempCanvas.width = devW;
-      if (tempCanvas.height !== devH) tempCanvas.height = devH;
+      if (tempCanvas.width !== devW || tempCanvas.height !== devH) {
+        tempCanvas.width = devW;
+        tempCanvas.height = devH;
+        // Force CSS size to match main canvas exactly
+        tempCanvas.style.width = '100%';
+        tempCanvas.style.height = '100%';
+      }
       resetForDPR(tempCtx, dpr);
       tempCtx.lineCap = 'round';
       tempCtx.lineJoin = 'round';
@@ -184,39 +192,47 @@ export function resizeCanvas() {
 
 // --- Coordinate conversions -------------------------------------------------
 
-function currentViewportX() {
-  const value = dependencies.getViewportX ? dependencies.getViewportX() : viewportX;
-  return value;
-}
-function currentViewportY() {
-  const value = dependencies.getViewportY ? dependencies.getViewportY() : viewportY;
-  return value;
-}
-function currentZoom() {
-  const value = dependencies.getZoomLevel ? dependencies.getZoomLevel() : zoomLevel;
-  return value;
+// Helper functions for safe state access
+function getSafe(obj, key) {
+  const f = obj && typeof obj[key] === 'function' ? obj[key] : null;
+  return f ? f.call(obj) : undefined;
 }
 
-// world -> screen (CSS px), aligned with draw transform: translate(-vx,-vy) then scale(z)
+function numberOr(fallback, v) {
+  const n = Number(v ?? fallback ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function snapshotState() {
+  const vx = numberOr(viewportX, getSafe(dependencies, 'getViewportX'));
+  const vy = numberOr(viewportY, getSafe(dependencies, 'getViewportY'));
+  const z = numberOr(zoomLevel, getSafe(dependencies, 'getZoomLevel'));
+  return { vx, vy, z };
+}
+
+function snapshotStateValidated() {
+  const s = snapshotState();
+  if (!Number.isFinite(s.vx) || !Number.isFinite(s.vy)) throw new Error('Invalid viewport');
+  if (!Number.isFinite(s.z) || s.z <= 0) throw new Error('Invalid zoom');
+  return s;
+}
+
 export function worldToScreen(wx, wy) {
-  const vx = currentViewportX();
-  const vy = currentViewportY();
-  const z = currentZoom();
+  const { vx, vy, z } = snapshotState();
   return { x: (wx - vx) * z, y: (wy - vy) * z };
 }
 
-// screen (CSS px) -> world
 export function screenToWorld(sx, sy) {
-  const vx = currentViewportX();
-  const vy = currentViewportY();
-  const z = currentZoom();
-  
-  // Debug coordinate conversion issues at different zoom levels
-  // if (sx < 1000 && sy < 1000 && (z < 0.8 || Math.abs(vx) > 10 || Math.abs(vy) > 10)) {
-  //   console.log(`screenToWorld: (${sx},${sy}) zoom:${(z*100).toFixed(0)}% viewport:(${vx.toFixed(1)},${vy.toFixed(1)}) -> (${(sx/z+vx).toFixed(1)},${(sy/z+vy).toFixed(1)})`);
-  // }
-  
-  return { x: sx / z + vx, y: sy / z + vy };
+  const { vx, vy, z } = snapshotStateValidated();
+  const x = sx / z + vx;
+  const y = sy / z + vy;
+
+  // deterministic round-trip with the SAME snapshot
+  const backX = (x - vx) * z;
+  const backY = (y - vy) * z;
+  const dx = Math.abs(backX - sx), dy = Math.abs(backY - sy);
+  if (dx > 1e-3 || dy > 1e-3) console.warn(`[COORD] Δ=(${dx.toFixed(4)},${dy.toFixed(4)})`);
+  return { x, y };
 }
 
 // --- Drawing lifecycle ------------------------------------------------------
@@ -235,22 +251,22 @@ export function redrawCanvas() {
 
   try {
     // console.log('[redraw] vx=%o vy=%o z=%o', dependencies.getViewportX?.(), dependencies.getViewportY?.(), dependencies.getZoomLevel?.());
-    
+
     // Clear clickable links array to avoid stale link hitboxes
     clickableLinks = [];
-    
+
     // 1) Clear
     clearCanvas();
 
     // 2) Draw world-space elements under world transform
     ctx.save();               // save DPR baseline
     applyViewportTransform(); // no save/restore inside
-    
+
     // Draw grid background if enabled
     if (gridEnabled) {
       renderGrid();
     }
-    
+
     renderAllElements();
     ctx.restore();            // back to DPR baseline
 
@@ -262,12 +278,13 @@ export function redrawCanvas() {
   }
 }
 
-export function applyViewportTransform() {
-  const vx = currentViewportX();
-  const vy = currentViewportY();
-  const z = currentZoom();
-  ctx.translate(-vx, -vy);
-  ctx.scale(z, z);
+export function applyViewportTransform(context = null) {
+  const targetCtx = context || ctx;
+  const { vx, vy, z } = snapshotState();
+  // Apply transforms in order: scale first, then translate
+  // This matches the coordinate system: transform: scale(z) translate(-vx, -vy)
+  targetCtx.scale(z, z);
+  targetCtx.translate(-vx, -vy);
 }
 
 // --- Element rendering ------------------------------------------------------
@@ -286,7 +303,7 @@ function renderAllElements() {
   for (const element of ordered) {
     renderExistingElement(element);
   }
-  
+
   // Render lock icons for locked elements
   renderLockIcons(ordered);
 }
@@ -332,48 +349,48 @@ export function renderExistingElement(element) {
 // Render lock icons for locked elements
 function renderLockIcons(elements) {
   if (!ctx) return;
-  
+
   // Get zoom level for proper sizing
-  const zoom = currentZoom();
+  const { z: zoom } = snapshotState();
   const iconSize = 16 / zoom; // 16px icon at 100% zoom
-  
+
   for (const element of elements) {
     // Check if element is locked
     if (element.data && element.data.locked === true) {
       ctx.save();
-      
+
       // Position at top-right corner of element
       const iconX = element.x + element.width - iconSize - (4 / zoom);
       const iconY = element.y + (4 / zoom);
-      
+
       // Draw lock icon background (semi-transparent circle)
       ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
       ctx.strokeStyle = '#666';
       ctx.lineWidth = 1 / zoom;
-      
+
       ctx.beginPath();
-      ctx.arc(iconX + iconSize/2, iconY + iconSize/2, iconSize/2 + 2/zoom, 0, Math.PI * 2);
+      ctx.arc(iconX + iconSize / 2, iconY + iconSize / 2, iconSize / 2 + 2 / zoom, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
-      
+
       // Draw lock icon (simplified lock shape)
       ctx.strokeStyle = '#333';
       ctx.lineWidth = 1.5 / zoom;
       ctx.fillStyle = '#333';
-      
+
       const lockX = iconX + iconSize * 0.3;
       const lockY = iconY + iconSize * 0.25;
       const lockW = iconSize * 0.4;
       const lockH = iconSize * 0.35;
-      
+
       // Lock body (rectangle)
       ctx.fillRect(lockX, lockY + lockH * 0.4, lockW, lockH * 0.6);
-      
+
       // Lock shackle (arc)
       ctx.beginPath();
-      ctx.arc(lockX + lockW/2, lockY + lockH * 0.3, lockW * 0.25, Math.PI, 0);
+      ctx.arc(lockX + lockW / 2, lockY + lockH * 0.3, lockW * 0.25, Math.PI, 0);
       ctx.stroke();
-      
+
       ctx.restore();
     }
   }
@@ -488,8 +505,8 @@ function elementScreenAABB(el) {
   const top = Math.min(topLeft.y, bottomRight.y);
   const w = Math.abs(bottomRight.x - topLeft.x);
   const h = Math.abs(bottomRight.y - topLeft.y);
-  
-  return { x: left, y: top, w, h, z: currentZoom() };
+
+  return { x: left, y: top, w, h, z: snapshotState().z };
 }
 
 function drawUIElements() {
@@ -501,39 +518,40 @@ function drawUIElements() {
         // EXPERIMENTAL: Draw resize handles in world space using the same transform as elements
         ctx.save();
         applyViewportTransform();
-        
-        const handleSize = 8 / currentZoom(); // Adjust handle size for zoom
+
+        const { z: zoom } = snapshotState();
+        const handleSize = 8 / zoom; // Adjust handle size for zoom
         ctx.fillStyle = '#ffffff';
         ctx.strokeStyle = '#007bff';
-        ctx.lineWidth = 1 / currentZoom();
-        
+        ctx.lineWidth = 1 / zoom;
+
         if (el.type === 'Line') {
           // For Line elements, show the actual line and endpoint handles
           const x1 = el.x;
           const y1 = el.y;
           const x2 = el.x + el.width;
           const y2 = el.y + el.height;
-          
+
           // Draw the selection line
           ctx.strokeStyle = '#007bff';
-          ctx.lineWidth = 3 / currentZoom();
-          ctx.setLineDash([5 / currentZoom(), 5 / currentZoom()]);
+          ctx.lineWidth = 3 / zoom;
+          ctx.setLineDash([5 / zoom, 5 / zoom]);
           ctx.beginPath();
           ctx.moveTo(x1, y1);
           ctx.lineTo(x2, y2);
           ctx.stroke();
           ctx.setLineDash([]); // Reset line dash
-          
+
           // Draw endpoint handles as circles
           const handles = [
             { x: x1, y: y1 }, // Start point
             { x: x2, y: y2 }  // End point
           ];
-          
+
           ctx.fillStyle = '#ffffff';
           ctx.strokeStyle = '#007bff';
-          ctx.lineWidth = 2 / currentZoom();
-          
+          ctx.lineWidth = 2 / zoom;
+
           for (const handle of handles) {
             ctx.beginPath();
             ctx.arc(handle.x, handle.y, handleSize / 2, 0, Math.PI * 2);
@@ -544,16 +562,16 @@ function drawUIElements() {
           // For other elements, show the traditional bounding box
           const sw = el.data?.strokeWidth ?? 2;
           const inflate = sw * 0.5;
-          
+
           ctx.strokeStyle = '#007bff';
-          ctx.lineWidth = 2 / currentZoom();
+          ctx.lineWidth = 2 / zoom;
           ctx.strokeRect(
-            el.x - inflate, 
-            el.y - inflate, 
-            el.width + 2 * inflate, 
+            el.x - inflate,
+            el.y - inflate,
+            el.width + 2 * inflate,
             el.height + 2 * inflate
           );
-          
+
           // Draw handles as small rectangles in world space
           const handles = [
             { x: el.x, y: el.y }, // Top-left
@@ -565,13 +583,13 @@ function drawUIElements() {
             { x: el.x, y: el.y + el.height / 2 }, // Left-center
             { x: el.x + el.width, y: el.y + el.height / 2 } // Right-center
           ];
-          
+
           for (const handle of handles) {
             ctx.fillRect(handle.x - handleSize / 2, handle.y - handleSize / 2, handleSize, handleSize);
             ctx.strokeRect(handle.x - handleSize / 2, handle.y - handleSize / 2, handleSize, handleSize);
           }
         }
-        
+
         ctx.restore();
 
         if (el.type === 'Line' && dependencies.drawLineEndpointHandles) {
@@ -617,13 +635,13 @@ function strokeFillFrom(el) {
   let stroke = el.data?.strokeColor ?? el.data?.color ?? '#000000';
   let fill = el.data?.fillColor ?? 'transparent';
   const width = el.data?.strokeWidth ?? 2;
-  
+
   // Convert black strokes to white in dark mode (client-side display only)
   if (typeof window !== 'undefined' && window.invertBlackToWhite) {
     stroke = window.invertBlackToWhite(stroke);
     // Keep fill colors unchanged - only stroke/outline colors are inverted
   }
-  
+
   return { stroke, fill, width };
 }
 
@@ -699,26 +717,26 @@ function renderPath(el) {
 // Render a line of text with basic markdown support (keeping asterisks visible)
 function renderMarkdownLine(text, x, y, fontSize) {
   ctx.save();
-  
+
   let currentX = x;
   const segments = parseMarkdownSegments(text);
-  
+
   for (const segment of segments) {
     // Set font style based on segment type (combining styles)
     let fontStyle = '';
     if (segment.italic) fontStyle += 'italic ';
     if (segment.bold) fontStyle += 'bold ';
     ctx.font = `${fontStyle}${fontSize}px Arial`;
-    
+
     // Handle links with special color and underline
     if (segment.link) {
       ctx.save();
       ctx.fillStyle = '#0066cc'; // Link color
       ctx.fillText(segment.text, currentX, y);
-      
+
       // Store link information for click detection
       storeClickableLink(segment.url, currentX, y, segment.text, fontSize);
-      
+
       // Underline the link
       const textWidth = ctx.measureText(segment.text).width;
       ctx.strokeStyle = '#0066cc';
@@ -731,10 +749,10 @@ function renderMarkdownLine(text, x, y, fontSize) {
     } else {
       // Render normal text
       ctx.fillText(segment.text, currentX, y);
-      
+
       // Add decorations
       const textWidth = ctx.measureText(segment.text).width;
-      
+
       // Underline
       if (segment.underline) {
         ctx.save();
@@ -746,7 +764,7 @@ function renderMarkdownLine(text, x, y, fontSize) {
         ctx.stroke();
         ctx.restore();
       }
-      
+
       // Strikethrough
       if (segment.strikethrough) {
         ctx.save();
@@ -759,10 +777,10 @@ function renderMarkdownLine(text, x, y, fontSize) {
         ctx.restore();
       }
     }
-    
+
     currentX += ctx.measureText(segment.text).width;
   }
-  
+
   ctx.restore();
 }
 
@@ -776,15 +794,15 @@ function isBulletLine(line) {
 function wrapTextWithMarkdown(text, maxWidth, fontSize) {
   ctx.save();
   ctx.font = `${fontSize}px Arial`; // Base font for measurement
-  
+
   const words = text.split(' ');
   const lines = [];
   let currentLine = '';
-  
+
   for (let i = 0; i < words.length; i++) {
     const testLine = currentLine + (currentLine ? ' ' : '') + words[i];
     const testWidth = ctx.measureText(testLine).width;
-    
+
     if (testWidth <= maxWidth || currentLine === '') {
       currentLine = testLine;
     } else {
@@ -794,11 +812,11 @@ function wrapTextWithMarkdown(text, maxWidth, fontSize) {
       currentLine = words[i];
     }
   }
-  
+
   if (currentLine) {
     lines.push(currentLine);
   }
-  
+
   ctx.restore();
   return lines;
 }
@@ -808,34 +826,34 @@ function renderLineWithBullet(line, x, y, fontSize, maxWidth) {
   if (isBulletLine(line)) {
     // Extract bullet text (remove bullet marker)
     const bulletText = line.replace(/^\s*[-*]\s/, '');
-    
+
     // Draw bullet point
     ctx.save();
     ctx.fillStyle = ctx.fillStyle; // Use current text color
     ctx.fillText('•', x, y);
     const bulletWidth = ctx.measureText('• ').width;
     ctx.restore();
-    
+
     // Word wrap the bullet text
     const availableWidth = maxWidth - bulletWidth;
     const wrappedLines = wrapTextWithMarkdown(bulletText, availableWidth, fontSize);
-    
+
     // Render each wrapped line with markdown
     const lineHeight = fontSize * 1.2;
     for (let i = 0; i < wrappedLines.length; i++) {
       renderMarkdownLine(wrappedLines[i], x + bulletWidth, y + i * lineHeight, fontSize);
     }
-    
+
     return wrappedLines.length; // Return number of lines used
   } else {
     // Regular line rendering with word wrap
     const wrappedLines = wrapTextWithMarkdown(line, maxWidth, fontSize);
     const lineHeight = fontSize * 1.2;
-    
+
     for (let i = 0; i < wrappedLines.length; i++) {
       renderMarkdownLine(wrappedLines[i], x, y + i * lineHeight, fontSize);
     }
-    
+
     return wrappedLines.length; // Return number of lines used
   }
 }
@@ -844,7 +862,7 @@ function renderLineWithBullet(line, x, y, fontSize, maxWidth) {
 function parseMarkdownSegments(text) {
   const segments = [];
   let currentPos = 0;
-  
+
   // Pattern to match various markdown formats (order matters - longer patterns first)
   const patterns = [
     { regex: /(\*\*[^*]+\*\*)/g, type: 'bold' },        // **bold** must come before *italic*
@@ -853,9 +871,9 @@ function parseMarkdownSegments(text) {
     { regex: /(\*[^*]+\*)/g, type: 'italic' },           // *italic* (after **bold**)
     { regex: /(\[[^\]]+\]\([^)]+\))/g, type: 'link' }    // [text](url)
   ];
-  
+
   const matches = [];
-  
+
   // Find all matches
   for (const pattern of patterns) {
     let match;
@@ -868,10 +886,10 @@ function parseMarkdownSegments(text) {
       });
     }
   }
-  
+
   // Sort matches by position
   matches.sort((a, b) => a.start - b.start);
-  
+
   // Process text with matches
   for (const match of matches) {
     // Add text before match
@@ -885,7 +903,7 @@ function parseMarkdownSegments(text) {
         link: false
       });
     }
-    
+
     // Add formatted segment
     if (match.type === 'bold') {
       segments.push({
@@ -938,10 +956,10 @@ function parseMarkdownSegments(text) {
         });
       }
     }
-    
+
     currentPos = match.end;
   }
-  
+
   // Add remaining text
   if (currentPos < text.length) {
     segments.push({
@@ -953,7 +971,7 @@ function parseMarkdownSegments(text) {
       link: false
     });
   }
-  
+
   return segments;
 }
 
@@ -981,10 +999,10 @@ function clearLinksForElement(elementId) {
 export function handleLinkClick(screenX, screenY) {
   // Convert screen coordinates to world coordinates
   const worldPos = screenToWorld(screenX, screenY);
-  
+
   for (const link of clickableLinks) {
     if (worldPos.x >= link.x && worldPos.x <= link.x + link.width &&
-        worldPos.y >= link.y && worldPos.y <= link.y + link.height) {
+      worldPos.y >= link.y && worldPos.y <= link.y + link.height) {
       // Open link in new tab
       window.open(link.url, '_blank');
       return true; // Link was clicked
@@ -1000,14 +1018,14 @@ export function validateCanvasState() {
       console.warn('Canvas context is missing');
       return false;
     }
-    
+
     // Test that the canvas context is responsive
     const testTransform = ctx.getTransform();
     if (!testTransform) {
       console.warn('Canvas transform is invalid');
       return false;
     }
-    
+
     return true;
   } catch (error) {
     console.error('Canvas state validation failed:', error);
@@ -1019,20 +1037,20 @@ export function validateCanvasState() {
 export function recoverCanvasState() {
   try {
     if (!ctx || !canvas) return false;
-    
+
     // Reset transform to identity
     ctx.resetTransform();
-    
+
     // Clear any accumulated state
     ctx.restore(); // Try to restore any saved states
-    
+
     // Force a redraw
     if (dependencies.requestRedraw) {
       dependencies.requestRedraw();
     } else {
       redrawCanvas();
     }
-    
+
     console.log('Canvas state recovered');
     return true;
   } catch (error) {
@@ -1045,14 +1063,14 @@ function renderStickyNote(el) {
   let bg = el.data?.color || '#ffeb3b';
   let borderColor = '#fbc02d';
   let textColor = '#333333';
-  
+
   // Convert black text to white in dark mode (client-side display only)
   if (typeof window !== 'undefined' && window.invertBlackToWhite) {
     // Keep sticky note backgrounds unchanged - they're usually colored
     // Only invert the text if it's black
     textColor = window.invertBlackToWhite(textColor);
   }
-  
+
   ctx.fillStyle = bg;
   ctx.fillRect(el.x, el.y, el.width, el.height);
 
@@ -1074,7 +1092,7 @@ function renderStickyNote(el) {
     const lh = fontSize * 1.2;
     const padding = 10;
     const maxWidth = el.width - padding * 2; // Account for left and right padding
-    
+
     let currentY = el.y + padding;
     for (let i = 0; i < lines.length; i++) {
       const linesUsed = renderLineWithBullet(lines[i], el.x + padding, currentY, fontSize, maxWidth);
@@ -1244,17 +1262,17 @@ function renderDocument(el) {
   ctx.lineWidth = width;
 
   const waveHeight = el.height * 0.1;
-  
+
   ctx.beginPath();
   ctx.moveTo(el.x, el.y);
   ctx.lineTo(el.x + el.width, el.y);
   ctx.lineTo(el.x + el.width, el.y + el.height - waveHeight);
-  
+
   // Wavy bottom
   const waveWidth = el.width / 4;
   ctx.quadraticCurveTo(el.x + el.width * 0.75, el.y + el.height, el.x + el.width * 0.5, el.y + el.height - waveHeight);
   ctx.quadraticCurveTo(el.x + el.width * 0.25, el.y + el.height, el.x, el.y + el.height - waveHeight);
-  
+
   ctx.closePath();
   if (fill !== 'transparent') ctx.fill();
   ctx.stroke();
@@ -1277,7 +1295,7 @@ function renderClass(el) {
   // Divider lines for class compartments
   const titleHeight = el.height / 3;
   const attributesHeight = el.height / 3;
-  
+
   ctx.beginPath();
   ctx.moveTo(el.x, el.y + titleHeight);
   ctx.lineTo(el.x + el.width, el.y + titleHeight);
@@ -1308,17 +1326,17 @@ function renderActor(el) {
   // Body
   ctx.moveTo(centerX, el.y + headRadius * 2);
   ctx.lineTo(centerX, el.y + headRadius * 2 + bodyLength);
-  
+
   // Arms
   ctx.moveTo(centerX - armLength / 2, el.y + headRadius * 2 + bodyLength / 3);
   ctx.lineTo(centerX + armLength / 2, el.y + headRadius * 2 + bodyLength / 3);
-  
+
   // Legs
   ctx.moveTo(centerX, el.y + headRadius * 2 + bodyLength);
   ctx.lineTo(centerX - armLength / 3, el.y + el.height);
   ctx.moveTo(centerX, el.y + headRadius * 2 + bodyLength);
   ctx.lineTo(centerX + armLength / 3, el.y + el.height);
-  
+
   ctx.stroke();
 }
 
@@ -1343,13 +1361,13 @@ function renderPackage(el) {
 
 function renderText(el) {
   if (!el.data?.content || el.data?.isEditing) return;
-  
+
   let textColor = el.data?.color || '#000000';
   // Convert black text to white in dark mode (client-side display only)
   if (typeof window !== 'undefined' && window.invertBlackToWhite) {
     textColor = window.invertBlackToWhite(textColor);
   }
-  
+
   ctx.fillStyle = textColor;
   const fontSize = el.data?.fontSize || 16;
   const fontFamily = el.data?.fontFamily || 'Arial';
@@ -1363,7 +1381,7 @@ function renderText(el) {
   const lines = String(el.data.content).split('\n');
   const lh = fontSize * 1.2;
   const maxWidth = el.width > 0 ? el.width : 500; // Use element width or default
-  
+
   let currentY = el.y;
   for (let i = 0; i < lines.length; i++) {
     const linesUsed = renderLineWithBullet(lines[i], el.x, currentY, fontSize, maxWidth);
@@ -1402,7 +1420,7 @@ function getCachedImage(src) {
 
 function renderImage(el) {
   const src = el.data?.imageData;
-  
+
   // Handle both URL paths and base64 data URLs
   if (!src || (typeof src !== 'string') || src.trim() === '') {
     throttledWarn(el.id, `Invalid image data for element: ${el.id}, src: ${src}`);
@@ -1410,17 +1428,17 @@ function renderImage(el) {
     cleanupCorruptedImageElement(el);
     return;
   }
-  
+
   // Accept both base64 data URLs and regular URL paths
   const isValidImageSrc = src.startsWith('data:image/') || src.startsWith('/uploads/') || src.startsWith('http');
-  
+
   if (!isValidImageSrc) {
     throttledWarn(el.id, `Invalid image source for element: ${el.id}, src: ${src}`);
     // Try to clean up the corrupted element
     cleanupCorruptedImageElement(el);
     return;
   }
-  
+
   const entry = getCachedImage(src);
   if (!entry || !entry.ready) return;
   ctx.drawImage(entry.img, el.x, el.y, el.width, el.height);
@@ -1430,7 +1448,7 @@ function renderImage(el) {
 function throttledWarn(elementId, message) {
   const now = Date.now();
   const lastWarning = warningTracker.get(elementId);
-  
+
   if (!lastWarning || (now - lastWarning) > WARNING_THROTTLE_MS) {
     console.warn(message);
     warningTracker.set(elementId, now);
@@ -1440,19 +1458,19 @@ function throttledWarn(elementId, message) {
 // Cleanup corrupted image elements
 function cleanupCorruptedImageElement(element) {
   if (!element || !element.id) return;
-  
+
   console.log(`Attempting to cleanup corrupted image element: ${element.id}`);
-  
+
   // Check if this element exists in the element factory
   if (typeof window !== 'undefined' && window.elements && window.elements.has(element.id)) {
     console.log(`Removing corrupted image element from local storage: ${element.id}`);
     window.elements.delete(element.id);
-    
+
     // Clear from selection if it was selected
     if (window.selectedElementId === element.id) {
       window.selectedElementId = null;
     }
-    
+
     // Request redraw to update canvas
     if (dependencies.redrawCanvas) {
       dependencies.redrawCanvas();
@@ -1486,48 +1504,46 @@ function handleImageUpload(event) {
 // Render grid background
 function renderGrid() {
   if (!ctx || !gridEnabled) return;
-  
+
   try {
     ctx.save();
-    
+
     // Get current viewport bounds in world coordinates
-    const vx = currentViewportX();
-    const vy = currentViewportY();
-    const z = currentZoom();
-    
+    const { vx, vy, z } = snapshotState();
+
     // Calculate visible area in world coordinates
     const canvasRect = canvas.getBoundingClientRect();
     const canvasWidth = canvasRect.width / z;
     const canvasHeight = canvasRect.height / z;
-    
+
     const startX = vx - (canvasWidth * 0.1);
     const endX = vx + canvasWidth * 1.1;
     const startY = vy - (canvasHeight * 0.1);
     const endY = vy + canvasHeight * 1.1;
-    
+
     // Calculate grid line positions
     const firstVerticalLine = Math.floor(startX / gridSize) * gridSize;
     const firstHorizontalLine = Math.floor(startY / gridSize) * gridSize;
-    
+
     // Set grid style
     ctx.strokeStyle = gridColor;
     ctx.lineWidth = 1 / z; // Keep lines crisp at all zoom levels
     ctx.globalAlpha = Math.min(1, z * 0.8); // Fade out grid when zoomed out
-    
+
     ctx.beginPath();
-    
+
     // Draw vertical lines
     for (let x = firstVerticalLine; x <= endX; x += gridSize) {
       ctx.moveTo(x, startY);
       ctx.lineTo(x, endY);
     }
-    
+
     // Draw horizontal lines
     for (let y = firstHorizontalLine; y <= endY; y += gridSize) {
       ctx.moveTo(startX, y);
       ctx.lineTo(endX, y);
     }
-    
+
     ctx.stroke();
     ctx.restore();
   } catch (error) {

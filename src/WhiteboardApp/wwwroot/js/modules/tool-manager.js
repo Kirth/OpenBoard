@@ -428,71 +428,65 @@ export function startShape(shapeType, x, y) {
     }
 }
 
-export function updateShape(shapeType, startX, startY, currentX, currentY) {
+// Screen coordinate version - eliminates double conversion
+export function updateShapeScreen(shapeType, startScreenX, startScreenY, currentScreenX, currentScreenY) {
     try {
         if (!dependencies.tempCtx || !dependencies.tempCanvas) {
             console.log('Missing temp canvas dependencies');
             return;
         }
 
+        // DEBUG: Log preview coordinates 
+        console.log(`[PREVIEW-SCREEN] ${shapeType} start:(${startScreenX.toFixed(1)},${startScreenY.toFixed(1)}) current:(${currentScreenX.toFixed(1)},${currentScreenY.toFixed(1)})`);
+
         // Clear temporary canvas
         dependencies.tempCtx.clearRect(0, 0, dependencies.tempCanvas.width, dependencies.tempCanvas.height);
         
-        // Save context state
-        dependencies.tempCtx.save();
-        
-        try {
-            // Apply viewport transformation to temp canvas
-            // Get viewport values directly from viewport manager 
-            const viewportInfo = dependencies.getViewportInfo ? dependencies.getViewportInfo() : { viewportX: 0, viewportY: 0, zoomLevel: 1 };
-            dependencies.tempCtx.translate(-viewportInfo.viewportX, -viewportInfo.viewportY);
-            dependencies.tempCtx.scale(viewportInfo.zoomLevel, viewportInfo.zoomLevel);
-
-        // Set drawing style
+        // Set drawing style - no transforms needed since we're drawing in screen space
         dependencies.tempCtx.strokeStyle = '#000000';
         dependencies.tempCtx.lineWidth = 2;
         dependencies.tempCtx.fillStyle = 'transparent';
 
-        // Calculate dimensions
-        const width = currentX - startX;
-        const height = currentY - startY;
+        // Calculate dimensions in screen space
+        const width = currentScreenX - startScreenX;
+        const height = currentScreenY - startScreenY;
 
-        // Draw shape preview
+        // Draw shape preview in screen coordinates
         dependencies.tempCtx.beginPath();
 
         switch (shapeType) {
             case 'rectangle':
-                dependencies.tempCtx.strokeRect(startX, startY, width, height);
+                dependencies.tempCtx.strokeRect(startScreenX, startScreenY, width, height);
                 break;
 
             case 'circle':
                 const radius = Math.sqrt(width * width + height * height) / 2;
-                const centerX = startX + width / 2;
-                const centerY = startY + height / 2;
+                const centerX = startScreenX + width / 2;
+                const centerY = startScreenY + height / 2;
                 dependencies.tempCtx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
                 dependencies.tempCtx.stroke();
                 break;
 
             case 'triangle':
-                dependencies.tempCtx.moveTo(startX + width / 2, startY);
-                dependencies.tempCtx.lineTo(startX, startY + height);
-                dependencies.tempCtx.lineTo(startX + width, startY + height);
+                dependencies.tempCtx.moveTo(startScreenX + width / 2, startScreenY);
+                dependencies.tempCtx.lineTo(startScreenX, startScreenY + height);
+                dependencies.tempCtx.lineTo(startScreenX + width, startScreenY + height);
                 dependencies.tempCtx.closePath();
                 dependencies.tempCtx.stroke();
                 break;
 
             case 'diamond':
-                dependencies.tempCtx.moveTo(startX + width / 2, startY);
-                dependencies.tempCtx.lineTo(startX + width, startY + height / 2);
-                dependencies.tempCtx.lineTo(startX + width / 2, startY + height);
-                dependencies.tempCtx.lineTo(startX, startY + height / 2);
+                dependencies.tempCtx.moveTo(startScreenX + width / 2, startScreenY);
+                dependencies.tempCtx.lineTo(startScreenX + width, startScreenY + height / 2);
+                dependencies.tempCtx.lineTo(startScreenX + width / 2, startScreenY + height);
+                dependencies.tempCtx.lineTo(startScreenX, startScreenY + height / 2);
                 dependencies.tempCtx.closePath();
                 dependencies.tempCtx.stroke();
                 break;
 
             case 'ellipse':
-                const centerXE = startX + width / 2;
-                const centerYE = startY + height / 2;
+                const centerXE = startScreenX + width / 2;
+                const centerYE = startScreenY + height / 2;
                 const radiusX = Math.abs(width) / 2;
                 const radiusY = Math.abs(height) / 2;
                 dependencies.tempCtx.ellipse(centerXE, centerYE, radiusX, radiusY, 0, 0, 2 * Math.PI);
@@ -500,28 +494,164 @@ export function updateShape(shapeType, startX, startY, currentX, currentY) {
                 break;
 
             case 'star':
-                drawStar(dependencies.tempCtx, startX + width / 2, startY + height / 2, 5, Math.min(Math.abs(width), Math.abs(height)) / 2, Math.min(Math.abs(width), Math.abs(height)) / 4);
+                drawStar(dependencies.tempCtx, startScreenX + width / 2, startScreenY + height / 2, 5, Math.min(Math.abs(width), Math.abs(height)) / 2, Math.min(Math.abs(width), Math.abs(height)) / 4);
                 break;
 
             // Flowchart shapes
             case 'process':
                 const cornerRadius = Math.min(Math.abs(width), Math.abs(height)) * 0.1;
-                dependencies.tempCtx.roundRect(startX, startY, width, height, cornerRadius);
+                dependencies.tempCtx.roundRect(startScreenX, startScreenY, width, height, cornerRadius);
                 dependencies.tempCtx.stroke();
                 break;
 
             case 'decision':
-                dependencies.tempCtx.moveTo(startX + width / 2, startY);
-                dependencies.tempCtx.lineTo(startX + width, startY + height / 2);
-                dependencies.tempCtx.lineTo(startX + width / 2, startY + height);
-                dependencies.tempCtx.lineTo(startX, startY + height / 2);
+                dependencies.tempCtx.moveTo(startScreenX + width / 2, startScreenY);
+                dependencies.tempCtx.lineTo(startScreenX + width, startScreenY + height / 2);
+                dependencies.tempCtx.lineTo(startScreenX + width / 2, startScreenY + height);
+                dependencies.tempCtx.lineTo(startScreenX, startScreenY + height / 2);
                 dependencies.tempCtx.closePath();
                 dependencies.tempCtx.stroke();
                 break;
 
             case 'startend':
-                const centerXS = startX + width / 2;
-                const centerYS = startY + height / 2;
+                const centerXS = startScreenX + width / 2;
+                const centerYS = startScreenY + height / 2;
+                const radiusXS = Math.abs(width) / 2;
+                const radiusYS = Math.abs(height) / 2;
+                dependencies.tempCtx.ellipse(centerXS, centerYS, radiusXS, radiusYS, 0, 0, 2 * Math.PI);
+                dependencies.tempCtx.stroke();
+                break;
+
+            case 'database':
+                dependencies.tempCtx.strokeRect(startScreenX, startScreenY, width, height);
+                break;
+
+            case 'document':
+                dependencies.tempCtx.strokeRect(startScreenX, startScreenY, width, height);
+                break;
+
+            // UML shapes
+            case 'class':
+                dependencies.tempCtx.strokeRect(startScreenX, startScreenY, width, height);
+                // Draw class compartment lines
+                dependencies.tempCtx.moveTo(startScreenX, startScreenY + height / 3);
+                dependencies.tempCtx.lineTo(startScreenX + width, startScreenY + height / 3);
+                dependencies.tempCtx.moveTo(startScreenX, startScreenY + 2 * height / 3);
+                dependencies.tempCtx.lineTo(startScreenX + width, startScreenY + 2 * height / 3);
+                dependencies.tempCtx.stroke();
+                break;
+
+            case 'actor':
+                dependencies.tempCtx.strokeRect(startScreenX, startScreenY, width, height);
+                break;
+
+            case 'package':
+                const tabWidth = width * 0.3;
+                const tabHeight = height * 0.2;
+                dependencies.tempCtx.strokeRect(startScreenX, startScreenY, tabWidth, tabHeight);
+                dependencies.tempCtx.strokeRect(startScreenX, startScreenY + tabHeight, width, height - tabHeight);
+                break;
+        }
+
+    } catch (error) {
+        console.error('Failed to update shape screen:', error);
+    }
+}
+
+export function updateShape(shapeType, startX, startY, currentX, currentY) {
+    try {
+        if (!dependencies.tempCtx || !dependencies.tempCanvas) {
+            console.log('Missing temp canvas dependencies');
+            return;
+        }
+
+        // DEBUG: Log preview coordinates and viewport state
+        const vx = dependencies.getViewportX ? dependencies.getViewportX() : 0;
+        const vy = dependencies.getViewportY ? dependencies.getViewportY() : 0;
+        const z = dependencies.getZoomLevel ? dependencies.getZoomLevel() : 1;
+        console.log(`[PREVIEW] ${shapeType} start:(${startX.toFixed(1)},${startY.toFixed(1)}) current:(${currentX.toFixed(1)},${currentY.toFixed(1)}) viewport:(${vx.toFixed(1)},${vy.toFixed(1)}) zoom:${(z*100).toFixed(0)}%`);
+
+        // Clear temporary canvas
+        dependencies.tempCtx.clearRect(0, 0, dependencies.tempCanvas.width, dependencies.tempCanvas.height);
+        
+        // Convert world coordinates to screen coordinates using the same coordinate system as final placement
+        const startScreen = dependencies.worldToScreen ? dependencies.worldToScreen(startX, startY) : { x: startX, y: startY };
+        const currentScreen = dependencies.worldToScreen ? dependencies.worldToScreen(currentX, currentY) : { x: currentX, y: currentY };
+        
+        // Set drawing style - no transforms needed since we're drawing in screen space
+        dependencies.tempCtx.strokeStyle = '#000000';
+        dependencies.tempCtx.lineWidth = 2;
+        dependencies.tempCtx.fillStyle = 'transparent';
+
+        // Calculate dimensions in screen space
+        const width = currentScreen.x - startScreen.x;
+        const height = currentScreen.y - startScreen.y;
+
+        // Draw shape preview in screen coordinates
+        dependencies.tempCtx.beginPath();
+
+        switch (shapeType) {
+            case 'rectangle':
+                dependencies.tempCtx.strokeRect(startScreen.x, startScreen.y, width, height);
+                break;
+
+            case 'circle':
+                const radius = Math.sqrt(width * width + height * height) / 2;
+                const centerX = startScreen.x + width / 2;
+                const centerY = startScreen.y + height / 2;
+                dependencies.tempCtx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+                dependencies.tempCtx.stroke();
+                break;
+
+            case 'triangle':
+                dependencies.tempCtx.moveTo(startScreen.x + width / 2, startScreen.y);
+                dependencies.tempCtx.lineTo(startScreen.x, startScreen.y + height);
+                dependencies.tempCtx.lineTo(startScreen.x + width, startScreen.y + height);
+                dependencies.tempCtx.closePath();
+                dependencies.tempCtx.stroke();
+                break;
+
+            case 'diamond':
+                dependencies.tempCtx.moveTo(startScreen.x + width / 2, startScreen.y);
+                dependencies.tempCtx.lineTo(startScreen.x + width, startScreen.y + height / 2);
+                dependencies.tempCtx.lineTo(startScreen.x + width / 2, startScreen.y + height);
+                dependencies.tempCtx.lineTo(startScreen.x, startScreen.y + height / 2);
+                dependencies.tempCtx.closePath();
+                dependencies.tempCtx.stroke();
+                break;
+
+            case 'ellipse':
+                const centerXE = startScreen.x + width / 2;
+                const centerYE = startScreen.y + height / 2;
+                const radiusX = Math.abs(width) / 2;
+                const radiusY = Math.abs(height) / 2;
+                dependencies.tempCtx.ellipse(centerXE, centerYE, radiusX, radiusY, 0, 0, 2 * Math.PI);
+                dependencies.tempCtx.stroke();
+                break;
+
+            case 'star':
+                drawStar(dependencies.tempCtx, startScreen.x + width / 2, startScreen.y + height / 2, 5, Math.min(Math.abs(width), Math.abs(height)) / 2, Math.min(Math.abs(width), Math.abs(height)) / 4);
+                break;
+
+            // Flowchart shapes
+            case 'process':
+                const cornerRadius = Math.min(Math.abs(width), Math.abs(height)) * 0.1;
+                dependencies.tempCtx.roundRect(startScreen.x, startScreen.y, width, height, cornerRadius);
+                dependencies.tempCtx.stroke();
+                break;
+
+            case 'decision':
+                dependencies.tempCtx.moveTo(startScreen.x + width / 2, startScreen.y);
+                dependencies.tempCtx.lineTo(startScreen.x + width, startScreen.y + height / 2);
+                dependencies.tempCtx.lineTo(startScreen.x + width / 2, startScreen.y + height);
+                dependencies.tempCtx.lineTo(startScreen.x, startScreen.y + height / 2);
+                dependencies.tempCtx.closePath();
+                dependencies.tempCtx.stroke();
+                break;
+
+            case 'startend':
+                const centerXS = startScreen.x + width / 2;
+                const centerYS = startScreen.y + height / 2;
                 const radiusXS = Math.abs(width) / 2;
                 const radiusYS = Math.abs(height) / 2;
                 dependencies.tempCtx.ellipse(centerXS, centerYS, radiusXS, radiusYS, 0, 0, 2 * Math.PI);
@@ -530,65 +660,42 @@ export function updateShape(shapeType, startX, startY, currentX, currentY) {
 
             case 'database':
                 // Simple preview - just draw rectangle for now
-                dependencies.tempCtx.strokeRect(startX, startY, width, height);
+                dependencies.tempCtx.strokeRect(startScreen.x, startScreen.y, width, height);
                 break;
 
             case 'document':
                 // Simple preview - just draw rectangle for now
-                dependencies.tempCtx.strokeRect(startX, startY, width, height);
+                dependencies.tempCtx.strokeRect(startScreen.x, startScreen.y, width, height);
                 break;
 
             // UML shapes
             case 'class':
-                dependencies.tempCtx.strokeRect(startX, startY, width, height);
+                dependencies.tempCtx.strokeRect(startScreen.x, startScreen.y, width, height);
                 // Draw class compartment lines
-                dependencies.tempCtx.moveTo(startX, startY + height / 3);
-                dependencies.tempCtx.lineTo(startX + width, startY + height / 3);
-                dependencies.tempCtx.moveTo(startX, startY + 2 * height / 3);
-                dependencies.tempCtx.lineTo(startX + width, startY + 2 * height / 3);
+                dependencies.tempCtx.moveTo(startScreen.x, startScreen.y + height / 3);
+                dependencies.tempCtx.lineTo(startScreen.x + width, startScreen.y + height / 3);
+                dependencies.tempCtx.moveTo(startScreen.x, startScreen.y + 2 * height / 3);
+                dependencies.tempCtx.lineTo(startScreen.x + width, startScreen.y + 2 * height / 3);
                 dependencies.tempCtx.stroke();
                 break;
 
             case 'actor':
                 // Simple preview - draw stick figure outline
-                dependencies.tempCtx.strokeRect(startX, startY, width, height);
+                dependencies.tempCtx.strokeRect(startScreen.x, startScreen.y, width, height);
                 break;
 
             case 'package':
                 // Tab
                 const tabWidth = width * 0.3;
                 const tabHeight = height * 0.2;
-                dependencies.tempCtx.strokeRect(startX, startY, tabWidth, tabHeight);
+                dependencies.tempCtx.strokeRect(startScreen.x, startScreen.y, tabWidth, tabHeight);
                 // Main body
-                dependencies.tempCtx.strokeRect(startX, startY + tabHeight, width, height - tabHeight);
+                dependencies.tempCtx.strokeRect(startScreen.x, startScreen.y + tabHeight, width, height - tabHeight);
                 break;
-        }
-
-        } catch (drawError) {
-            console.error('Error during shape drawing:', drawError);
-            // Always restore context even if drawing fails
-        } finally {
-            // Ensure context state is always restored
-            dependencies.tempCtx.restore();
         }
 
     } catch (error) {
         console.error('Failed to update shape:', error);
-        // Emergency canvas recovery if context is corrupted
-        try {
-            if (dependencies.tempCtx) {
-                dependencies.tempCtx.restore();
-            }
-            // Validate and recover main canvas if needed
-            if (dependencies.validateCanvasState && !dependencies.validateCanvasState()) {
-                console.warn('Main canvas state corrupted, attempting recovery');
-                if (dependencies.recoverCanvasState) {
-                    dependencies.recoverCanvasState();
-                }
-            }
-        } catch (restoreError) {
-            console.error('Failed to restore canvas context:', restoreError);
-        }
     }
 }
 
@@ -631,6 +738,56 @@ export function startLine(x, y) {
     }
 }
 
+// Screen coordinate version - eliminates double conversion  
+export function updateLineScreen(startScreenX, startScreenY, currentScreenX, currentScreenY) {
+    try {
+        if (!dependencies.tempCtx || !dependencies.tempCanvas) {
+            console.warn('Missing temp canvas context for line update');
+            return;
+        }
+
+        // DEBUG: Log preview coordinates
+        console.log(`[PREVIEW-LINE-SCREEN] start:(${startScreenX.toFixed(1)},${startScreenY.toFixed(1)}) current:(${currentScreenX.toFixed(1)},${currentScreenY.toFixed(1)})`);
+
+        // Clear temporary canvas
+        dependencies.tempCtx.clearRect(0, 0, dependencies.tempCanvas.width, dependencies.tempCanvas.height);
+
+        // Handle shift-key snapping in screen space
+        let endScreenX = currentScreenX;
+        let endScreenY = currentScreenY;
+        
+        if (window.isShiftHeld) {
+            // Calculate snapping in screen space to avoid coordinate conversion
+            const dx = currentScreenX - startScreenX;
+            const dy = currentScreenY - startScreenY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            // Calculate angle in degrees
+            let angle = Math.atan2(dy, dx) * 180 / Math.PI;
+            
+            // Snap to nearest 45 degrees
+            const snapAngle = Math.round(angle / 45) * 45;
+            const snapRadians = snapAngle * Math.PI / 180;
+            
+            endScreenX = startScreenX + distance * Math.cos(snapRadians);
+            endScreenY = startScreenY + distance * Math.sin(snapRadians);
+        }
+
+        // Set drawing style - no transforms needed since we're drawing in screen space
+        dependencies.tempCtx.strokeStyle = '#000000';
+        dependencies.tempCtx.lineWidth = 2;
+
+        // Draw line preview in screen coordinates
+        dependencies.tempCtx.beginPath();
+        dependencies.tempCtx.moveTo(startScreenX, startScreenY);
+        dependencies.tempCtx.lineTo(endScreenX, endScreenY);
+        dependencies.tempCtx.stroke();
+
+    } catch (error) {
+        console.error('Failed to update line screen:', error);
+    }
+}
+
 export function updateLine(startX, startY, currentX, currentY) {
     try {
         if (!dependencies.tempCtx || !dependencies.tempCanvas) {
@@ -641,61 +798,32 @@ export function updateLine(startX, startY, currentX, currentY) {
         // Clear temporary canvas
         dependencies.tempCtx.clearRect(0, 0, dependencies.tempCanvas.width, dependencies.tempCanvas.height);
 
-        // Save context and apply viewport transformation
-        dependencies.tempCtx.save();
+        // Snap to angle if shift is held (in world coordinates)
+        let endX = currentX;
+        let endY = currentY;
         
-        try {
-            // Apply viewport transformation to temp canvas
-            // Get viewport values directly from viewport manager (consistent with updateShape)
-            const viewportInfo = dependencies.getViewportInfo ? dependencies.getViewportInfo() : { viewportX: 0, viewportY: 0, zoomLevel: 1 };
-            dependencies.tempCtx.translate(-viewportInfo.viewportX, -viewportInfo.viewportY);
-            dependencies.tempCtx.scale(viewportInfo.zoomLevel, viewportInfo.zoomLevel);
-
-            // Set drawing style
-            dependencies.tempCtx.strokeStyle = '#000000';
-            dependencies.tempCtx.lineWidth = 2;
-
-            // Snap to angle if shift is held
-            let endX = currentX;
-            let endY = currentY;
-            
-            if (window.isShiftHeld) {
-                const snapped = snapLineToAngle(startX, startY, currentX, currentY);
-                endX = snapped.x;
-                endY = snapped.y;
-            }
-
-            // Draw line preview
-            dependencies.tempCtx.beginPath();
-            dependencies.tempCtx.moveTo(startX, startY);
-            dependencies.tempCtx.lineTo(endX, endY);
-            dependencies.tempCtx.stroke();
-            
-        } catch (drawError) {
-            console.error('Error during line drawing:', drawError);
-            // Always restore context even if drawing fails
-        } finally {
-            // Ensure context state is always restored
-            dependencies.tempCtx.restore();
+        if (window.isShiftHeld) {
+            const snapped = snapLineToAngle(startX, startY, currentX, currentY);
+            endX = snapped.x;
+            endY = snapped.y;
         }
+
+        // Convert world coordinates to screen coordinates using the same coordinate system as final placement
+        const startScreen = dependencies.worldToScreen ? dependencies.worldToScreen(startX, startY) : { x: startX, y: startY };
+        const endScreen = dependencies.worldToScreen ? dependencies.worldToScreen(endX, endY) : { x: endX, y: endY };
+
+        // Set drawing style - no transforms needed since we're drawing in screen space
+        dependencies.tempCtx.strokeStyle = '#000000';
+        dependencies.tempCtx.lineWidth = 2;
+
+        // Draw line preview in screen coordinates
+        dependencies.tempCtx.beginPath();
+        dependencies.tempCtx.moveTo(startScreen.x, startScreen.y);
+        dependencies.tempCtx.lineTo(endScreen.x, endScreen.y);
+        dependencies.tempCtx.stroke();
 
     } catch (error) {
         console.error('Failed to update line:', error);
-        // Emergency canvas recovery if context is corrupted
-        try {
-            if (dependencies.tempCtx) {
-                dependencies.tempCtx.restore();
-            }
-            // Validate and recover main canvas if needed
-            if (dependencies.validateCanvasState && !dependencies.validateCanvasState()) {
-                console.warn('Main canvas state corrupted, attempting recovery');
-                if (dependencies.recoverCanvasState) {
-                    dependencies.recoverCanvasState();
-                }
-            }
-        } catch (restoreError) {
-            console.error('Failed to restore canvas context:', restoreError);
-        }
     }
 }
 
@@ -875,9 +1003,11 @@ if (typeof window !== 'undefined') {
     window.handleKeyUp = handleKeyUp;
     window.startShape = startShape;
     window.updateShape = updateShape;
+    window.updateShapeScreen = updateShapeScreen;
     window.finishShape = finishShape;
     window.startLine = startLine;
     window.updateLine = updateLine;
+    window.updateLineScreen = updateLineScreen;
     window.finishLine = finishLine;
     window.snapLineToAngle = snapLineToAngle;
     window.startNewPath = startNewPath;
