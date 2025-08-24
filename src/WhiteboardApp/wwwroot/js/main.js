@@ -757,6 +757,23 @@ function handleTouchStart(event) {
       startX = worldPos.x;
       startY = worldPos.y;
       
+      // Store touch start position for long-touch detection
+      longTouchStartPos = { x: screenX, y: screenY };
+      isLongTouchActive = false;
+      
+      // Clear any existing long-touch timer
+      if (longTouchTimer) {
+        clearTimeout(longTouchTimer);
+      }
+      
+      // Start long-touch timer (500ms for long press)
+      longTouchTimer = setTimeout(() => {
+        if (!isLongTouchActive) {
+          handleLongTouch(screenX, screenY, worldPos.x, worldPos.y);
+          isLongTouchActive = true;
+        }
+      }, 500);
+      
       const currentTool = toolManager.getCurrentTool();
       
       // Handle different tools for single touch
@@ -829,6 +846,19 @@ function handleTouchMove(event) {
       const screenX = coords.clientX - rect.left;
       const screenY = coords.clientY - rect.top;
       const worldPos = canvasManager.screenToWorld(screenX, screenY);
+
+      // Cancel long-touch if moved too far from start position
+      if (longTouchTimer && !isLongTouchActive) {
+        const touchMoveDistance = Math.sqrt(
+          Math.pow(screenX - longTouchStartPos.x, 2) + 
+          Math.pow(screenY - longTouchStartPos.y, 2)
+        );
+        // Cancel if moved more than 10 pixels
+        if (touchMoveDistance > 10) {
+          clearTimeout(longTouchTimer);
+          longTouchTimer = null;
+        }
+      }
 
       // Handle viewport panning
       if (viewportManager.getViewportInfo().isPanning) {
@@ -939,6 +969,18 @@ function handleTouchEnd(event) {
     
     const touchCount = getTouchCount(event);
     const touchDuration = Date.now() - touchStartTime;
+    
+    // Clear long-touch timer if still active
+    if (longTouchTimer) {
+      clearTimeout(longTouchTimer);
+      longTouchTimer = null;
+    }
+    
+    // If long-touch was active, don't process normal touch end
+    if (isLongTouchActive) {
+      isLongTouchActive = false;
+      return;
+    }
     
     // Handle touch end for remaining touches
     if (touchCount === 0) {
@@ -1169,6 +1211,35 @@ function handleSelectTouchStart(x, y, event) {
   }
 }
 
+// Long-touch handler (mobile right-click equivalent)
+function handleLongTouch(screenX, screenY, worldX, worldY) {
+  try {
+    console.log('Long touch detected at:', screenX, screenY);
+    
+    // Provide haptic feedback if supported
+    if (navigator.vibrate) {
+      navigator.vibrate(50); // Quick vibration to indicate long-touch
+    }
+    
+    // Check if we long-touched on an element (include locked elements)
+    const element = elementFactory.getElementAtPoint(worldX, worldY, true);
+
+    if (element) {
+      // Select the element first
+      elementFactory.highlightElement(element.id);
+      console.log('Long-touched on element:', element.id);
+      // Show context menu for the element
+      showContextMenu(screenX, screenY, element);
+    } else {
+      // Long-touched on empty space
+      elementFactory.clearSelection();
+      showContextMenu(screenX, screenY, null);
+    }
+  } catch (error) {
+    console.error('Error in handleLongTouch:', error);
+  }
+}
+
 // Touch/Mouse utility functions
 function getEventCoordinates(event) {
   if (event.touches && event.touches.length > 0) {
@@ -1195,6 +1266,9 @@ let lastTouchCount = 0;
 let initialTouchDistance = 0;
 let initialZoomLevel = 1;
 let pinchCenter = { x: 0, y: 0 };
+let longTouchTimer = null;
+let longTouchStartPos = { x: 0, y: 0 };
+let isLongTouchActive = false;
 
 // Helper functions
 function isPointInLineHandle(x, y, handleX, handleY) {
