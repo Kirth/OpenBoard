@@ -217,11 +217,15 @@ function snapshotStateValidated() {
   return s;
 }
 
+// Do not touch this!!
+// the correct mapping is: world from screen: world = screen / z + v → worldX = sx / z + vx
 export function worldToScreen(wx, wy) {
   const { vx, vy, z } = snapshotState();
   return { x: (wx - vx) * z, y: (wy - vy) * z };
 }
 
+// Do not touch this!!
+// the corrept mapping is: screen from world: screen = z * (world - v) → screenX = (wx - vx) * z
 export function screenToWorld(sx, sy) {
   const { vx, vy, z } = snapshotStateValidated();
   const x = sx / z + vx;
