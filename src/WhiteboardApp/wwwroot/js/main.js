@@ -154,6 +154,7 @@ function setupDependencies() {
     sendElementResize: signalrClient.sendElementResize,
     sendLineEndpointUpdate: signalrClient.sendLineEndpointUpdate,
     sendElementLock: signalrClient.sendElementLock,
+    updateElementStyle: signalrClient.updateElementStyle,
     updateStickyNoteContent: signalrClient.updateStickyNoteContent,
     updateTextElementContent: signalrClient.updateTextElementContent,
     blazorReference: null, // Will be set by Blazor
@@ -272,6 +273,19 @@ function handleKeyDown(event) {
     const selectedElementId = elementFactory.getSelectedElementId();
     if (selectedElementId) {
       toggleElementLockAction(selectedElementId);
+    }
+    return;
+  }
+  
+  // Undo/Redo: Ctrl/Cmd + Z and Ctrl/Cmd + Shift + Z
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+    event.preventDefault();
+    if (event.shiftKey) {
+      // Ctrl+Shift+Z = Redo
+      elementFactory.redo();
+    } else {
+      // Ctrl+Z = Undo
+      elementFactory.undo();
     }
     return;
   }
@@ -635,8 +649,8 @@ function handleCanvasRightClick(event) {
     const screenY = event.clientY - rect.top;
     const worldPos = canvasManager.screenToWorld(screenX, screenY);
 
-    // Check if we right-clicked on an element
-    const element = elementFactory.getElementAtPoint(worldPos.x, worldPos.y);
+    // Check if we right-clicked on an element (include locked elements)
+    const element = elementFactory.getElementAtPoint(worldPos.x, worldPos.y, true);
 
     if (element) {
       // Select the element first
@@ -1137,11 +1151,14 @@ function getLineHandleAt(element, x, y) {
 
 function handleSelectMouseDown(x, y, event) {
   console.log('handleSelectMouseDown called with world coords:', { x, y });
-  const element = elementFactory.getElementAtPoint(x, y);
+  const element = elementFactory.getElementAtPoint(x, y, true); // Include locked elements for selection
 
   if (element) {
+    // Check if element is locked - prevent mutation but allow selection
+    const isLocked = elementFactory.isElementLocked(element);
+    
     // Check if this is a selected line element and if we clicked on a handle
-    if (elementFactory.getSelectedElementId() === element.id && element.type === 'Line') {
+    if (!isLocked && elementFactory.getSelectedElementId() === element.id && element.type === 'Line') {
       const handle = getLineHandleAt(element, x, y);
       if (handle) {
         // Start dragging line handle
@@ -1161,7 +1178,7 @@ function handleSelectMouseDown(x, y, event) {
     }
     
     // Check if this is a selected resizable element and if we clicked on a resize handle
-    if (elementFactory.getSelectedElementId() === element.id && elementFactory.isElementResizable(element)) {
+    if (!isLocked && elementFactory.getSelectedElementId() === element.id && elementFactory.isElementResizable(element)) {
       // Convert world coordinates to screen coordinates for resize handle detection
       const screenPos = canvasManager.worldToScreen(x, y);
       const selectionRect = getElementSelectionRect(element);
@@ -1207,14 +1224,18 @@ function handleSelectMouseDown(x, y, event) {
       console.log('Single selected element:', element.id);
       elementFactory.highlightElement(element.id);
       
-      // Start dragging (entire element)
-      isDragging = true;
-      draggedElementId = element.id;
-      dragStartX = x;
-      dragStartY = y;
-      elementStartX = element.x;
-      elementStartY = element.y;
-      // console.log('Started dragging element:', element.id);
+      // Start dragging (entire element) only if not locked
+      if (!isLocked) {
+        isDragging = true;
+        draggedElementId = element.id;
+        dragStartX = x;
+        dragStartY = y;
+        elementStartX = element.x;
+        elementStartY = element.y;
+        // console.log('Started dragging element:', element.id);
+      } else {
+        console.log('Element is locked, selection only:', element.id);
+      }
     }
   } else {
     if (!event.shiftKey) {

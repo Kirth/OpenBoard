@@ -35,6 +35,93 @@ let redoStack = [];
 let maxUndoSteps = 50;
 let isUndoRedoOperation = false;
 
+// Helper function to sync element changes to server after undo/redo
+async function syncElementChangesToServer(oldElements, newElements) {
+    if (!dependencies.currentBoardId) {
+        console.warn("No current board ID available for undo/redo sync");
+        return;
+    }
+    
+    const boardId = dependencies.currentBoardId();
+    
+    try {
+        // Compare old and new states to find changes
+        const oldElementsMap = new Map(oldElements);
+        const newElementsMap = new Map(newElements);
+        
+        // Find elements that were added, modified, or deleted
+        const promises = [];
+        
+        // Check for new or modified elements
+        for (const [id, newElement] of newElementsMap) {
+            const oldElement = oldElementsMap.get(id);
+            
+            if (!oldElement) {
+                // Element was added - send to server
+                if (dependencies.sendElement) {
+                    promises.push(dependencies.sendElement(boardId, newElement, id));
+                }
+            } else {
+                // Check for changes and sync accordingly
+                
+                // Check lock state change
+                const oldLocked = oldElement.data?.locked || false;
+                const newLocked = newElement.data?.locked || false;
+                if (oldLocked !== newLocked && dependencies.sendElementLock) {
+                    promises.push(dependencies.sendElementLock(boardId, id, newLocked));
+                }
+                
+                // Check position change
+                if (oldElement.x !== newElement.x || oldElement.y !== newElement.y) {
+                    if (dependencies.sendElementMove) {
+                        promises.push(dependencies.sendElementMove(boardId, id, newElement.x, newElement.y));
+                    }
+                }
+                
+                // Check size change
+                if (oldElement.width !== newElement.width || oldElement.height !== newElement.height) {
+                    if (dependencies.sendElementResize) {
+                        promises.push(dependencies.sendElementResize(boardId, id, newElement.x, newElement.y, newElement.width, newElement.height));
+                    }
+                }
+                
+                // Check for content/style changes
+                const oldData = JSON.stringify(oldElement.data || {});
+                const newData = JSON.stringify(newElement.data || {});
+                if (oldData !== newData) {
+                    // Handle content updates based on element type
+                    if (newElement.type === 'StickyNote' && dependencies.updateStickyNoteContent) {
+                        promises.push(dependencies.updateStickyNoteContent(id, newElement.data));
+                    } else if (newElement.type === 'Text' && dependencies.updateTextElementContent) {
+                        promises.push(dependencies.updateTextElementContent(id, newElement.data));
+                    } else if (dependencies.updateElementStyle) {
+                        promises.push(dependencies.updateElementStyle(id, newElement.data));
+                    }
+                }
+            }
+        }
+        
+        // Check for deleted elements
+        for (const [id] of oldElementsMap) {
+            if (!newElementsMap.has(id)) {
+                // Element was deleted - send to server
+                if (dependencies.sendElementDelete) {
+                    promises.push(dependencies.sendElementDelete(boardId, id));
+                }
+            }
+        }
+        
+        // Wait for all sync operations to complete
+        if (promises.length > 0) {
+            await Promise.all(promises);
+            console.log(`Synced ${promises.length} element changes to server after undo/redo`);
+        }
+        
+    } catch (error) {
+        console.error('Failed to sync undo/redo changes to server:', error);
+    }
+}
+
 // Constants
 const LINE_TOLERANCE_PX = 8; // constant in *screen* pixels
 
@@ -59,6 +146,8 @@ let dependencies = {
     sendElementDeselect: null,
     sendElementDelete: null,
     sendElementResize: null,
+    sendElementLock: null,
+    updateElementStyle: null,
     updateStickyNoteContent: null,
     updateTextElementContent: null,
     blazorReference: null,
@@ -1382,12 +1471,13 @@ export function saveCanvasState(action) {
     }
 }
 
-export function undo() {
+export async function undo() {
     if (undoStack.length === 0) return;
     
     try {
         isUndoRedoOperation = true;
         
+        // Capture current state for comparison
         const currentState = {
             elements: Array.from(elements.entries()),
             selectedElementId: selectedElementId,
@@ -1399,12 +1489,16 @@ export function undo() {
         
         const previousState = undoStack.pop();
         
+        // Clear and restore previous state
         elements.clear();
         for (const [id, element] of previousState.elements) {
             elements.set(id, element);
         }
         
         selectedElementId = previousState.selectedElementId;
+        
+        // Sync changes to server
+        await syncElementChangesToServer(currentState.elements, previousState.elements);
         
         if (dependencies.redrawCanvas) {
             dependencies.redrawCanvas();
@@ -1421,12 +1515,13 @@ export function undo() {
     }
 }
 
-export function redo() {
+export async function redo() {
     if (redoStack.length === 0) return;
     
     try {
         isUndoRedoOperation = true;
         
+        // Capture current state for comparison
         const currentState = {
             elements: Array.from(elements.entries()),
             selectedElementId: selectedElementId,
@@ -1438,12 +1533,16 @@ export function redo() {
         
         const nextState = redoStack.pop();
         
+        // Clear and restore next state
         elements.clear();
         for (const [id, element] of nextState.elements) {
             elements.set(id, element);
         }
         
         selectedElementId = nextState.selectedElementId;
+        
+        // Sync changes to server
+        await syncElementChangesToServer(currentState.elements, nextState.elements);
         
         if (dependencies.redrawCanvas) {
             dependencies.redrawCanvas();
