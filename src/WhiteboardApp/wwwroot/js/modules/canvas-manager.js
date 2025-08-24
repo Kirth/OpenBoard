@@ -894,8 +894,20 @@ function parseMarkdownSegments(text) {
   // Sort matches by position
   matches.sort((a, b) => a.start - b.start);
 
-  // Process text with matches
+  // Remove overlapping matches - keep longer patterns first
+  const filteredMatches = [];
   for (const match of matches) {
+    // Check if this match overlaps with any already accepted match
+    const hasOverlap = filteredMatches.some(existing => 
+      (match.start < existing.end && match.end > existing.start)
+    );
+    if (!hasOverlap) {
+      filteredMatches.push(match);
+    }
+  }
+
+  // Process text with non-overlapping matches
+  for (const match of filteredMatches) {
     // Add text before match
     if (currentPos < match.start) {
       segments.push({
