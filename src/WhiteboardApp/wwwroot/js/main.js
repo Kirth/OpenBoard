@@ -442,8 +442,15 @@ function handleMouseMove(event) {
     if (isDragging && draggedElementId && currentTool === 'select') {
       const deltaX = worldPos.x - dragStartX;
       const deltaY = worldPos.y - dragStartY;
-      const newX = elementStartX + deltaX;
-      const newY = elementStartY + deltaY;
+      let newX = elementStartX + deltaX;
+      let newY = elementStartY + deltaY;
+
+      // Apply snap-to-grid if enabled
+      if (canvasManager.isSnapToGridEnabled()) {
+        const snapped = canvasManager.snapToGridPoint(newX, newY);
+        newX = snapped.x;
+        newY = snapped.y;
+      }
 
       elementFactory.updateElementPositionLocal(draggedElementId, newX, newY);
       canvasManager.redrawCanvas();
@@ -1469,6 +1476,14 @@ function createGeneralContextMenu() {
   const themeIcon = getCurrentTheme() === 'dark' ? '☀️' : getCurrentTheme() === 'light' ? '🌙' : '🔄';
   const themeName = getCurrentTheme() === 'dark' ? 'Light Mode' : getCurrentTheme() === 'light' ? 'Auto Mode' : 'Dark Mode';
   
+  // Get grid states for display
+  const gridEnabled = canvasManager.isGridEnabled();
+  const snapEnabled = canvasManager.isSnapToGridEnabled();
+  const gridSize = canvasManager.getGridSize();
+  
+  const gridIcon = gridEnabled ? '✓ 🔲' : '🔲';
+  const snapIcon = snapEnabled ? '✓ 🧲' : '🧲';
+  
   return `
         <div class="context-menu-section">
             <button class="context-menu-item" onclick="pasteElementHere()">
@@ -1476,6 +1491,23 @@ function createGeneralContextMenu() {
             </button>
             <button class="context-menu-item" onclick="toggleDarkMode()">
                 ${themeIcon} ${themeName}
+            </button>
+        </div>
+        <div class="context-menu-section">
+            <button class="context-menu-item" onclick="toggleGrid(); hideContextMenu()">
+                ${gridIcon} Show Grid
+            </button>
+            <button class="context-menu-item" onclick="toggleSnapToGrid(); hideContextMenu()">
+                ${snapIcon} Snap to Grid
+            </button>
+            <button class="context-menu-item context-submenu" onclick="event.stopPropagation()">
+                📏 Grid Size (${gridSize}px) ▶
+                <div class="submenu">
+                    <button class="context-menu-item" onclick="setGridSize(10); hideContextMenu()">10px</button>
+                    <button class="context-menu-item" onclick="setGridSize(20); hideContextMenu()">20px</button>
+                    <button class="context-menu-item" onclick="setGridSize(30); hideContextMenu()">30px</button>
+                    <button class="context-menu-item" onclick="setGridSize(50); hideContextMenu()">50px</button>
+                </div>
             </button>
         </div>
         <div class="context-menu-section">
@@ -1587,6 +1619,28 @@ function getContextMenuStyles() {
         .color-preset[style*="#ffffff"]:hover {
             border-color: #3b82f6;
         }
+        .context-submenu {
+            position: relative;
+        }
+        .submenu {
+            position: absolute;
+            left: 100%;
+            top: 0;
+            background: white;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            display: none;
+            min-width: 100px;
+            z-index: 10001;
+        }
+        .context-submenu:hover .submenu {
+            display: block;
+        }
+        .submenu .context-menu-item {
+            padding: 6px 10px;
+            font-size: 13px;
+        }
         </style>
     `;
 }
@@ -1649,6 +1703,7 @@ function toggleGrid() {
   try {
     const currentState = canvasManager.isGridEnabled();
     canvasManager.setGridEnabled(!currentState);
+    canvasManager.redrawCanvas(); // Force immediate redraw
     showNotification(currentState ? 'Grid hidden' : 'Grid shown', 'info');
   } catch (error) {
     console.error('Error toggling grid:', error);

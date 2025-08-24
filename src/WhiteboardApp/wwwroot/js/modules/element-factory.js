@@ -1292,6 +1292,18 @@ export function updateElementResize(currentX, currentY) {
     // Calculate new bounds based on handle type
     const newBounds = calculateNewBounds(resizeStartBounds, activeResizeHandle, deltaX, deltaY);
     
+    // Apply snap-to-grid if enabled
+    if (window.canvasManager && window.canvasManager.isSnapToGridEnabled()) {
+        // Snap position to grid
+        const snappedPos = window.canvasManager.snapToGridPoint(newBounds.x, newBounds.y);
+        newBounds.x = snappedPos.x;
+        newBounds.y = snappedPos.y;
+        
+        // Snap dimensions to grid increments
+        newBounds.width = window.canvasManager.snapToGridCoordinate(newBounds.width);
+        newBounds.height = window.canvasManager.snapToGridCoordinate(newBounds.height);
+    }
+    
     // Apply minimum size constraints
     const minWidth = 20;
     const minHeight = 20;
