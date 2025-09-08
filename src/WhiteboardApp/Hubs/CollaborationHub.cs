@@ -395,11 +395,11 @@ public class CollaborationHub : Hub
             var element = await _elementService.GetElementAsync(elementGuid);
             if (element != null && element.Type == ElementType.Line)
             {
-                // Update relative coordinates (bounding box)
-                element.X = Math.Min(startX, endX);
-                element.Y = Math.Min(startY, endY);
-                element.Width = Math.Abs(endX - startX);
-                element.Height = Math.Abs(endY - startY);
+                // Update coordinates using canonical representation: X/Y = start, Width/Height = delta
+                element.X = startX;
+                element.Y = startY;
+                element.Width = endX - startX;
+                element.Height = endY - startY;
 
                 // Update absolute coordinates in data
                 var existingData = element.Data?.RootElement.GetRawText() ?? "{}";
@@ -713,10 +713,11 @@ public class CollaborationHub : Hub
             dataObj.TryGetValue("endX", out var endXObj) && double.TryParse(endXObj.ToString(), out var endX) &&
             dataObj.TryGetValue("endY", out var endYObj) && double.TryParse(endYObj.ToString(), out var endY))
         {
-            element.X = Math.Min(startX, endX);
-            element.Y = Math.Min(startY, endY);
-            element.Width = Math.Abs(endX - startX);
-            element.Height = Math.Abs(endY - startY);
+            // Use canonical representation: X/Y = start, Width/Height = delta (preserve line direction)
+            element.X = startX;
+            element.Y = startY;
+            element.Width = endX - startX;
+            element.Height = endY - startY;
         }
     }
 }
