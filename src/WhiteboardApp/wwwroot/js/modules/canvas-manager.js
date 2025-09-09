@@ -406,7 +406,8 @@ export function renderElementToMinimap(element, minimapCtx) {
   try {
     minimapCtx.save();
 
-    const stroke = element.data?.strokeColor ?? element.data?.color ?? '#000000';
+    const stroke = element.data?.strokeColor ?? window.invertBlackToWhite(element.data?.color) ?? window.invertBlackToWhite('#000000');
+
     const fill = element.data?.fillColor ?? 'transparent';
     minimapCtx.strokeStyle = stroke;
     minimapCtx.fillStyle = fill;
@@ -444,7 +445,54 @@ export function renderElementToMinimap(element, minimapCtx) {
 
       case 'Path':
       case 'Drawing':
-        minimapCtx.strokeRect(element.x, element.y, element.width, element.height);
+
+        // OLD: minimapCtx.strokeRect(element.x, element.y, element.width, element.height);
+
+        const path = element.data?.path;
+        if (!Array.isArray(path) || path.length < 2) break;
+
+        // Compute source bbox of the path
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const p of path) {
+          if (p == null) continue;
+          if (p.x < minX) minX = p.x;
+          if (p.y < minY) minY = p.y;
+          if (p.x > maxX) maxX = p.x;
+          if (p.y > maxY) maxY = p.y;
+        }
+        const srcW = Math.max(1, maxX - minX);
+        const srcH = Math.max(1, maxY - minY);
+
+        // Heuristic: if the path is already 0..width/0..height, skip rescale
+        const approx = (a, b) => Math.abs(a - b) <= 0.5; // tolerant, sub-px accuracy not needed on minimap
+        const alreadyElementSpace =
+          approx(minX, 0) &&
+          approx(minY, 0) &&
+          approx(srcW, element.width) &&
+          approx(srcH, element.height);
+
+        const sx = alreadyElementSpace ? 1 : element.width / srcW;
+        const sy = alreadyElementSpace ? 1 : element.height / srcH;
+        const ox = element.x - (alreadyElementSpace ? 0 : minX * sx);
+        const oy = element.y - (alreadyElementSpace ? 0 : minY * sy);
+
+        minimapCtx.beginPath();
+        for (let i = 0; i < path.length; i++) {
+          const p = path[i];
+          const wx = ox + p.x * sx;
+          const wy = oy + p.y * sy;
+          if (i === 0) minimapCtx.moveTo(wx, wy);
+          else minimapCtx.lineTo(wx, wy);
+        }
+
+        if (element.data?.closed === true) minimapCtx.closePath();
+
+        // Fill if requested and path is closed
+        if (fill !== 'transparent' && element.data?.closed === true) {
+          minimapCtx.fill();
+        }
+        minimapCtx.stroke();
+
         break;
 
       case 'StickyNote':
