@@ -443,7 +443,12 @@ export function updateShapeScreen(shapeType, startScreenX, startScreenY, current
         dependencies.tempCtx.clearRect(0, 0, dependencies.tempCanvas.width, dependencies.tempCanvas.height);
         
         // Set drawing style - no transforms needed since we're drawing in screen space
-        dependencies.tempCtx.strokeStyle = '#000000';
+        let strokeColor = '#000000';
+        // Apply dark mode color inversion for preview
+        if (typeof window !== 'undefined' && window.invertBlackToWhite) {
+            strokeColor = window.invertBlackToWhite(strokeColor);
+        }
+        dependencies.tempCtx.strokeStyle = strokeColor;
         dependencies.tempCtx.lineWidth = 2;
         dependencies.tempCtx.fillStyle = 'transparent';
 
@@ -774,7 +779,12 @@ export function updateLineScreen(startScreenX, startScreenY, currentScreenX, cur
         }
 
         // Set drawing style - no transforms needed since we're drawing in screen space
-        dependencies.tempCtx.strokeStyle = '#000000';
+        let strokeColor = '#000000';
+        // Apply dark mode color inversion for preview
+        if (typeof window !== 'undefined' && window.invertBlackToWhite) {
+            strokeColor = window.invertBlackToWhite(strokeColor);
+        }
+        dependencies.tempCtx.strokeStyle = strokeColor;
         dependencies.tempCtx.lineWidth = 2;
 
         // Draw line preview in screen coordinates
@@ -901,7 +911,12 @@ export function drawLine(x, y) {
         dependencies.applyViewportTransform();
 
         // Draw line segment
-        dependencies.ctx.strokeStyle = '#000000';
+        let strokeColor = '#000000';
+        // Apply dark mode color inversion for pen drawing
+        if (typeof window !== 'undefined' && window.invertBlackToWhite) {
+            strokeColor = window.invertBlackToWhite(strokeColor);
+        }
+        dependencies.ctx.strokeStyle = strokeColor;
         dependencies.ctx.lineWidth = 2;
         dependencies.ctx.lineCap = 'round';
         dependencies.ctx.lineJoin = 'round';
