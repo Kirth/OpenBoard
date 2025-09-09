@@ -719,6 +719,94 @@ function renderPath(el) {
 }
 
 // Render a line of text with basic markdown support (keeping asterisks visible)
+// Special version for headers that forces bold formatting on all segments
+function renderMarkdownLineWithForcedBold(text, x, y, fontSize) {
+  ctx.save();
+
+  let currentX = x;
+  const segments = parseMarkdownSegments(text);
+
+  for (const segment of segments) {
+    // Set font style based on segment type (combining styles) - ALWAYS include bold for headers
+    let fontStyle = 'bold '; // Force bold for headers
+    if (segment.italic) fontStyle += 'italic ';
+    ctx.font = `${fontStyle}${fontSize}px Arial`;
+
+    // Handle links with special color and underline
+    if (segment.link) {
+      ctx.save();
+      ctx.fillStyle = '#0066cc'; // Link color
+      ctx.fillText(segment.text, currentX, y);
+
+      // Store link information for click detection
+      storeClickableLink(segment.url, currentX, y, segment.text, fontSize);
+
+      // Underline the link
+      const textWidth = ctx.measureText(segment.text).width;
+      ctx.strokeStyle = '#0066cc';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(currentX, y + fontSize + 2);
+      ctx.lineTo(currentX + textWidth, y + fontSize + 2);
+      ctx.stroke();
+      ctx.restore();
+    } else if (segment.code) {
+      // Handle code with special styling
+      ctx.save();
+      ctx.font = `bold ${fontSize}px 'Courier New', monospace`; // Keep bold for header code
+      // Apply dark mode color inversion for code text
+      let codeColor = '#d73a49'; // Code color (reddish)
+      if (typeof window !== 'undefined' && window.invertBlackToWhite) {
+        codeColor = window.invertBlackToWhite(codeColor);
+      }
+      ctx.fillStyle = codeColor;
+      
+      // Draw background for inline code
+      const textWidth = ctx.measureText(segment.text).width;
+      ctx.fillStyle = 'rgba(128, 128, 128, 0.1)'; // Light gray background
+      ctx.fillRect(currentX - 2, y - fontSize + 2, textWidth + 4, fontSize + 4);
+      
+      ctx.fillStyle = codeColor; // Reset text color
+      ctx.fillText(segment.text, currentX, y);
+      ctx.restore();
+    } else {
+      // Render normal text (but keep bold for headers)
+      ctx.fillText(segment.text, currentX, y);
+
+      // Add decorations
+      const textWidth = ctx.measureText(segment.text).width;
+
+      // Underline
+      if (segment.underline) {
+        ctx.save();
+        ctx.strokeStyle = ctx.fillStyle;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(currentX, y + fontSize + 2);
+        ctx.lineTo(currentX + textWidth, y + fontSize + 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // Strikethrough
+      if (segment.strikethrough) {
+        ctx.save();
+        ctx.strokeStyle = ctx.fillStyle;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(currentX, y - fontSize / 3);
+        ctx.lineTo(currentX + textWidth, y - fontSize / 3);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    currentX += ctx.measureText(segment.text).width;
+  }
+
+  ctx.restore();
+}
+
 function renderMarkdownLine(text, x, y, fontSize) {
   ctx.save();
 
@@ -749,6 +837,25 @@ function renderMarkdownLine(text, x, y, fontSize) {
       ctx.moveTo(currentX, y + fontSize + 2);
       ctx.lineTo(currentX + textWidth, y + fontSize + 2);
       ctx.stroke();
+      ctx.restore();
+    } else if (segment.code) {
+      // Handle code with special styling
+      ctx.save();
+      ctx.font = `${fontSize}px 'Courier New', monospace`; // Monospace font for code
+      // Apply dark mode color inversion for code text
+      let codeColor = '#d73a49'; // Code color (reddish)
+      if (typeof window !== 'undefined' && window.invertBlackToWhite) {
+        codeColor = window.invertBlackToWhite(codeColor);
+      }
+      ctx.fillStyle = codeColor;
+      
+      // Draw background for inline code
+      const textWidth = ctx.measureText(segment.text).width;
+      ctx.fillStyle = 'rgba(128, 128, 128, 0.1)'; // Light gray background
+      ctx.fillRect(currentX - 2, y - fontSize + 2, textWidth + 4, fontSize + 4);
+      
+      ctx.fillStyle = codeColor; // Reset text color
+      ctx.fillText(segment.text, currentX, y);
       ctx.restore();
     } else {
       // Render normal text
@@ -794,10 +901,38 @@ function isBulletLine(line) {
   return trimmed.startsWith('- ') || trimmed.startsWith('* ');
 }
 
+// Check if line is a numbered list item
+function isNumberedLine(line) {
+  return /^\s*\d+\.\s/.test(line);
+}
+
+// Check if line is a blockquote
+function isBlockquoteLine(line) {
+  return /^\s*>\s/.test(line);
+}
+
+// Parse numbered list item
+function parseNumberedItem(line) {
+  const match = line.match(/^\s*(\d+)\.\s*(.*)$/);
+  if (match) {
+    return {
+      number: match[1],
+      text: match[2]
+    };
+  }
+  return null;
+}
+
 // Word wrap a line of text to fit within maxWidth, preserving markdown
 function wrapTextWithMarkdown(text, maxWidth, fontSize) {
   ctx.save();
   ctx.font = `${fontSize}px Arial`; // Base font for measurement
+
+  // Handle empty lines - they should still take up space
+  if (text.trim() === '') {
+    ctx.restore();
+    return ['']; // Return array with one empty string to maintain line spacing
+  }
 
   const words = text.split(' ');
   const lines = [];
@@ -825,9 +960,48 @@ function wrapTextWithMarkdown(text, maxWidth, fontSize) {
   return lines;
 }
 
-// Render a line with bullet point support and word wrapping
+// Check if line is a header (starts with #)
+function isHeaderLine(line) {
+  return /^\s*#{1,6}\s/.test(line);
+}
+
+// Get header level and text
+function parseHeader(line) {
+  const match = line.match(/^\s*(#{1,6})\s*(.*)$/);
+  if (match) {
+    return {
+      level: match[1].length,
+      text: match[2]
+    };
+  }
+  return null;
+}
+
+// Render a line with bullet point, header, and word wrapping support
 function renderLineWithBullet(line, x, y, fontSize, maxWidth) {
-  if (isBulletLine(line)) {
+  if (isHeaderLine(line)) {
+    // Handle header rendering
+    const header = parseHeader(line);
+    if (header) {
+      ctx.save();
+      
+      // Set appropriate header sizes: H1=16px, H2=15px, H3=14px, H4=13px, H5=12px, H6=11px
+      const headerSizes = {
+        1: 16,   // H1
+        2: 15,   // H2  
+        3: 14,   // H3
+        4: 13,   // H4
+        5: 12,   // H5
+        6: 11    // H6
+      };
+      const headerFontSize = headerSizes[header.level] || 14; // Default to 14px if level not found
+      // Render header text with forced bold formatting
+      renderMarkdownLineWithForcedBold(header.text, x, y, headerFontSize);
+      
+      ctx.restore();
+      return 1; // Headers always use exactly 1 line
+    }
+  } else if (isBulletLine(line)) {
     // Extract bullet text (remove bullet marker)
     const bulletText = line.replace(/^\s*[-*]\s/, '');
 
@@ -849,6 +1023,62 @@ function renderLineWithBullet(line, x, y, fontSize, maxWidth) {
     }
 
     return wrappedLines.length; // Return number of lines used
+  } else if (isNumberedLine(line)) {
+    // Handle numbered list
+    const numberedItem = parseNumberedItem(line);
+    if (numberedItem) {
+      // Draw number
+      ctx.save();
+      const numberText = numberedItem.number + '. ';
+      ctx.fillText(numberText, x, y);
+      const numberWidth = ctx.measureText(numberText).width;
+      ctx.restore();
+
+      // Word wrap the numbered text
+      const availableWidth = maxWidth - numberWidth;
+      const wrappedLines = wrapTextWithMarkdown(numberedItem.text, availableWidth, fontSize);
+
+      // Render each wrapped line with markdown
+      const lineHeight = fontSize * 1.2;
+      for (let i = 0; i < wrappedLines.length; i++) {
+        renderMarkdownLine(wrappedLines[i], x + numberWidth, y + i * lineHeight, fontSize);
+      }
+
+      return wrappedLines.length;
+    }
+  } else if (isBlockquoteLine(line)) {
+    // Handle blockquote
+    const quoteText = line.replace(/^\s*>\s/, '');
+    
+    ctx.save();
+    // Draw quote indicator with dark mode support
+    let borderColor = '#ccc';
+    let quoteTextColor = '#666';
+    if (typeof window !== 'undefined' && window.invertBlackToWhite) {
+      borderColor = window.invertBlackToWhite(borderColor);
+      quoteTextColor = window.invertBlackToWhite(quoteTextColor);
+    }
+    
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(x, y - fontSize);
+    ctx.lineTo(x, y + fontSize * 0.5);
+    ctx.stroke();
+    
+    // Render quote text with slight indent and italic style
+    ctx.font = `italic ${fontSize}px Arial`;
+    ctx.fillStyle = quoteTextColor;
+    const quoteIndent = 10;
+    
+    const wrappedLines = wrapTextWithMarkdown(quoteText, maxWidth - quoteIndent, fontSize);
+    const lineHeight = fontSize * 1.2;
+    for (let i = 0; i < wrappedLines.length; i++) {
+      renderMarkdownLine(wrappedLines[i], x + quoteIndent, y + i * lineHeight, fontSize);
+    }
+    
+    ctx.restore();
+    return wrappedLines.length;
   } else {
     // Regular line rendering with word wrap
     const wrappedLines = wrapTextWithMarkdown(line, maxWidth, fontSize);
@@ -873,7 +1103,8 @@ function parseMarkdownSegments(text) {
     { regex: /(\_\_[^_]+\_\_)/g, type: 'underline' },    // __underline__
     { regex: /(~~[^~]+~~)/g, type: 'strikethrough' },    // ~~strikethrough~~
     { regex: /(\*[^*]+\*)/g, type: 'italic' },           // *italic* (after **bold**)
-    { regex: /(\[[^\]]+\]\([^)]+\))/g, type: 'link' }    // [text](url)
+    { regex: /(\[[^\]]+\]\([^)]+\))/g, type: 'link' },   // [text](url)
+    { regex: /(`[^`]+`)/g, type: 'code' }                // `inline code`
   ];
 
   const matches = [];
@@ -916,7 +1147,8 @@ function parseMarkdownSegments(text) {
         italic: false,
         underline: false,
         strikethrough: false,
-        link: false
+        link: false,
+        code: false
       });
     }
 
@@ -928,7 +1160,8 @@ function parseMarkdownSegments(text) {
         italic: false,
         underline: false,
         strikethrough: false,
-        link: false
+        link: false,
+        code: false
       });
     } else if (match.type === 'italic') {
       segments.push({
@@ -937,7 +1170,8 @@ function parseMarkdownSegments(text) {
         italic: true,
         underline: false,
         strikethrough: false,
-        link: false
+        link: false,
+        code: false
       });
     } else if (match.type === 'underline') {
       segments.push({
@@ -946,7 +1180,8 @@ function parseMarkdownSegments(text) {
         italic: false,
         underline: true,
         strikethrough: false,
-        link: false
+        link: false,
+        code: false
       });
     } else if (match.type === 'strikethrough') {
       segments.push({
@@ -955,7 +1190,8 @@ function parseMarkdownSegments(text) {
         italic: false,
         underline: false,
         strikethrough: true,
-        link: false
+        link: false,
+        code: false
       });
     } else if (match.type === 'link') {
       const linkMatch = match.text.match(/\[([^\]]+)\]\(([^)]+)\)/);
@@ -967,10 +1203,21 @@ function parseMarkdownSegments(text) {
           underline: false,
           strikethrough: false,
           link: true,
+          code: false,
           url: linkMatch[2],
           linkText: linkMatch[1]
         });
       }
+    } else if (match.type === 'code') {
+      segments.push({
+        text: match.text, // Keep backticks visible
+        bold: false,
+        italic: false,
+        underline: false,
+        strikethrough: false,
+        link: false,
+        code: true
+      });
     }
 
     currentPos = match.end;
@@ -984,7 +1231,8 @@ function parseMarkdownSegments(text) {
       italic: false,
       underline: false,
       strikethrough: false,
-      link: false
+      link: false,
+      code: false
     });
   }
 

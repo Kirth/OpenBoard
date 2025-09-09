@@ -548,8 +548,8 @@ function drawMinimapViewport() {
     minimapCtx.fillStyle = 'rgba(0, 123, 255, 0.1)';
     minimapCtx.fillRect(x, y, w, h);
 
-    // Draw zoom level text
-    minimapCtx.fillStyle = '#333333';
+    // Draw zoom level text - use light color for dark mode visibility
+    minimapCtx.fillStyle = window.invertBlackToWhite ? window.invertBlackToWhite('#333333') : '#333333';
     minimapCtx.font = '12px Arial';
     minimapCtx.textAlign = 'left';
     minimapCtx.textBaseline = 'top';
