@@ -504,11 +504,11 @@ function setupEventHandlers() {
             if (dependencies.elements) {
                 const element = dependencies.elements.get(elementId);
                 if (element && element.type === 'Line') {
-                    // Update relative coordinates (bounding box)
-                    element.x = Math.min(startX, endX);
-                    element.y = Math.min(startY, endY);
-                    element.width = Math.abs(endX - startX);
-                    element.height = Math.abs(endY - startY);
+                    // Update coordinates using canonical representation: x/y = start, width/height = delta
+                    element.x = startX;
+                    element.y = startY;
+                    element.width = endX - startX;
+                    element.height = endY - startY;
                     
                     // Update absolute coordinates in data
                     if (!element.data) {
