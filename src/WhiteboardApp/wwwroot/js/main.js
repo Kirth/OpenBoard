@@ -888,7 +888,7 @@ function handleTouchMove(event) {
           } else if (draggedLineHandle === 'end') {
             element.width = worldPos.x - element.x;
             element.height = worldPos.y - element.y;
-            
+
             if (element.data) {
               element.data.startX = element.x;
               element.data.startY = element.y;
@@ -896,18 +896,18 @@ function handleTouchMove(event) {
               element.data.endY = worldPos.y;
             }
           }
-          
+
           canvasManager.redrawCanvas();
           return;
         }
       }
-      
+
       // Handle element resizing in select mode
       if (isResizing && elementFactory.isCurrentlyResizing()) {
         elementFactory.updateElementResize(worldPos.x, worldPos.y);
         return;
       }
-      
+
       // Handle element dragging in select mode
       if (isDragging && draggedElementId && currentTool === 'select') {
         const deltaX = worldPos.x - dragStartX;
@@ -940,24 +940,24 @@ function handleTouchMove(event) {
       // Two-finger pinch/zoom
       const touch1 = event.touches[0];
       const touch2 = event.touches[1];
-      
+
       // Calculate current distance between touches
       const deltaX = touch2.clientX - touch1.clientX;
       const deltaY = touch2.clientY - touch1.clientY;
       const currentDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-      
+
       if (initialTouchDistance > 0) {
         // Calculate zoom factor
         const zoomFactor = currentDistance / initialTouchDistance;
-        
+
         // Apply zoom with focal point using the existing zoomAtPoint method
         viewportManager.zoomAtPoint(pinchCenter.x, pinchCenter.y, zoomFactor);
-        
+
         // Update initial distance for next frame
         initialTouchDistance = currentDistance;
       }
     }
-    
+
   } catch (error) {
     console.error('Error in handleTouchMove:', error);
   }
@@ -966,26 +966,26 @@ function handleTouchMove(event) {
 function handleTouchEnd(event) {
   try {
     event.preventDefault();
-    
+
     const touchCount = getTouchCount(event);
     const touchDuration = Date.now() - touchStartTime;
-    
+
     // Clear long-touch timer if still active
     if (longTouchTimer) {
       clearTimeout(longTouchTimer);
       longTouchTimer = null;
     }
-    
+
     // If long-touch was active, don't process normal touch end
     if (isLongTouchActive) {
       isLongTouchActive = false;
       return;
     }
-    
+
     // Handle touch end for remaining touches
     if (touchCount === 0) {
       // All touches ended
-      
+
       // Check for double tap (similar to double click)
       if (lastTouchCount === 1 && touchDuration < 300) {
         // This could be the first tap of a double tap, but we'll handle it simply for now
@@ -998,19 +998,19 @@ function handleTouchEnd(event) {
       } else {
         handleSingleTouchEnd(event);
       }
-      
+
       // Reset pinch state
       initialTouchDistance = 0;
       initialZoomLevel = 1;
-      
+
     } else if (touchCount === 1 && lastTouchCount === 2) {
       // One finger lifted from pinch, reset pinch state
       initialTouchDistance = 0;
       initialZoomLevel = 1;
     }
-    
+
     lastTouchCount = touchCount;
-    
+
   } catch (error) {
     console.error('Error in handleTouchEnd:', error);
   }
@@ -1035,12 +1035,12 @@ function handleSingleTouchEnd(event) {
   if (isDraggingLineHandle && draggedElementId) {
     if (signalrClient.isConnected() && signalrClient.getCurrentBoardId()) {
       const element = elementFactory.getElementById(draggedElementId);
-      if (element && element.data && 
-          element.data.startX !== undefined && element.data.startY !== undefined &&
-          element.data.endX !== undefined && element.data.endY !== undefined) {
+      if (element && element.data &&
+        element.data.startX !== undefined && element.data.startY !== undefined &&
+        element.data.endX !== undefined && element.data.endY !== undefined) {
         signalrClient.sendLineEndpointUpdate(
-          signalrClient.getCurrentBoardId(), 
-          draggedElementId, 
+          signalrClient.getCurrentBoardId(),
+          draggedElementId,
           element.data.startX,
           element.data.startY,
           element.data.endX,
@@ -1085,7 +1085,7 @@ function handleSingleTouchEnd(event) {
       if (signalrClient.isConnected() && signalrClient.getCurrentBoardId()) {
         signalrClient.sendElement(signalrClient.getCurrentBoardId(), element, element.id);
       }
-      
+
       if (element) {
         elementFactory.highlightElement(element.id);
         toolManager.setCurrentTool('select');
@@ -1100,11 +1100,11 @@ function handleSingleTouchEnd(event) {
       // NOTE: For touch events, we need to convert screen coordinates to world coordinates
       // But we need to use fresh screen-to-world conversion to match the working preview system
       const currentWorldPos = canvasManager.screenToWorld(screenX, screenY);
-      
+
       // Apply snap-to-grid for line endpoints
       let lineStartX = startX, lineStartY = startY;
       let lineEndX = currentWorldPos.x, lineEndY = currentWorldPos.y;
-      
+
       if (canvasManager.isSnapToGridEnabled()) {
         const snappedStart = canvasManager.snapToGridPoint(lineStartX, lineStartY);
         const snappedEnd = canvasManager.snapToGridPoint(lineEndX, lineEndY);
@@ -1119,11 +1119,11 @@ function handleSingleTouchEnd(event) {
       // NOTE: For touch events, we need to convert screen coordinates to world coordinates  
       // But we need to use fresh screen-to-world conversion to match the working preview system
       const currentWorldPos = canvasManager.screenToWorld(screenX, screenY);
-      
+
       // Apply snap-to-grid for shape bounds
       let shapeX = startX, shapeY = startY;
       let shapeEndX = currentWorldPos.x, shapeEndY = currentWorldPos.y;
-      
+
       if (canvasManager.isSnapToGridEnabled()) {
         const snappedStart = canvasManager.snapToGridPoint(shapeX, shapeY);
         const snappedEnd = canvasManager.snapToGridPoint(shapeEndX, shapeEndY);
@@ -1161,19 +1161,19 @@ function handleSelectTouchStart(x, y, event) {
         draggedElementId = element.id;
         dragStartX = x;
         dragStartY = y;
-        
+
         lineOriginalStart = { x: element.x, y: element.y };
         lineOriginalEnd = { x: element.x + element.width, y: element.y + element.height };
         return;
       }
     }
-    
+
     // Check if this is a selected resizable element and if we touched a resize handle
     if (elementFactory.getSelectedElementId() === element.id && elementFactory.isElementResizable(element)) {
       const screenPos = canvasManager.worldToScreen(x, y);
       const selectionRect = getElementSelectionRect(element);
       const resizeHandle = elementFactory.getResizeHandleAt(screenPos.x, screenPos.y, selectionRect);
-      
+
       if (resizeHandle) {
         const success = elementFactory.startElementResize(element.id, resizeHandle, x, y);
         if (success) {
@@ -1184,12 +1184,12 @@ function handleSelectTouchStart(x, y, event) {
         }
       }
     }
-    
+
     // Select element and start dragging
     selectedElementIds.clear();
     selectedElementIds.add(element.id);
     elementFactory.highlightElement(element.id);
-    
+
     isDragging = true;
     draggedElementId = element.id;
     dragStartX = x;
@@ -1202,7 +1202,7 @@ function handleSelectTouchStart(x, y, event) {
     elementFactory.clearSelection();
     isDragging = false;
     draggedElementId = null;
-    
+
     const coords = getEventCoordinates(event);
     const rect = event.target.getBoundingClientRect();
     const screenX = coords.clientX - rect.left;
@@ -1215,12 +1215,12 @@ function handleSelectTouchStart(x, y, event) {
 function handleLongTouch(screenX, screenY, worldX, worldY) {
   try {
     console.log('Long touch detected at:', screenX, screenY);
-    
+
     // Provide haptic feedback if supported
     if (navigator.vibrate) {
       navigator.vibrate(50); // Quick vibration to indicate long-touch
     }
-    
+
     // Check if we long-touched on an element (include locked elements)
     const element = elementFactory.getElementAtPoint(worldX, worldY, true);
 
@@ -1275,28 +1275,29 @@ function isPointInLineHandle(x, y, handleX, handleY) {
   // Get current zoom level to adjust handle size (same logic as in canvas-manager.js)
   const zoom = viewportManager.getViewportInfo().zoomLevel || 1;
   const handleSize = 8 / zoom; // Same size calculation as canvas selection handles
+  const tolerance = handleSize / 2 + 20 / zoom; // Larger padding for easier targeting
   const distance = Math.sqrt((x - handleX) ** 2 + (y - handleY) ** 2);
-  return distance <= handleSize / 2;
+  return distance <= tolerance;
 }
 
 function getLineHandleAt(element, x, y) {
   if (element.type !== 'Line') return null;
-  
+
   const x1 = element.x;
   const y1 = element.y;
   const x2 = element.x + element.width;
   const y2 = element.y + element.height;
-  
+
   // Check start handle
   if (isPointInLineHandle(x, y, x1, y1)) {
     return 'start';
   }
-  
+
   // Check end handle
   if (isPointInLineHandle(x, y, x2, y2)) {
     return 'end';
   }
-  
+
   return null;
 }
 
@@ -1307,7 +1308,7 @@ function handleSelectMouseDown(x, y, event) {
   if (element) {
     // Check if element is locked - prevent mutation but allow selection
     const isLocked = elementFactory.isElementLocked(element);
-    
+
     // Check if this is a selected line element and if we clicked on a handle
     if (!isLocked && elementFactory.getSelectedElementId() === element.id && element.type === 'Line') {
       const handle = getLineHandleAt(element, x, y);
@@ -1318,30 +1319,30 @@ function handleSelectMouseDown(x, y, event) {
         draggedElementId = element.id;
         dragStartX = x;
         dragStartY = y;
-        
+
         // Store original line coordinates
         lineOriginalStart = { x: element.x, y: element.y };
         lineOriginalEnd = { x: element.x + element.width, y: element.y + element.height };
-        
+
         // console.log(`Started dragging line ${handle} handle for element:`, element.id);
         return;
       }
     }
-    
+
     // Check if this is a selected resizable element and if we clicked on a resize handle
     if (!isLocked && elementFactory.getSelectedElementId() === element.id && elementFactory.isElementResizable(element)) {
       // Convert world coordinates to screen coordinates for resize handle detection
       const screenPos = canvasManager.worldToScreen(x, y);
       const selectionRect = getElementSelectionRect(element);
       const resizeHandle = elementFactory.getResizeHandleAt(screenPos.x, screenPos.y, selectionRect);
-      
+
       if (resizeHandle) {
         // Start resize operation
         const success = elementFactory.startElementResize(element.id, resizeHandle, x, y);
         if (success) {
           isResizing = true;
           console.log(`Started resizing element ${element.id} with handle ${resizeHandle}`);
-          
+
           // Update cursor for resize operation
           const cursor = elementFactory.getResizeCursor(resizeHandle);
           canvasManager.updateCanvasCursor(cursor);
@@ -1349,7 +1350,7 @@ function handleSelectMouseDown(x, y, event) {
         }
       }
     }
-    
+
     if (event.shiftKey) {
       // Multi-select with Shift
       if (selectedElementIds.has(element.id)) {
@@ -1361,7 +1362,7 @@ function handleSelectMouseDown(x, y, event) {
         selectedElementIds.add(element.id);
         console.log('Added element to selection:', element.id);
       }
-      
+
       // Update visual selection (highlight all selected)
       elementFactory.clearSelection();
       if (selectedElementIds.size > 0) {
@@ -1374,7 +1375,7 @@ function handleSelectMouseDown(x, y, event) {
       selectedElementIds.add(element.id);
       console.log('Single selected element:', element.id);
       elementFactory.highlightElement(element.id);
-      
+
       // Start dragging (entire element) only if not locked
       if (!isLocked) {
         isDragging = true;
@@ -1395,7 +1396,7 @@ function handleSelectMouseDown(x, y, event) {
       elementFactory.clearSelection();
       isDragging = false;
       draggedElementId = null;
-      
+
       // Start canvas panning when no element is selected
       const rect = event.target.getBoundingClientRect();
       const screenX = event.clientX - rect.left;
@@ -1413,7 +1414,7 @@ function createTextAtPosition(x, y) {
     x = snapped.x;
     y = snapped.y;
   }
-  
+
   const element = elementFactory.createTextElement(x, y);
   if (signalrClient.isConnected() && signalrClient.getCurrentBoardId()) {
     signalrClient.sendElement(signalrClient.getCurrentBoardId(), element, element.id);
@@ -1428,7 +1429,7 @@ function createStickyNoteAtPosition(x, y) {
     x = snapped.x;
     y = snapped.y;
   }
-  
+
   const element = elementFactory.createStickyNote(x, y);
   if (signalrClient.isConnected() && signalrClient.getCurrentBoardId()) {
     signalrClient.sendElement(signalrClient.getCurrentBoardId(), element, element.id);
@@ -1515,7 +1516,7 @@ function getLockButtonText(element) {
   try {
     // Try multiple sources for the isElementLocked function to handle browser timing differences
     const isElementLockedFn = window.isElementLocked || elementFactory.isElementLocked;
-    
+
     if (isElementLockedFn) {
       return isElementLockedFn(element) ? '🔓 Unlock' : '🔒 Lock';
     } else {
@@ -1619,15 +1620,15 @@ function createElementContextMenu(element) {
 function createGeneralContextMenu() {
   const themeIcon = getCurrentTheme() === 'dark' ? '☀️' : getCurrentTheme() === 'light' ? '🌙' : '🔄';
   const themeName = getCurrentTheme() === 'dark' ? 'Light Mode' : getCurrentTheme() === 'light' ? 'Auto Mode' : 'Dark Mode';
-  
+
   // Get grid states for display
   const gridEnabled = canvasManager.isGridEnabled();
   const snapEnabled = canvasManager.isSnapToGridEnabled();
   const gridSize = canvasManager.getGridSize();
-  
+
   const gridIcon = gridEnabled ? '✓ 🔲' : '🔲';
   const snapIcon = snapEnabled ? '✓ 🧲' : '🧲';
-  
+
   return `
         <div class="context-menu-section">
             <button class="context-menu-item" onclick="pasteElementHere()">
@@ -1804,7 +1805,7 @@ function bringElementToFront(elementId) {
         modules.canvasManager.redrawCanvas();
       }
     }
-    
+
     // Use SignalR to bring element to front
     if (signalrClient.isConnected() && signalrClient.getCurrentBoardId()) {
       signalrClient.sendBringToFront(signalrClient.getCurrentBoardId(), elementId);
@@ -1830,7 +1831,7 @@ function sendElementToBack(elementId) {
         modules.canvasManager.redrawCanvas();
       }
     }
-    
+
     // Use SignalR to send element to back
     if (signalrClient.isConnected() && signalrClient.getCurrentBoardId()) {
       signalrClient.sendElementToBack(signalrClient.getCurrentBoardId(), elementId);
@@ -1877,15 +1878,15 @@ function toggleElementLockAction(elementId) {
   try {
     const element = elementFactory.getElementById(elementId);
     if (!element) return;
-    
+
     // Robust function access - try multiple sources to handle browser timing differences
     const isElementLockedFn = window.isElementLocked || elementFactory.isElementLocked;
     const toggleElementLockFn = window.toggleElementLock || elementFactory.toggleElementLock;
-    
+
     if (!isElementLockedFn || !toggleElementLockFn) {
       console.warn('Lock functions not available yet');
       debugFunctionAvailability();
-      
+
       // Only retry once with a static flag to avoid infinite loops
       if (!toggleElementLockAction._hasRetried) {
         toggleElementLockAction._hasRetried = true;
@@ -1899,15 +1900,15 @@ function toggleElementLockAction(elementId) {
         return;
       }
     }
-    
+
     const wasLocked = isElementLockedFn(element);
     const success = toggleElementLockFn(elementId);
-    
+
     if (success) {
       hideContextMenu();
       const message = wasLocked ? 'Element unlocked' : 'Element locked';
       showNotification(message, 'success');
-      
+
       // Send lock state to SignalR for synchronization
       const newLockState = !wasLocked;
       if (signalrClient.isConnected() && signalrClient.getCurrentBoardId()) {
@@ -2014,7 +2015,7 @@ let notificationIdCounter = 0;
 
 function showNotification(message, type = 'info', duration = null) {
   console.log(`Notification [${type}]: ${message}`);
-  
+
   // Create notification container if it doesn't exist
   if (!notificationContainer) {
     notificationContainer = document.createElement('div');
@@ -2028,12 +2029,12 @@ function showNotification(message, type = 'info', duration = null) {
     `;
     document.body.appendChild(notificationContainer);
   }
-  
+
   // Clear previous notifications of the same type for connection status
   if (type === 'warning' || type === 'error' || type === 'success') {
     clearNotificationsByType(type);
   }
-  
+
   // Create notification element
   const notificationId = ++notificationIdCounter;
   const notification = document.createElement('div');
@@ -2055,7 +2056,7 @@ function showNotification(message, type = 'info', duration = null) {
     word-wrap: break-word;
   `;
   notification.textContent = message;
-  
+
   // Add close button for persistent notifications
   if (type === 'error' || duration === 0) {
     const closeBtn = document.createElement('span');
@@ -2070,22 +2071,22 @@ function showNotification(message, type = 'info', duration = null) {
     closeBtn.onclick = () => removeNotification(notificationId);
     notification.appendChild(closeBtn);
   }
-  
+
   notificationContainer.appendChild(notification);
   activeNotifications.set(notificationId, { element: notification, type });
-  
+
   // Animate in
   setTimeout(() => {
     notification.style.opacity = '1';
     notification.style.transform = 'translateX(0)';
   }, 10);
-  
+
   // Auto-remove after duration (if specified)
   if (duration !== 0) {
     const autoRemoveDuration = duration || (type === 'success' ? 3000 : type === 'warning' ? 5000 : 8000);
     setTimeout(() => removeNotification(notificationId), autoRemoveDuration);
   }
-  
+
   return notificationId;
 }
 
@@ -2123,7 +2124,7 @@ function getNotificationColor(type) {
     case 'success': return '#4caf50';
     case 'warning': return '#ff9800';
     case 'error': return '#f44336';
-    case 'info': 
+    case 'info':
     default: return '#2196f3';
   }
 }
@@ -2131,11 +2132,11 @@ function getNotificationColor(type) {
 // Get element selection rectangle in screen coordinates
 function getElementSelectionRect(element) {
   if (!element) return null;
-  
+
   // Convert world coordinates to screen coordinates
   const topLeft = canvasManager.worldToScreen(element.x, element.y);
   const bottomRight = canvasManager.worldToScreen(element.x + element.width, element.y + element.height);
-  
+
   return {
     x: topLeft.x,
     y: topLeft.y,
@@ -2151,18 +2152,18 @@ function updateCursorForHover(worldX, worldY) {
     canvasManager.updateCanvasCursor('default');
     return;
   }
-  
+
   const element = elementFactory.getElementById(selectedElementId);
   if (!element || !elementFactory.isElementResizable(element)) {
     canvasManager.updateCanvasCursor('default');
     return;
   }
-  
+
   // Convert world coordinates to screen coordinates for handle detection
   const screenPos = canvasManager.worldToScreen(worldX, worldY);
   const selectionRect = getElementSelectionRect(element);
   const resizeHandle = elementFactory.getResizeHandleAt(screenPos.x, screenPos.y, selectionRect);
-  
+
   if (resizeHandle) {
     const cursor = elementFactory.getResizeCursor(resizeHandle);
     canvasManager.updateCanvasCursor(cursor);
@@ -2190,36 +2191,36 @@ async function handleImageUpload(event) {
   if (file && pendingImagePosition) {
     try {
       console.log('Uploading image via HTTP API:', file.name, 'Size:', file.size);
-      
+
       // Upload image via HTTP API instead of sending through SignalR
       const formData = new FormData();
       formData.append('file', file);
-      
+
       const response = await fetch('/api/Image/upload', {
         method: 'POST',
         body: formData
       });
-      
+
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${await response.text()}`);
       }
-      
+
       const result = await response.json();
-      
+
       console.log('Image upload successful:', result);
-      
+
       // Use image dimensions from server, with display scaling
       const maxWidth = 400;
       const maxHeight = 400;
       let { originalWidth: width, originalHeight: height } = result;
-      
+
       // Scale down display size if too large
       if (width > maxWidth || height > maxHeight) {
         const scale = Math.min(maxWidth / width, maxHeight / height);
         width *= scale;
         height *= scale;
       }
-      
+
       // Create element with image URL reference instead of base64 data
       const element = elementFactory.createImageElement(
         pendingImagePosition.x,
@@ -2237,19 +2238,19 @@ async function handleImageUpload(event) {
       }
 
       pendingImagePosition = null;
-      
+
       // Switch to select tool after placing image
       toolManager.setCurrentTool('select');
-      
+
     } catch (error) {
       console.error('Image upload failed:', error);
       alert('Failed to upload image: ' + error.message);
-      
+
       // Reset pending position on error
       pendingImagePosition = null;
     }
   }
-  
+
   // Reset the file input so the same file can be selected again
   event.target.value = '';
 }
@@ -2327,13 +2328,13 @@ function initializeDarkMode() {
   currentTheme = localStorage.getItem('theme') || 'auto';
   console.log('Initializing dark mode with theme:', currentTheme);
   console.log('System prefers dark mode:', window.matchMedia('(prefers-color-scheme: dark)').matches);
-  
+
   applyTheme(currentTheme);
-  
+
   // Listen for system theme changes
   const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
   mediaQuery.addEventListener('change', handleSystemThemeChange);
-  
+
   console.log('Dark mode initialized with theme:', currentTheme);
 }
 
@@ -2347,7 +2348,7 @@ function applyTheme(theme) {
   const html = document.documentElement;
   console.log('applyTheme called with:', theme);
   console.log('Current data-theme attribute:', html.getAttribute('data-theme'));
-  
+
   if (theme === 'dark') {
     html.setAttribute('data-theme', 'dark');
     console.log('Set data-theme to dark');
@@ -2365,12 +2366,12 @@ function applyTheme(theme) {
       console.log('Auto mode: Removed data-theme attribute (system prefers light)');
     }
   }
-  
+
   console.log('New data-theme attribute:', html.getAttribute('data-theme'));
-  
+
   // Update theme icon
   updateThemeIcon();
-  
+
   // Update canvas background if canvas exists
   updateCanvasBackground();
 }
@@ -2400,7 +2401,7 @@ function updateCanvasBackground() {
 
 function toggleDarkMode() {
   console.log('toggleDarkMode called, current theme:', currentTheme);
-  
+
   if (currentTheme === 'light') {
     currentTheme = 'dark';
   } else if (currentTheme === 'dark') {
@@ -2408,11 +2409,11 @@ function toggleDarkMode() {
   } else {
     currentTheme = 'light';
   }
-  
+
   localStorage.setItem('theme', currentTheme);
   console.log('About to apply theme:', currentTheme);
   applyTheme(currentTheme);
-  
+
   showNotification(`Theme set to ${currentTheme}`, 'success', 2000);
   console.log('Theme changed to:', currentTheme);
 }
@@ -2434,13 +2435,13 @@ function setTheme(theme) {
 function isDarkModeActive() {
   const html = document.documentElement;
   const hasDataThemeDark = html.getAttribute('data-theme') === 'dark';
-  
+
   if (currentTheme === 'dark') {
     return true;
   } else if (currentTheme === 'auto') {
     return window.matchMedia('(prefers-color-scheme: dark)').matches;
   }
-  
+
   // Also check the actual DOM state as a fallback
   console.log('isDarkModeActive check - theme:', currentTheme, 'hasDataThemeDark:', hasDataThemeDark);
   return hasDataThemeDark;
@@ -2448,10 +2449,10 @@ function isDarkModeActive() {
 
 function isBlackColor(color) {
   if (!color) return false;
-  
+
   // Handle hex colors
   if (color === '#000000' || color === '#000' || color.toLowerCase() === '#000000') return true;
-  
+
   // Handle rgb colors
   if (color.startsWith('rgb')) {
     const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
@@ -2462,10 +2463,10 @@ function isBlackColor(color) {
       return r === 0 && g === 0 && b === 0;
     }
   }
-  
+
   // Handle named color
   if (color.toLowerCase() === 'black') return true;
-  
+
   return false;
 }
 
@@ -2473,7 +2474,7 @@ function invertBlackToWhite(color) {
   if (!isDarkModeActive() || !isBlackColor(color)) {
     return color;
   }
-  
+
   // Convert black to white in dark mode
   return '#ffffff';
 }
@@ -2511,13 +2512,13 @@ if (typeof window !== 'undefined') {
   window.toggleGrid = toggleGrid;
   window.toggleSnapToGrid = toggleSnapToGrid;
   window.setGridSize = setGridSize;
-  
+
   // Dark mode functions
   window.initializeDarkMode = initializeDarkMode;
   window.toggleDarkMode = toggleDarkMode;
   window.getCurrentTheme = getCurrentTheme;
   window.setTheme = setTheme;
-  
+
   // Color inversion functions
   window.isDarkModeActive = isDarkModeActive;
   window.isBlackColor = isBlackColor;
