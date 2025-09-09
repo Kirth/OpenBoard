@@ -20,6 +20,8 @@ let isDragging = false;
 let draggedElementId = null;
 let dragStartX = 0, dragStartY = 0;
 let elementStartX = 0, elementStartY = 0;
+let elementHasMoved = false; // Track if element was actually moved vs just clicked
+let undoStateSaved = false; // Track if undo state has been saved for this drag operation
 
 // Line handle dragging state
 let isDraggingLineHandle = false;
@@ -56,6 +58,9 @@ export async function initializeApplication() {
 
     // Set up cross-module dependencies after initialization
     setupDependencies();
+
+    // Set up keyboard handlers AFTER dependencies are configured
+    toolManager.setupKeyboardHandlers();
 
     // Set up event handlers
     setupEventHandlers();
@@ -267,7 +272,7 @@ function handleKeyDown(event) {
     toggleDarkMode();
     return;
   }
-  
+
   // Lock/unlock element: Ctrl/Cmd + L
   if ((event.ctrlKey || event.metaKey) && event.key === 'l') {
     event.preventDefault();
@@ -277,19 +282,8 @@ function handleKeyDown(event) {
     }
     return;
   }
-  
-  // Undo/Redo: Ctrl/Cmd + Z and Ctrl/Cmd + Shift + Z
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
-    event.preventDefault();
-    if (event.shiftKey) {
-      // Ctrl+Shift+Z = Redo
-      elementFactory.redo();
-    } else {
-      // Ctrl+Z = Undo
-      elementFactory.undo();
-    }
-    return;
-  }
+
+  // Note: Undo/Redo shortcuts are handled by tool-manager.js to avoid conflicts
 }
 
 // Main mouse event handlers
@@ -305,14 +299,14 @@ function handleMouseDown(event) {
 
     const canvas = event.target;
     const rect = canvas.getBoundingClientRect();
-    
+
     // Calculate precise mouse coordinates accounting for DPR and canvas scaling
     const dpr = window.devicePixelRatio || 1;
     const scaleX = rect.width / (canvas.width / dpr);
     const scaleY = rect.height / (canvas.height / dpr);
     const screenX = (event.clientX - rect.left) / scaleX;
     const screenY = (event.clientY - rect.top) / scaleY;
-    
+
     const worldPos = canvasManager.screenToWorld(screenX, screenY);
 
     // DEBUG: Log coordinate conversion chain
@@ -328,7 +322,7 @@ function handleMouseDown(event) {
     // Check for link clicks before any other interactions
     const linkHandled = canvasManager.handleLinkClick(screenX, screenY);
     if (linkHandled) {
-        return; // Stop further processing if link was clicked
+      return; // Stop further processing if link was clicked
     }
 
     // Handle spacebar panning
@@ -388,18 +382,18 @@ function handleMouseMove(event) {
   try {
     const canvas = event.target;
     const rect = canvas.getBoundingClientRect();
-    
+
     // Calculate precise mouse coordinates accounting for DPR and canvas scaling
     const dpr = window.devicePixelRatio || 1;
     const scaleX = rect.width / (canvas.width / dpr);
     const scaleY = rect.height / (canvas.height / dpr);
     const screenX = (event.clientX - rect.left) / scaleX;
     const screenY = (event.clientY - rect.top) / scaleY;
-    
+
     const worldPos = canvasManager.screenToWorld(screenX, screenY);
 
     // DEBUG: Log mousemove coordinate conversion
-    console.log(`[MOUSEMOVE] screen:(${screenX.toFixed(1)},${screenY.toFixed(1)}) world:(${worldPos.x.toFixed(1)},${worldPos.y.toFixed(1)})`);
+    //console.log(`[MOUSEMOVE] screen:(${screenX.toFixed(1)},${screenY.toFixed(1)}) world:(${worldPos.x.toFixed(1)},${worldPos.y.toFixed(1)})`);
 
     // Handle viewport panning
     if (viewportManager.getViewportInfo().isPanning) {
@@ -421,7 +415,7 @@ function handleMouseMove(event) {
           // Update width and height to maintain end point
           element.width = lineOriginalEnd.x - worldPos.x;
           element.height = lineOriginalEnd.y - worldPos.y;
-          
+
           // Update absolute coordinates in data for backend compatibility
           if (element.data) {
             element.data.startX = worldPos.x;
@@ -433,7 +427,7 @@ function handleMouseMove(event) {
           // Moving end point - keep start point, update width and height
           element.width = worldPos.x - element.x;
           element.height = worldPos.y - element.y;
-          
+
           // Update absolute coordinates in data for backend compatibility
           if (element.data) {
             element.data.startX = element.x;
@@ -442,25 +436,50 @@ function handleMouseMove(event) {
             element.data.endY = worldPos.y;
           }
         }
-        
+
         canvasManager.redrawCanvas();
         return;
       }
     }
-    
+
     // Handle element resizing in select mode
     if (isResizing && elementFactory.isCurrentlyResizing()) {
       elementFactory.updateElementResize(worldPos.x, worldPos.y);
       // Redraw is handled inside updateElementResize
       return;
     }
-    
+
     // Handle element dragging in select mode
     if (isDragging && draggedElementId && currentTool === 'select') {
       const deltaX = worldPos.x - dragStartX;
       const deltaY = worldPos.y - dragStartY;
       let newX = elementStartX + deltaX;
       let newY = elementStartY + deltaY;
+
+      // Check if element has moved significantly (threshold of 3 world units)
+      const moveDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+      if (moveDistance > 3 && !elementHasMoved) {
+        console.log('MOVEMENT DETECTED: Distance', moveDistance, 'elementId:', draggedElementId);
+        elementHasMoved = true;
+        // Save undo state when significant movement is first detected
+        if (!undoStateSaved) {
+          console.log('SAVING UNDO STATE for movement');
+          // Temporarily restore original position to save correct state
+          const element = elementFactory.getElementById(draggedElementId);
+          if (element) {
+            console.log('Element found, current pos:', element.x, element.y, 'original pos:', elementStartX, elementStartY);
+            // Set element to original position for state saving
+            element.x = elementStartX;
+            element.y = elementStartY;
+            
+            elementFactory.saveCanvasState('Move Element');
+            undoStateSaved = true;
+            
+            console.log('UNDO STATE SAVED with element at original position:', element.x, element.y);
+            // Don't restore current position here - let updateElementPositionLocal handle it
+          }
+        }
+      }
 
       // Apply snap-to-grid if enabled
       if (canvasManager.isSnapToGridEnabled()) {
@@ -506,14 +525,14 @@ function handleMouseUp(event) {
   try {
     const canvas = event.target;
     const rect = canvas.getBoundingClientRect();
-    
+
     // Calculate precise mouse coordinates accounting for DPR and canvas scaling
     const dpr = window.devicePixelRatio || 1;
     const scaleX = rect.width / (canvas.width / dpr);
     const scaleY = rect.height / (canvas.height / dpr);
     const screenX = (event.clientX - rect.left) / scaleX;
     const screenY = (event.clientY - rect.top) / scaleY;
-    
+
     const worldPos = canvasManager.screenToWorld(screenX, screenY);
 
     // Handle viewport panning
@@ -528,15 +547,18 @@ function handleMouseUp(event) {
     if (isDraggingLineHandle && draggedElementId) {
       // console.log('Finished dragging line handle:', draggedLineHandle);
 
+      // Note: Should save undo state at start of line handle dragging, not here
+      // TODO: Move line endpoint undo state saving to when dragging starts
+
       // Send line endpoint update to other clients (uses dedicated method with absolute coordinates)
       if (signalrClient.isConnected() && signalrClient.getCurrentBoardId()) {
         const element = elementFactory.getElementById(draggedElementId);
-        if (element && element.data && 
-            element.data.startX !== undefined && element.data.startY !== undefined &&
-            element.data.endX !== undefined && element.data.endY !== undefined) {
+        if (element && element.data &&
+          element.data.startX !== undefined && element.data.startY !== undefined &&
+          element.data.endX !== undefined && element.data.endY !== undefined) {
           signalrClient.sendLineEndpointUpdate(
-            signalrClient.getCurrentBoardId(), 
-            draggedElementId, 
+            signalrClient.getCurrentBoardId(),
+            draggedElementId,
             element.data.startX,
             element.data.startY,
             element.data.endX,
@@ -556,10 +578,10 @@ function handleMouseUp(event) {
     if (isResizing) {
       elementFactory.finishElementResize();
       isResizing = false;
-      
+
       // Reset cursor to default
       canvasManager.updateCanvasCursor('default');
-      
+
       console.log('Finished resizing element');
       return;
     }
@@ -567,6 +589,8 @@ function handleMouseUp(event) {
     // Handle element dragging completion
     if (isDragging && draggedElementId) {
       // console.log('Finished dragging element:', draggedElementId);
+
+      // Note: Canvas state is saved when significant movement is first detected
 
       // Send element move to other clients
       if (signalrClient.isConnected() && signalrClient.getCurrentBoardId()) {
@@ -579,6 +603,8 @@ function handleMouseUp(event) {
       // Reset dragging state
       isDragging = false;
       draggedElementId = null;
+      elementHasMoved = false;
+      undoStateSaved = false;
       return;
     }
 
@@ -591,7 +617,7 @@ function handleMouseUp(event) {
         if (signalrClient.isConnected() && signalrClient.getCurrentBoardId()) {
           signalrClient.sendElement(signalrClient.getCurrentBoardId(), element, element.id);
         }
-        
+
         // Auto-select the newly created drawing and switch to select tool
         if (element) {
           elementFactory.highlightElement(element.id);
@@ -614,18 +640,18 @@ function handleMouseUp(event) {
         const scaleY = rect.height / (event.target.height / dpr);
         const currentScreenX = (event.clientX - rect.left) / scaleX;
         const currentScreenY = (event.clientY - rect.top) / scaleY;
-        
+
         // Convert screen coordinates to world coordinates using the same system as mousedown
         const startWorldPos = canvasManager.screenToWorld(startScreenX, startScreenY);
         const endWorldPos = canvasManager.screenToWorld(currentScreenX, currentScreenY);
-        
+
         // DEBUG: Log final element coordinate conversion for precision validation
         console.log(`[FINAL-LINE] screen start:(${startScreenX.toFixed(3)},${startScreenY.toFixed(3)}) -> world:(${startWorldPos.x.toFixed(3)},${startWorldPos.y.toFixed(3)})`);
         console.log(`[FINAL-LINE] screen end:(${currentScreenX.toFixed(3)},${currentScreenY.toFixed(3)}) -> world:(${endWorldPos.x.toFixed(3)},${endWorldPos.y.toFixed(3)})`);
-        
+
         let lineStartX = startWorldPos.x, lineStartY = startWorldPos.y;
         let lineEndX = endWorldPos.x, lineEndY = endWorldPos.y;
-        
+
         if (canvasManager.isSnapToGridEnabled()) {
           const snappedStart = canvasManager.snapToGridPoint(lineStartX, lineStartY);
           const snappedEnd = canvasManager.snapToGridPoint(lineEndX, lineEndY);
@@ -645,18 +671,18 @@ function handleMouseUp(event) {
         const scaleY = rect.height / (event.target.height / dpr);
         const currentScreenX = (event.clientX - rect.left) / scaleX;
         const currentScreenY = (event.clientY - rect.top) / scaleY;
-        
+
         // Convert screen coordinates to world coordinates using the same system as mousedown
         const startWorldPos = canvasManager.screenToWorld(startScreenX, startScreenY);
         const endWorldPos = canvasManager.screenToWorld(currentScreenX, currentScreenY);
-        
+
         // DEBUG: Log final element coordinate conversion for precision validation
         console.log(`[FINAL-${currentTool.toUpperCase()}] screen start:(${startScreenX.toFixed(3)},${startScreenY.toFixed(3)}) -> world:(${startWorldPos.x.toFixed(3)},${startWorldPos.y.toFixed(3)})`);
         console.log(`[FINAL-${currentTool.toUpperCase()}] screen end:(${currentScreenX.toFixed(3)},${currentScreenY.toFixed(3)}) -> world:(${endWorldPos.x.toFixed(3)},${endWorldPos.y.toFixed(3)})`);
-        
+
         let shapeX = startWorldPos.x, shapeY = startWorldPos.y;
         let shapeEndX = endWorldPos.x, shapeEndY = endWorldPos.y;
-        
+
         if (canvasManager.isSnapToGridEnabled()) {
           const snappedStart = canvasManager.snapToGridPoint(shapeX, shapeY);
           const snappedEnd = canvasManager.snapToGridPoint(shapeEndX, shapeEndY);
@@ -741,11 +767,11 @@ function handleCanvasRightClick(event) {
 function handleTouchStart(event) {
   try {
     event.preventDefault(); // Prevent default touch behaviors
-    
+
     const touchCount = getTouchCount(event);
     lastTouchCount = touchCount;
     touchStartTime = Date.now();
-    
+
     if (touchCount === 1) {
       // Single touch - treat like mouse down
       const coords = getEventCoordinates(event);
@@ -756,16 +782,16 @@ function handleTouchStart(event) {
 
       startX = worldPos.x;
       startY = worldPos.y;
-      
+
       // Store touch start position for long-touch detection
       longTouchStartPos = { x: screenX, y: screenY };
       isLongTouchActive = false;
-      
+
       // Clear any existing long-touch timer
       if (longTouchTimer) {
         clearTimeout(longTouchTimer);
       }
-      
+
       // Start long-touch timer (500ms for long press)
       longTouchTimer = setTimeout(() => {
         if (!isLongTouchActive) {
@@ -773,9 +799,9 @@ function handleTouchStart(event) {
           isLongTouchActive = true;
         }
       }, 500);
-      
+
       const currentTool = toolManager.getCurrentTool();
-      
+
       // Handle different tools for single touch
       switch (currentTool) {
         case 'select':
@@ -809,25 +835,25 @@ function handleTouchStart(event) {
       // Two-finger touch - prepare for pinch/zoom
       const touch1 = event.touches[0];
       const touch2 = event.touches[1];
-      
+
       // Calculate initial distance between touches
       const deltaX = touch2.clientX - touch1.clientX;
       const deltaY = touch2.clientY - touch1.clientY;
       initialTouchDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-      
+
       // Calculate pinch center in screen coordinates
       const rect = event.target.getBoundingClientRect();
       pinchCenter = {
         x: ((touch1.clientX + touch2.clientX) / 2) - rect.left,
         y: ((touch1.clientY + touch2.clientY) / 2) - rect.top
       };
-      
+
       // Store initial zoom level
       initialZoomLevel = viewportManager.getZoomLevel();
-      
+
       console.log('Pinch gesture started, initial distance:', initialTouchDistance);
     }
-    
+
   } catch (error) {
     console.error('Error in handleTouchStart:', error);
   }
@@ -836,9 +862,9 @@ function handleTouchStart(event) {
 function handleTouchMove(event) {
   try {
     event.preventDefault();
-    
+
     const touchCount = getTouchCount(event);
-    
+
     if (touchCount === 1) {
       // Single touch - treat like mouse move
       const coords = getEventCoordinates(event);
@@ -850,7 +876,7 @@ function handleTouchMove(event) {
       // Cancel long-touch if moved too far from start position
       if (longTouchTimer && !isLongTouchActive) {
         const touchMoveDistance = Math.sqrt(
-          Math.pow(screenX - longTouchStartPos.x, 2) + 
+          Math.pow(screenX - longTouchStartPos.x, 2) +
           Math.pow(screenY - longTouchStartPos.y, 2)
         );
         // Cancel if moved more than 10 pixels
@@ -878,7 +904,7 @@ function handleTouchMove(event) {
             element.y = worldPos.y;
             element.width = lineOriginalEnd.x - worldPos.x;
             element.height = lineOriginalEnd.y - worldPos.y;
-            
+
             if (element.data) {
               element.data.startX = worldPos.x;
               element.data.startY = worldPos.y;
@@ -1164,6 +1190,9 @@ function handleSelectTouchStart(x, y, event) {
 
         lineOriginalStart = { x: element.x, y: element.y };
         lineOriginalEnd = { x: element.x + element.width, y: element.y + element.height };
+
+        // Save undo state when line handle dragging starts
+        elementFactory.saveCanvasState('Move Line Endpoint');
         return;
       }
     }
@@ -1191,11 +1220,14 @@ function handleSelectTouchStart(x, y, event) {
     elementFactory.highlightElement(element.id);
 
     isDragging = true;
+    elementHasMoved = false;
+    undoStateSaved = false;
     draggedElementId = element.id;
     dragStartX = x;
     dragStartY = y;
     elementStartX = element.x;
     elementStartY = element.y;
+    console.log('DRAG START: Setting original position to:', elementStartX, elementStartY, 'for element:', element.id);
   } else {
     // Touched empty space - clear selection and start canvas panning
     selectedElementIds.clear();
@@ -1324,6 +1356,9 @@ function handleSelectMouseDown(x, y, event) {
         lineOriginalStart = { x: element.x, y: element.y };
         lineOriginalEnd = { x: element.x + element.width, y: element.y + element.height };
 
+        // Save undo state when line handle dragging starts
+        elementFactory.saveCanvasState('Move Line Endpoint');
+
         // console.log(`Started dragging line ${handle} handle for element:`, element.id);
         return;
       }
@@ -1379,11 +1414,14 @@ function handleSelectMouseDown(x, y, event) {
       // Start dragging (entire element) only if not locked
       if (!isLocked) {
         isDragging = true;
+        elementHasMoved = false;
+        undoStateSaved = false;
         draggedElementId = element.id;
         dragStartX = x;
         dragStartY = y;
         elementStartX = element.x;
         elementStartY = element.y;
+        console.log('DRAG START: Setting original position to:', elementStartX, elementStartY, 'for element:', element.id);
         // console.log('Started dragging element:', element.id);
       } else {
         console.log('Element is locked, selection only:', element.id);
@@ -1921,6 +1959,30 @@ function toggleElementLockAction(elementId) {
   }
 }
 
+// Undo action for context menu
+async function undoAction() {
+  try {
+    await elementFactory.undo();
+    hideContextMenu();
+    showNotification('Undone', 'success');
+  } catch (error) {
+    console.error('Error performing undo:', error);
+    showNotification('Failed to undo', 'error');
+  }
+}
+
+// Redo action for context menu
+async function redoAction() {
+  try {
+    await elementFactory.redo();
+    hideContextMenu();
+    showNotification('Redone', 'success');
+  } catch (error) {
+    console.error('Error performing redo:', error);
+    showNotification('Failed to redo', 'error');
+  }
+}
+
 function deleteElement(elementId) {
   try {
     elementFactory.deleteSelectedElement();
@@ -1984,9 +2046,12 @@ function updateStickyNoteColor(elementId, color) {
 }
 
 function updateElementStyle(elementId, styleData) {
-  // Update local element data immediately for visual feedback
+  // Save canvas state BEFORE applying the style change
   const element = elementFactory.getElementById(elementId);
   if (element && element.data) {
+    elementFactory.saveCanvasState('Update Element Style');
+
+    // Update local element data for visual feedback
     Object.assign(element.data, styleData);
     canvasManager.redrawCanvas();
   }
@@ -2507,6 +2572,8 @@ if (typeof window !== 'undefined') {
   window.updateStickyNoteColor = updateStickyNoteColor;
   window.updateElementStyle = updateElementStyle;
   window.toggleElementLockAction = toggleElementLockAction;
+  window.undoAction = undoAction;
+  window.redoAction = redoAction;
   window.pasteElementHere = pasteElementHere;
   // Grid system
   window.toggleGrid = toggleGrid;

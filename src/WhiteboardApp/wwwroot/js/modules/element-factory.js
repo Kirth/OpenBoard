@@ -42,7 +42,7 @@ async function syncElementChangesToServer(oldElements, newElements) {
     return;
   }
 
-  const boardId = dependencies.currentBoardId();
+  const boardId = dependencies.currentBoardId;
 
   try {
     // Compare old and new states to find changes
@@ -321,6 +321,7 @@ export class EditorManager {
     this.editingElementId = null;
     this.editInput = null;
     this.element = null;
+    this.originalContent = null; // Store original content for undo/redo comparison
     this.onToolSwitchRequest = null;
     this.onStateChange = null;
   }
@@ -386,6 +387,9 @@ export class EditorManager {
 
       this.editingElementId = elementId;
       this.element = element;
+      
+      // Store original content for undo/redo comparison
+      this.originalContent = element.data?.content || '';
 
       // Handle corrupted data structure - ensure element.data is an object
       if (typeof element.data !== 'object' || element.data === null) {
@@ -428,6 +432,12 @@ export class EditorManager {
         const newContent = this.editInput.value.trim();
         this.element.data.content = newContent;
         this.element.data.isEditing = false;
+        
+        // Save undo state only if content actually changed
+        if (newContent !== this.originalContent) {
+          const actionType = this.element.type === 'StickyNote' ? 'Edit Sticky Note' : 'Edit Text';
+          saveCanvasState(actionType);
+        }
 
         console.log('Debugging sticky note update dependencies:', {
           signalRConnection: dependencies.signalRConnection,
@@ -562,6 +572,7 @@ export class EditorManager {
     }
     this.editInput = null;
     this.editingElementId = null;
+    this.originalContent = null; // Reset original content for undo/redo
 
     if (this.element) {
       this.element.data.isEditing = false;
@@ -987,9 +998,11 @@ export function deleteSelectedElement() {
 
   const elementIdToDelete = selectedElementId;
 
-  // Delete locally first for immediate feedback
-  elements.delete(selectedElementId);
+  // Save undo state BEFORE deleting the element
   saveCanvasState('Delete Element');
+  
+  // Delete locally for immediate feedback
+  elements.delete(selectedElementId);
   selectedElementId = null;
 
   if (dependencies.redrawCanvas) {
@@ -1464,16 +1477,44 @@ export function pasteElement() {
 }
 
 // Undo/redo system
+// Helper function to deep clone elements
+function deepCloneElements(elementsMap) {
+  const result = [];
+  for (const [id, element] of elementsMap.entries()) {
+    try {
+      // Use structuredClone if available (modern browsers), otherwise fall back to JSON
+      const clonedElement = typeof structuredClone !== 'undefined' 
+        ? structuredClone(element) 
+        : JSON.parse(JSON.stringify(element));
+      result.push([id, clonedElement]);
+    } catch (error) {
+      console.warn('Failed to clone element', id, '- using shallow copy as fallback:', error);
+      result.push([id, { ...element }]); // Shallow fallback
+    }
+  }
+  return result;
+}
+
 export function saveCanvasState(action) {
-  if (isUndoRedoOperation) return;
+  console.log('saveCanvasState called with action:', action, 'isUndoRedoOperation:', isUndoRedoOperation);
+  if (isUndoRedoOperation) {
+    console.log('SAVE STATE BLOCKED: isUndoRedoOperation is true');
+    return;
+  }
 
   try {
     const state = {
-      elements: Array.from(elements.entries()),
+      elements: deepCloneElements(elements),
       selectedElementId: selectedElementId,
       timestamp: Date.now(),
       action: action
     };
+
+    console.log('SAVE STATE:', action, 'with', state.elements.length, 'elements');
+    if (state.elements.length > 0) {
+      const firstElement = state.elements[0][1];
+      console.log('  First element:', firstElement.id, 'at position', firstElement.x, firstElement.y);
+    }
 
     undoStack.push(state);
 
@@ -1489,14 +1530,18 @@ export function saveCanvasState(action) {
 }
 
 export async function undo() {
-  if (undoStack.length === 0) return;
+  console.log('UNDO CALLED: Stack length is', undoStack.length);
+  if (undoStack.length === 0) {
+    console.log('UNDO ABORTED: No states in undo stack');
+    return;
+  }
 
   try {
     isUndoRedoOperation = true;
 
-    // Capture current state for comparison
+    // Capture current state for comparison using deep cloning
     const currentState = {
-      elements: Array.from(elements.entries()),
+      elements: deepCloneElements(elements),
       selectedElementId: selectedElementId,
       timestamp: Date.now(),
       action: 'Current State'
@@ -1506,10 +1551,21 @@ export async function undo() {
 
     const previousState = undoStack.pop();
 
-    // Clear and restore previous state
+    // Clear and restore previous state with deep cloning
+    console.log('UNDO: Clearing elements and restoring from state with', previousState.elements.length, 'elements');
     elements.clear();
     for (const [id, element] of previousState.elements) {
-      elements.set(id, element);
+      try {
+        // Deep clone the element before adding it to current state to prevent future corruption
+        const clonedElement = typeof structuredClone !== 'undefined' 
+          ? structuredClone(element) 
+          : JSON.parse(JSON.stringify(element));
+        console.log('UNDO: Restoring element', id, 'at position', clonedElement.x, clonedElement.y);
+        elements.set(id, clonedElement);
+      } catch (error) {
+        console.warn('Failed to clone element during undo', id, '- using direct reference:', error);
+        elements.set(id, element); // Fallback to direct reference
+      }
     }
 
     selectedElementId = previousState.selectedElementId;
@@ -1538,9 +1594,9 @@ export async function redo() {
   try {
     isUndoRedoOperation = true;
 
-    // Capture current state for comparison
+    // Capture current state for comparison using deep cloning
     const currentState = {
-      elements: Array.from(elements.entries()),
+      elements: deepCloneElements(elements),
       selectedElementId: selectedElementId,
       timestamp: Date.now(),
       action: 'Current State'
@@ -1550,10 +1606,19 @@ export async function redo() {
 
     const nextState = redoStack.pop();
 
-    // Clear and restore next state
+    // Clear and restore next state with deep cloning
     elements.clear();
     for (const [id, element] of nextState.elements) {
-      elements.set(id, element);
+      try {
+        // Deep clone the element before adding it to current state to prevent future corruption
+        const clonedElement = typeof structuredClone !== 'undefined' 
+          ? structuredClone(element) 
+          : JSON.parse(JSON.stringify(element));
+        elements.set(id, clonedElement);
+      } catch (error) {
+        console.warn('Failed to clone element during redo', id, '- using direct reference:', error);
+        elements.set(id, element); // Fallback to direct reference
+      }
     }
 
     selectedElementId = nextState.selectedElementId;

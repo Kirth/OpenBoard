@@ -1,4 +1,20 @@
 <div id="contextMenu" class="context-menu" style="display: none;">
+    <div class="context-menu-item" onclick="undoAction()">
+        <div class="context-item-content">
+            <span class="context-icon">↶</span>
+            Undo
+        </div>
+        <span class="context-hotkey">Ctrl+Z</span>
+    </div>
+    <div class="context-menu-item" onclick="redoAction()">
+        <div class="context-item-content">
+            <span class="context-icon">↷</span>
+            Redo
+        </div>
+        <span class="context-hotkey">Ctrl+Shift+Z</span>
+    </div>
+    <div class="context-menu-divider"></div>
+    
     <div class="context-menu-item" onclick="bringSelectedToFront()">
         <div class="context-item-content">
             <span class="context-icon">⬆️</span>

@@ -1004,7 +1004,6 @@ export function isShapeTool(tool = null) {
 // Initialize the module
 export function init() {
     initializeToolManager();
-    setupKeyboardHandlers();
     console.log('Tool Manager module loaded');
 }
 
