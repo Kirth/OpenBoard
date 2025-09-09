@@ -471,10 +471,10 @@ function handleMouseMove(event) {
             // Set element to original position for state saving
             element.x = elementStartX;
             element.y = elementStartY;
-            
+
             elementFactory.saveCanvasState('Move Element');
             undoStateSaved = true;
-            
+
             console.log('UNDO STATE SAVED with element at original position:', element.x, element.y);
             // Don't restore current position here - let updateElementPositionLocal handle it
           }
@@ -2517,6 +2517,7 @@ function isBlackColor(color) {
 
   // Handle hex colors
   if (color === '#000000' || color === '#000' || color.toLowerCase() === '#000000') return true;
+  if (color === '#333333' || color === '#333' || color.toLowerCase() === '#333333') return true;
 
   // Handle rgb colors
   if (color.startsWith('rgb')) {

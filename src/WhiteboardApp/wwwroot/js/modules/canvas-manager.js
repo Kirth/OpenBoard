@@ -760,12 +760,12 @@ function renderMarkdownLineWithForcedBold(text, x, y, fontSize) {
         codeColor = window.invertBlackToWhite(codeColor);
       }
       ctx.fillStyle = codeColor;
-      
+
       // Draw background for inline code
       const textWidth = ctx.measureText(segment.text).width;
       ctx.fillStyle = 'rgba(128, 128, 128, 0.1)'; // Light gray background
       ctx.fillRect(currentX - 2, y - fontSize + 2, textWidth + 4, fontSize + 4);
-      
+
       ctx.fillStyle = codeColor; // Reset text color
       ctx.fillText(segment.text, currentX, y);
       ctx.restore();
@@ -848,12 +848,12 @@ function renderMarkdownLine(text, x, y, fontSize) {
         codeColor = window.invertBlackToWhite(codeColor);
       }
       ctx.fillStyle = codeColor;
-      
+
       // Draw background for inline code
       const textWidth = ctx.measureText(segment.text).width;
       ctx.fillStyle = 'rgba(128, 128, 128, 0.1)'; // Light gray background
       ctx.fillRect(currentX - 2, y - fontSize + 2, textWidth + 4, fontSize + 4);
-      
+
       ctx.fillStyle = codeColor; // Reset text color
       ctx.fillText(segment.text, currentX, y);
       ctx.restore();
@@ -984,7 +984,7 @@ function renderLineWithBullet(line, x, y, fontSize, maxWidth) {
     const header = parseHeader(line);
     if (header) {
       ctx.save();
-      
+
       // Set appropriate header sizes: H1=16px, H2=15px, H3=14px, H4=13px, H5=12px, H6=11px
       const headerSizes = {
         1: 16,   // H1
@@ -997,7 +997,7 @@ function renderLineWithBullet(line, x, y, fontSize, maxWidth) {
       const headerFontSize = headerSizes[header.level] || 14; // Default to 14px if level not found
       // Render header text with forced bold formatting
       renderMarkdownLineWithForcedBold(header.text, x, y, headerFontSize);
-      
+
       ctx.restore();
       return 1; // Headers always use exactly 1 line
     }
@@ -1049,7 +1049,7 @@ function renderLineWithBullet(line, x, y, fontSize, maxWidth) {
   } else if (isBlockquoteLine(line)) {
     // Handle blockquote
     const quoteText = line.replace(/^\s*>\s/, '');
-    
+
     ctx.save();
     // Draw quote indicator with dark mode support
     let borderColor = '#ccc';
@@ -1058,25 +1058,25 @@ function renderLineWithBullet(line, x, y, fontSize, maxWidth) {
       borderColor = window.invertBlackToWhite(borderColor);
       quoteTextColor = window.invertBlackToWhite(quoteTextColor);
     }
-    
+
     ctx.strokeStyle = borderColor;
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.moveTo(x, y - fontSize);
     ctx.lineTo(x, y + fontSize * 0.5);
     ctx.stroke();
-    
+
     // Render quote text with slight indent and italic style
     ctx.font = `italic ${fontSize}px Arial`;
     ctx.fillStyle = quoteTextColor;
     const quoteIndent = 10;
-    
+
     const wrappedLines = wrapTextWithMarkdown(quoteText, maxWidth - quoteIndent, fontSize);
     const lineHeight = fontSize * 1.2;
     for (let i = 0; i < wrappedLines.length; i++) {
       renderMarkdownLine(wrappedLines[i], x + quoteIndent, y + i * lineHeight, fontSize);
     }
-    
+
     ctx.restore();
     return wrappedLines.length;
   } else {
@@ -1129,7 +1129,7 @@ function parseMarkdownSegments(text) {
   const filteredMatches = [];
   for (const match of matches) {
     // Check if this match overlaps with any already accepted match
-    const hasOverlap = filteredMatches.some(existing => 
+    const hasOverlap = filteredMatches.some(existing =>
       (match.start < existing.end && match.end > existing.start)
     );
     if (!hasOverlap) {
@@ -1326,7 +1326,9 @@ export function recoverCanvasState() {
 function renderStickyNote(el) {
   let bg = el.data?.color || '#ffeb3b';
   let borderColor = '#fbc02d';
-  let textColor = '#333333';
+  let textColor = '#222222';
+
+  // todo: if we ever implement proper colour inversion invertBlackToWhite: this will mess up the rendering 
 
   // Convert black text to white in dark mode (client-side display only)
   if (typeof window !== 'undefined' && window.invertBlackToWhite) {
