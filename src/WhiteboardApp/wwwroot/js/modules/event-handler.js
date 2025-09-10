@@ -130,9 +130,11 @@ function handleMouseDown(event) {
       return; // Stop further processing if link was clicked
     }
 
-    // Handle spacebar panning
-    if (event.key === ' ' || currentTool === 'pan') {
+    // Handle hand tool panning
+    if (currentTool === 'hand') {
       dependencies.viewportManager.startPan(screenX, screenY);
+      // Update cursor to grabbing state during pan
+      dependencies.canvasManager.updateCanvasCursor('grabbing');
       return;
     }
 
@@ -174,6 +176,9 @@ function handleMouseDown(event) {
         break;
       case 'image':
         dependencies.triggerImageUpload(worldPos.x, worldPos.y);
+        break;
+      case 'hand':
+        // Hand tool is handled above for panning
         break;
     }
 
@@ -363,13 +368,18 @@ function handleMouseUp(event) {
 
     console.log(`[MOUSEUP] screen:(${screenX.toFixed(1)},${screenY.toFixed(1)}) world:(${worldPos.x.toFixed(1)},${worldPos.y.toFixed(1)})`);
 
+    const currentTool = dependencies.toolManager.getCurrentTool();
+
     // Handle viewport panning end
     if (dependencies.viewportManager.getViewportInfo().isPanning) {
       dependencies.viewportManager.endPan();
+      
+      // Restore cursor if we're in hand tool mode
+      if (currentTool === 'hand') {
+        dependencies.canvasManager.updateCanvasCursor('grab');
+      }
       return;
     }
-
-    const currentTool = dependencies.toolManager.getCurrentTool();
 
     // Handle line handle dragging end
     if (dependencies.isDraggingLineHandle && dependencies.draggedElementId && currentTool === 'select') {
@@ -667,6 +677,10 @@ function handleTouchStart(event) {
           break;
         case 'image':
           dependencies.triggerImageUpload(worldPos.x, worldPos.y);
+          break;
+        case 'hand':
+          // Hand tool panning for touch
+          dependencies.viewportManager.startPan(screenX, screenY);
           break;
       }
 

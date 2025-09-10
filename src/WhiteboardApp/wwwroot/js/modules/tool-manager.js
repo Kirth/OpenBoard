@@ -12,6 +12,10 @@ let isDrawingShape = false;
 // Shift key tracking for line snapping and other shortcuts
 window.isShiftHeld = false;
 
+// Spacebar tracking for temporary hand tool
+let isSpacebarHeld = false;
+let toolBeforeSpacebar = null;
+
 // Dependencies that will be injected from other modules
 let dependencies = {
     canvas: null,
@@ -53,8 +57,10 @@ export class ToolManager {
     constructor() {
         this.currentTool = 'select';
         this.previousTool = null;
+        this.isTemporaryHandMode = false;
+        this.toolBeforeTemporaryHand = null;
         this.availableTools = [
-            'select', 'pen', 'rectangle', 'circle', 'line', 
+            'select', 'hand', 'pen', 'rectangle', 'circle', 'line', 
             'text', 'stickynote', 'image', 'triangle', 'diamond', 'ellipse', 'star'
         ];
         this.onToolChange = null; // Callback for tool changes
@@ -118,6 +124,50 @@ export class ToolManager {
     // Check if current tool creates elements
     isCreationTool() {
         return ['pen', 'rectangle', 'circle', 'line', 'text', 'stickynote', 'image', 'triangle', 'diamond', 'ellipse', 'star'].includes(this.currentTool);
+    }
+
+    // Check if current tool is hand tool
+    isHandTool() {
+        return this.currentTool === 'hand';
+    }
+
+    // Check if current tool allows panning
+    allowsPanning() {
+        return this.currentTool === 'hand';
+    }
+
+    // Temporarily switch to hand tool (e.g., when spacebar is pressed)
+    enableTemporaryHand() {
+        if (this.isTemporaryHandMode || this.currentTool === 'hand') {
+            return false; // Already in hand mode
+        }
+        
+        this.toolBeforeTemporaryHand = this.currentTool;
+        this.isTemporaryHandMode = true;
+        this.setTool('hand');
+        return true;
+    }
+
+    // Return from temporary hand tool mode
+    disableTemporaryHand() {
+        if (!this.isTemporaryHandMode) {
+            return false; // Not in temporary mode
+        }
+        
+        this.isTemporaryHandMode = false;
+        const previousTool = this.toolBeforeTemporaryHand;
+        this.toolBeforeTemporaryHand = null;
+        
+        if (previousTool && this.isValidTool(previousTool)) {
+            this.setTool(previousTool);
+            return true;
+        }
+        return false;
+    }
+
+    // Check if currently in temporary hand mode
+    isInTemporaryHandMode() {
+        return this.isTemporaryHandMode;
     }
 
     // Switch back to previous tool
@@ -198,6 +248,9 @@ function updateCanvasCursor(tool) {
             case 'text':
             case 'stickynote':
                 cursor = 'text';
+                break;
+            case 'hand':
+                cursor = 'grab';
                 break;
             default:
                 cursor = 'default';
@@ -323,7 +376,11 @@ export function handleKeyDown(event) {
 
                 case ' ':
                     event.preventDefault();
-                    // Spacebar - temporarily switch to pan tool (handled in viewport-manager)
+                    // Spacebar - temporarily switch to hand tool for panning
+                    if (!isSpacebarHeld) {
+                        isSpacebarHeld = true;
+                        toolManager.enableTemporaryHand();
+                    }
                     break;
 
                 case 'Escape':
@@ -402,9 +459,12 @@ export function handleKeyUp(event) {
             window.isShiftHeld = false;
         }
 
-        // Handle spacebar release (pan tool)
+        // Handle spacebar release (return from temporary hand tool)
         if (event.key === ' ') {
-            // This would be handled by viewport-manager
+            if (isSpacebarHeld) {
+                isSpacebarHeld = false;
+                toolManager.disableTemporaryHand();
+            }
         }
     } catch (error) {
         console.error('Error in handleKeyUp:', error);

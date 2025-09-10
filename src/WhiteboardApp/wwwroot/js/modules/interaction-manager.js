@@ -344,6 +344,12 @@ export function updateCursorForHover(worldX, worldY) {
   try {
     const currentTool = dependencies.toolManager.getCurrentTool();
     
+    if (currentTool === 'hand') {
+      // Hand tool always shows grab cursor when hovering
+      dependencies.canvasManager.updateCanvasCursor('grab');
+      return;
+    }
+    
     if (currentTool !== 'select') {
       // For non-select tools, use tool-specific cursors
       dependencies.canvasManager.updateCanvasCursor(currentTool);
