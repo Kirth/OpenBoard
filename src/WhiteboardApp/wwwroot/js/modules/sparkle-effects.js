@@ -247,6 +247,105 @@ class ElementPoofEffect {
   generatePoofParticles() {
     const particleCount = 15 + Math.floor(Math.random() * 10); // 15-25 particles for more dramatic effect
     
+    if (this.isPathBasedElement()) {
+      this.generatePathBasedPoofParticles(particleCount);
+    } else {
+      this.generateBoundingBoxPoofParticles(particleCount);
+    }
+  }
+
+  isPathBasedElement() {
+    return this.element.type === 'Line' || this.element.type === 'Path' || this.element.type === 'Drawing';
+  }
+
+  generatePathBasedPoofParticles(particleCount) {
+    if (this.element.type === 'Line') {
+      this.generateLinePoofParticles(particleCount);
+    } else if (this.element.type === 'Path' || this.element.type === 'Drawing') {
+      this.generatePathPoofParticles(particleCount);
+    }
+  }
+
+  generateLinePoofParticles(particleCount) {
+    // Use actual line endpoints from data
+    const startX = this.element.data?.startX || this.element.x;
+    const startY = this.element.data?.startY || this.element.y;
+    const endX = this.element.data?.endX || (this.element.x + this.element.width);
+    const endY = this.element.data?.endY || (this.element.y + this.element.height);
+
+    // Generate particles along the line with some spread
+    for (let i = 0; i < particleCount; i++) {
+      const t = Math.random(); // Random position along line instead of even distribution for poof
+      const x = startX + t * (endX - startX);
+      const y = startY + t * (endY - startY);
+      
+      // Add random spread around the line (larger spread for poof effect)
+      const spreadRadius = 20 + Math.random() * 15; // 20-35px spread
+      const spreadAngle = Math.random() * Math.PI * 2;
+      
+      const finalX = x + Math.cos(spreadAngle) * spreadRadius;
+      const finalY = y + Math.sin(spreadAngle) * spreadRadius;
+      
+      const delay = Math.random() * 100; // Quick staggering
+      this.particles.push(new PoofParticle(finalX, finalY, delay));
+    }
+  }
+
+  generatePathPoofParticles(particleCount) {
+    const pathData = this.element.data?.path;
+    if (!pathData || pathData.length === 0) {
+      // Fallback to bounding box if path data is missing
+      this.generateBoundingBoxPoofParticles(particleCount);
+      return;
+    }
+
+    // Convert relative path coordinates to world coordinates
+    const worldPath = pathData.map(point => ({
+      x: this.element.x + point.x,
+      y: this.element.y + point.y
+    }));
+
+    if (worldPath.length === 1) {
+      // Single point - generate poof around that point
+      const point = worldPath[0];
+      for (let i = 0; i < particleCount; i++) {
+        const spreadRadius = 15 + Math.random() * 20; // 15-35px spread
+        const spreadAngle = Math.random() * Math.PI * 2;
+        
+        const x = point.x + Math.cos(spreadAngle) * spreadRadius;
+        const y = point.y + Math.sin(spreadAngle) * spreadRadius;
+        
+        const delay = Math.random() * 100;
+        this.particles.push(new PoofParticle(x, y, delay));
+      }
+      return;
+    }
+
+    // For multi-point paths, randomly distribute particles along path segments
+    for (let i = 0; i < particleCount; i++) {
+      // Pick a random segment
+      const segmentIndex = Math.floor(Math.random() * (worldPath.length - 1));
+      const start = worldPath[segmentIndex];
+      const end = worldPath[segmentIndex + 1];
+      
+      // Random position within the segment
+      const t = Math.random();
+      const x = start.x + t * (end.x - start.x);
+      const y = start.y + t * (end.y - start.y);
+      
+      // Add random spread around the path point
+      const spreadRadius = 15 + Math.random() * 20; // 15-35px spread
+      const spreadAngle = Math.random() * Math.PI * 2;
+      
+      const finalX = x + Math.cos(spreadAngle) * spreadRadius;
+      const finalY = y + Math.sin(spreadAngle) * spreadRadius;
+      
+      const delay = Math.random() * 100;
+      this.particles.push(new PoofParticle(finalX, finalY, delay));
+    }
+  }
+
+  generateBoundingBoxPoofParticles(particleCount) {
     // Generate particles from center and spread outward
     const centerX = this.element.x + this.element.width / 2;
     const centerY = this.element.y + this.element.height / 2;
@@ -305,6 +404,141 @@ class ElementSparkleEffect {
 
   generateParticles() {
     const particleCount = 12 + Math.floor(Math.random() * 8); // 12-20 particles
+    
+    if (this.isPathBasedElement()) {
+      this.generatePathBasedParticles(particleCount);
+    } else {
+      this.generateBoundingBoxParticles(particleCount);
+    }
+  }
+
+  isPathBasedElement() {
+    return this.element.type === 'Line' || this.element.type === 'Path' || this.element.type === 'Drawing';
+  }
+
+  generatePathBasedParticles(particleCount) {
+    if (this.element.type === 'Line') {
+      this.generateLineParticles(particleCount);
+    } else if (this.element.type === 'Path' || this.element.type === 'Drawing') {
+      this.generatePathParticles(particleCount);
+    }
+  }
+
+  generateLineParticles(particleCount) {
+    // Use actual line endpoints from data
+    const startX = this.element.data?.startX || this.element.x;
+    const startY = this.element.data?.startY || this.element.y;
+    const endX = this.element.data?.endX || (this.element.x + this.element.width);
+    const endY = this.element.data?.endY || (this.element.y + this.element.height);
+
+    // Distribute particles along the line
+    for (let i = 0; i < particleCount; i++) {
+      const t = i / (particleCount - 1); // Parameter from 0 to 1
+      const x = startX + t * (endX - startX);
+      const y = startY + t * (endY - startY);
+      
+      // Add small random offset perpendicular to line (10px closer to line)
+      const lineLength = Math.sqrt((endX - startX) ** 2 + (endY - startY) ** 2);
+      if (lineLength > 0) {
+        const perpX = -(endY - startY) / lineLength; // Perpendicular vector
+        const perpY = (endX - startX) / lineLength;
+        const offsetDistance = (Math.random() - 0.5) * 16; // ±8px perpendicular offset
+        
+        const finalX = x + perpX * offsetDistance;
+        const finalY = y + perpY * offsetDistance;
+        
+        const delay = Math.random() * 200;
+        this.particles.push(new SparkleParticle(finalX, finalY, delay));
+      } else {
+        // Fallback for zero-length lines
+        const delay = Math.random() * 200;
+        this.particles.push(new SparkleParticle(x, y, delay));
+      }
+    }
+  }
+
+  generatePathParticles(particleCount) {
+    const pathData = this.element.data?.path;
+    if (!pathData || pathData.length === 0) {
+      // Fallback to bounding box if path data is missing
+      this.generateBoundingBoxParticles(particleCount);
+      return;
+    }
+
+    // Convert relative path coordinates to world coordinates
+    const worldPath = pathData.map(point => ({
+      x: this.element.x + point.x,
+      y: this.element.y + point.y
+    }));
+
+    // Calculate total path length for even distribution
+    const segments = [];
+    let totalLength = 0;
+    
+    for (let i = 1; i < worldPath.length; i++) {
+      const prev = worldPath[i - 1];
+      const curr = worldPath[i];
+      const segmentLength = Math.sqrt((curr.x - prev.x) ** 2 + (curr.y - prev.y) ** 2);
+      segments.push({
+        start: prev,
+        end: curr,
+        length: segmentLength,
+        startDistance: totalLength
+      });
+      totalLength += segmentLength;
+    }
+
+    if (totalLength === 0) {
+      // Single point or zero-length path - fallback to single point
+      const point = worldPath[0];
+      for (let i = 0; i < particleCount; i++) {
+        const angle = (Math.PI * 2 * i) / particleCount;
+        const radius = 8 + Math.random() * 8; // 8-16px radius around point
+        const x = point.x + Math.cos(angle) * radius;
+        const y = point.y + Math.sin(angle) * radius;
+        const delay = Math.random() * 200;
+        this.particles.push(new SparkleParticle(x, y, delay));
+      }
+      return;
+    }
+
+    // Distribute particles evenly along the path
+    for (let i = 0; i < particleCount; i++) {
+      const targetDistance = (i / (particleCount - 1)) * totalLength;
+      
+      // Find the segment containing this distance
+      let segment = null;
+      for (let j = 0; j < segments.length; j++) {
+        if (targetDistance <= segments[j].startDistance + segments[j].length) {
+          segment = segments[j];
+          break;
+        }
+      }
+      
+      if (segment) {
+        // Interpolate position within the segment
+        const segmentProgress = (targetDistance - segment.startDistance) / segment.length;
+        const x = segment.start.x + segmentProgress * (segment.end.x - segment.start.x);
+        const y = segment.start.y + segmentProgress * (segment.end.y - segment.start.y);
+        
+        // Add small random offset perpendicular to path segment
+        const segmentLength = segment.length;
+        if (segmentLength > 0) {
+          const perpX = -(segment.end.y - segment.start.y) / segmentLength;
+          const perpY = (segment.end.x - segment.start.x) / segmentLength;
+          const offsetDistance = (Math.random() - 0.5) * 16; // ±8px perpendicular offset
+          
+          const finalX = x + perpX * offsetDistance;
+          const finalY = y + perpY * offsetDistance;
+          
+          const delay = Math.random() * 200;
+          this.particles.push(new SparkleParticle(finalX, finalY, delay));
+        }
+      }
+    }
+  }
+
+  generateBoundingBoxParticles(particleCount) {
     const bounds = this.getElementBounds();
     
     // Generate particles around the element's perimeter
