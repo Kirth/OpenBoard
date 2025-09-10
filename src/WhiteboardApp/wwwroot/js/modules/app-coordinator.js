@@ -127,6 +127,8 @@ export function setupDependencies() {
     sendElementResize: signalrClient.sendElementResize,
     sendLineEndpointUpdate: signalrClient.sendLineEndpointUpdate,
     sendElementLock: signalrClient.sendElementLock,
+    sendBringToFront: signalrClient.sendBringToFront,
+    sendElementToBack: signalrClient.sendElementToBack,
     updateElementStyle: signalrClient.updateElementStyle,
     updateStickyNoteContent: signalrClient.updateStickyNoteContent,
     updateTextElementContent: signalrClient.updateTextElementContent,

@@ -147,6 +147,8 @@ let dependencies = {
   sendElementDelete: null,
   sendElementResize: null,
   sendElementLock: null,
+  sendBringToFront: null,
+  sendElementToBack: null,
   updateElementStyle: null,
   updateStickyNoteContent: null,
   updateTextElementContent: null,
@@ -1092,6 +1094,97 @@ export function sendSelectedToBack() {
   }
 }
 
+// Z-index based functions for specific elements (called from context menu)
+export function bringElementToFront(elementId) {
+  const element = elements.get(elementId);
+  if (!element) {
+    console.warn(`Element ${elementId} not found for bringing to front`);
+    return;
+  }
+
+  // Check if element is locked
+  if (isElementLocked(element)) {
+    if (dependencies.showNotification) {
+      dependencies.showNotification('Cannot reorder locked element', 'warning');
+    }
+    return;
+  }
+
+  // Find the current maximum z-index
+  let maxZ = 0;
+  for (const [id, el] of elements) {
+    if (el.z !== undefined && el.z > maxZ) {
+      maxZ = el.z;
+    }
+  }
+
+  // Set element to be above the current maximum
+  element.z = maxZ + 1;
+  if (element.data) {
+    element.data.z = element.z;
+  }
+
+  console.log(`Brought element ${elementId} to front with z-index ${element.z}`);
+
+  // Save state for undo/redo
+  saveCanvasState('Bring to Front');
+
+  // Send to server for synchronization
+  if (dependencies.sendBringToFront && dependencies.currentBoardId) {
+    dependencies.sendBringToFront(dependencies.currentBoardId, elementId);
+  }
+
+  // Redraw canvas to reflect new z-order
+  if (dependencies.redrawCanvas) {
+    dependencies.redrawCanvas();
+  }
+}
+
+export function sendElementToBack(elementId) {
+  const element = elements.get(elementId);
+  if (!element) {
+    console.warn(`Element ${elementId} not found for sending to back`);
+    return;
+  }
+
+  // Check if element is locked
+  if (isElementLocked(element)) {
+    if (dependencies.showNotification) {
+      dependencies.showNotification('Cannot reorder locked element', 'warning');
+    }
+    return;
+  }
+
+  // Find the current minimum z-index
+  let minZ = 0;
+  for (const [id, el] of elements) {
+    if (el.z !== undefined && el.z < minZ) {
+      minZ = el.z;
+    }
+  }
+
+  // Set element to be below the current minimum
+  element.z = minZ - 1;
+  if (element.data) {
+    element.data.z = element.z;
+  }
+
+  console.log(`Sent element ${elementId} to back with z-index ${element.z}`);
+
+  // Save state for undo/redo
+  saveCanvasState('Send to Back');
+
+  // Send to server for synchronization
+  if (dependencies.sendElementToBack && dependencies.currentBoardId) {
+    dependencies.sendElementToBack(dependencies.currentBoardId, elementId);
+  }
+
+  // Redraw canvas to reflect new z-order
+  if (dependencies.redrawCanvas) {
+    dependencies.redrawCanvas();
+  }
+}
+
 // Element interaction helpers
 export function isPointInElement(x, y, element) {
   if (!element) return false;
@@ -1903,4 +1996,7 @@ if (typeof window !== 'undefined') {
   window.lockElement = lockElement;
   window.unlockElement = unlockElement;
   window.toggleElementLock = toggleElementLock;
+  // Z-index functionality
+  window.bringElementToFront = bringElementToFront;
+  window.sendElementToBack = sendElementToBack;
 }
