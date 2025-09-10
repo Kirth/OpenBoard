@@ -7,6 +7,8 @@ import * as toolManager from './tool-manager.js';
 import * as elementFactory from './element-factory.js';
 import * as signalrClient from './signalr-client.js';
 import * as viewportManager from './viewport-manager.js';
+import * as uiFeatures from './ui-features.js';
+import * as sparkleEffects from './sparkle-effects.js';
 
 // Initialize all modules and set up dependencies
 export async function initializeApplication() {
@@ -19,6 +21,7 @@ export async function initializeApplication() {
     elementFactory.init();
     signalrClient.init();
     viewportManager.init();
+    sparkleEffects.init();
 
     // Initialize core functionality first
     const canvasInitialized = canvasManager.initializeCanvas();
@@ -60,7 +63,8 @@ export function setupDependencies() {
     minimapCtx: null, // Will be set by viewport manager
     getViewportX: viewportManager.getViewportX,
     getViewportY: viewportManager.getViewportY,
-    getZoomLevel: viewportManager.getZoomLevel
+    getZoomLevel: viewportManager.getZoomLevel,
+    renderSparkleEffects: sparkleEffects.renderSparkleEffects
   });
 
   // Tool Manager Dependencies
@@ -133,7 +137,8 @@ export function setupDependencies() {
     updateStickyNoteContent: signalrClient.updateStickyNoteContent,
     updateTextElementContent: signalrClient.updateTextElementContent,
     blazorReference: null, // Will be set by Blazor
-    showNotification: null // Will be set by main coordinator
+    showNotification: uiFeatures.showNotification,
+    addSparkleEffectsToElements: sparkleEffects.addSparkleEffectsToElements
   });
 
   // SignalR Client Dependencies
@@ -151,7 +156,7 @@ export function setupDependencies() {
     showElementSelection: elementFactory.showElementSelection,
     hideElementSelection: elementFactory.hideElementSelection,
     updateMinimapImmediate: viewportManager.updateMinimapImmediate,
-    showNotification: null, // Will be set by main coordinator
+    showNotification: uiFeatures.showNotification,
     screenToWorld: canvasManager.screenToWorld,
     editorManager: elementFactory.editorManager
   });
@@ -167,6 +172,11 @@ export function setupDependencies() {
     resetCanvasTransform: canvasManager.resetCanvasTransform,
     updateCanvasCursor: canvasManager.updateCanvasCursor,
     blazorReference: null // Will be set by Blazor
+  });
+
+  // Sparkle Effects Dependencies
+  sparkleEffects.setDependencies({
+    redrawCanvas: canvasManager.redrawCanvas
   });
 
   console.log('Cross-module dependencies configured');
@@ -199,6 +209,7 @@ export function getModules() {
     toolManager,
     elementFactory,
     signalrClient,
-    viewportManager
+    viewportManager,
+    sparkleEffects
   };
 }

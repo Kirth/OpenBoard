@@ -310,6 +310,11 @@ function renderAllElements() {
 
   // Render lock icons for locked elements
   renderLockIcons(ordered);
+
+  // Render sparkle effects on top of everything else
+  if (dependencies.renderSparkleEffects) {
+    dependencies.renderSparkleEffects(ctx);
+  }
 }
 
 export function renderExistingElement(element) {

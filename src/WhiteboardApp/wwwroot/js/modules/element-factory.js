@@ -1673,6 +1673,21 @@ export async function undo() {
 
     selectedElementId = previousState.selectedElementId;
 
+    // Detect elements that were restored (newly added) during undo
+    const restoredElements = [];
+    const currentElementIds = new Set(currentState.elements.map(([id, element]) => id));
+    for (const [id, element] of previousState.elements) {
+      if (!currentElementIds.has(id)) {
+        restoredElements.push(element);
+      }
+    }
+
+    // Add sparkle effects to restored elements
+    if (restoredElements.length > 0 && dependencies.addSparkleEffectsToElements) {
+      console.log(`Adding sparkle effects to ${restoredElements.length} restored elements`);
+      dependencies.addSparkleEffectsToElements(restoredElements);
+    }
+
     // Sync changes to server
     await syncElementChangesToServer(currentState.elements, previousState.elements);
 
@@ -1725,6 +1740,21 @@ export async function redo() {
     }
 
     selectedElementId = nextState.selectedElementId;
+
+    // Detect elements that were restored (newly added) during redo
+    const restoredElements = [];
+    const currentElementIds = new Set(currentState.elements.map(([id, element]) => id));
+    for (const [id, element] of nextState.elements) {
+      if (!currentElementIds.has(id)) {
+        restoredElements.push(element);
+      }
+    }
+
+    // Add sparkle effects to restored elements
+    if (restoredElements.length > 0 && dependencies.addSparkleEffectsToElements) {
+      console.log(`Adding sparkle effects to ${restoredElements.length} restored elements during redo`);
+      dependencies.addSparkleEffectsToElements(restoredElements);
+    }
 
     // Sync changes to server
     await syncElementChangesToServer(currentState.elements, nextState.elements);
