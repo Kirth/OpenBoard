@@ -1006,6 +1006,12 @@ export function deleteSelectedElement() {
 
   // Save undo state BEFORE deleting the element
   saveCanvasState('Delete Element');
+
+  // Add poof effect before deleting (while element still exists)
+  if (dependencies.addPoofEffectToElement) {
+    console.log(`Adding poof effect for deleted element ${element.id} (${element.type})`);
+    dependencies.addPoofEffectToElement(element);
+  }
   
   // Delete locally for immediate feedback
   elements.delete(selectedElementId);

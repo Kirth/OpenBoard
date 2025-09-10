@@ -138,7 +138,8 @@ export function setupDependencies() {
     updateTextElementContent: signalrClient.updateTextElementContent,
     blazorReference: null, // Will be set by Blazor
     showNotification: uiFeatures.showNotification,
-    addSparkleEffectsToElements: sparkleEffects.addSparkleEffectsToElements
+    addSparkleEffectsToElements: sparkleEffects.addSparkleEffectsToElements,
+    addPoofEffectToElement: sparkleEffects.addPoofEffectToElement
   });
 
   // SignalR Client Dependencies
