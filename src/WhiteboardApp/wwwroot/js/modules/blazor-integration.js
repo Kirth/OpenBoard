@@ -98,6 +98,7 @@ export function setupGlobalExposure() {
   window.deleteElement = dependencies.uiFeatures.deleteElement;
   window.updateElementFillColor = dependencies.uiFeatures.updateElementFillColor;
   window.removeElementFill = dependencies.uiFeatures.removeElementFill;
+  window.toggleElementFill = dependencies.uiFeatures.toggleElementFill;
   window.updateElementBorderColor = dependencies.uiFeatures.updateElementBorderColor;
   window.updateElementBorderWidth = dependencies.uiFeatures.updateElementBorderWidth;
   window.updateStickyNoteColor = dependencies.uiFeatures.updateStickyNoteColor;

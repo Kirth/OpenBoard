@@ -251,6 +251,21 @@ function getLockButtonText(element) {
   }
 }
 
+// Helper function to ensure valid hex color for HTML color inputs
+function getValidHexColor(color, defaultColor) {
+  if (!color || color === 'transparent' || color === 'none' || color === null || color === undefined) {
+    return defaultColor;
+  }
+  
+  // Check if it's already a valid hex color
+  if (typeof color === 'string' && /^#[0-9a-fA-F]{6}$/.test(color)) {
+    return color;
+  }
+  
+  // Try to handle other color formats or return default
+  return defaultColor;
+}
+
 function createElementContextMenu(element) {
   const isShape = ['rectangle', 'circle', 'triangle', 'diamond', 'ellipse', 'star'].includes(element.type);
   const isLine = element.type === 'Line';
@@ -281,15 +296,39 @@ function createElementContextMenu(element) {
                 ${isShape ? `
                     <div class="context-menu-color-row">
                         <label>Fill Color:</label>
-                        <input type="color" class="context-menu-color" value="${element.data?.fillColor || '#ffffff'}" 
-                               onchange="updateElementFillColor('${element.id}', this.value)">
-                        <button class="context-menu-btn" onclick="removeElementFill('${element.id}')">None</button>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <div class="color-input-wrapper" style="position: relative;">
+                                <input type="color" id="fillColorInput_${element.id}" 
+                                       style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer;"
+                                       value="${getValidHexColor(element.data?.fillColor, '#ffffff')}"
+                                       onchange="updateElementFillColor('${element.id}', this.value); hideContextMenu();"
+                                       oninput="updateElementFillColor('${element.id}', this.value);">
+                                <button class="color-preview-btn" 
+                                        onclick="document.getElementById('fillColorInput_${element.id}').click()"
+                                        style="width: 32px; height: 24px; border: 2px solid #ccc; border-radius: 4px; cursor: pointer; background-color: ${!element.data?.fillColor || element.data?.fillColor === 'transparent' || element.data?.fillColor === 'none' ? 'transparent' : getValidHexColor(element.data?.fillColor, '#ffffff')}; ${!element.data?.fillColor || element.data?.fillColor === 'transparent' || element.data?.fillColor === 'none' ? 'background-image: linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%); background-size: 8px 8px; background-position: 0 0, 0 4px, 4px -4px, -4px 0px;' : ''}"
+                                        title="${!element.data?.fillColor || element.data?.fillColor === 'transparent' || element.data?.fillColor === 'none' ? 'Click to add fill color' : 'Current fill color - click to change'}">
+                                </button>
+                            </div>
+                            <button class="context-menu-btn ${!element.data?.fillColor || element.data?.fillColor === 'transparent' || element.data?.fillColor === 'none' ? 'active' : ''}" onclick="toggleElementFill('${element.id}')">
+                                ${!element.data?.fillColor || element.data?.fillColor === 'transparent' || element.data?.fillColor === 'none' ? 'Add Fill' : 'No Fill'}
+                            </button>
+                        </div>
                     </div>
                 ` : ''}
                 <div class="context-menu-color-row">
                     <label>Border Color:</label>
-                    <input type="color" class="context-menu-color" value="${element.data?.color || '#000000'}" 
-                           onchange="updateElementBorderColor('${element.id}', this.value)">
+                    <div class="color-input-wrapper" style="position: relative; display: inline-block;">
+                        <input type="color" id="borderColorInput_${element.id}" 
+                               style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer;"
+                               value="${getValidHexColor(element.data?.color, '#000000')}"
+                               onchange="updateElementBorderColor('${element.id}', this.value); hideContextMenu();"
+                               oninput="updateElementBorderColor('${element.id}', this.value);">
+                        <button class="color-preview-btn" 
+                                onclick="document.getElementById('borderColorInput_${element.id}').click()"
+                                style="width: 32px; height: 24px; border: 2px solid #ccc; border-radius: 4px; cursor: pointer; background-color: ${getValidHexColor(element.data?.color, '#000000')};"
+                                title="Current border color - click to change">
+                        </button>
+                    </div>
                 </div>
                 <div class="context-menu-range-row">
                     <label>Border Width:</label>
@@ -308,8 +347,18 @@ function createElementContextMenu(element) {
                 <div class="context-menu-subtitle">Sticky Color</div>
                 <div class="context-menu-color-row">
                     <label>Background:</label>
-                    <input type="color" class="context-menu-color" value="${element.data?.color || '#ffeb3b'}" 
-                           onchange="updateStickyNoteColor('${element.id}', this.value)">
+                    <div class="color-input-wrapper" style="position: relative; display: inline-block;">
+                        <input type="color" id="stickyColorInput_${element.id}" 
+                               style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer;"
+                               value="${getValidHexColor(element.data?.color, '#ffeb3b')}"
+                               onchange="updateStickyNoteColor('${element.id}', this.value); hideContextMenu();"
+                               oninput="updateStickyNoteColor('${element.id}', this.value);">
+                        <button class="color-preview-btn" 
+                                onclick="document.getElementById('stickyColorInput_${element.id}').click()"
+                                style="width: 32px; height: 24px; border: 2px solid #ccc; border-radius: 4px; cursor: pointer; background-color: ${getValidHexColor(element.data?.color, '#ffeb3b')};"
+                                title="Current background color - click to change">
+                        </button>
+                    </div>
                 </div>
                 <div class="context-menu-color-presets">
                     <button class="color-preset" style="background-color: #ffeb3b" onclick="updateStickyNoteColor('${element.id}', '#ffeb3b')" title="Yellow"></button>
@@ -772,9 +821,29 @@ export function updateElementBorderWidth(elementId, width) {
   }
 }
 
+export function toggleElementFill(elementId) {
+  if (dependencies.elementFactory && dependencies.elementFactory.updateElementStyle) {
+    // Get current element to check fill state
+    const element = dependencies.elementFactory.getElementById ? dependencies.elementFactory.getElementById(elementId) : null;
+    
+    if (element) {
+      const currentFill = element.data?.fillColor;
+      
+      if (!currentFill || currentFill === 'transparent' || currentFill === 'none') {
+        // Add fill - set to white as default
+        dependencies.elementFactory.updateElementStyle(elementId, 'fillColor', '#ffffff');
+      } else {
+        // Remove fill - set to transparent
+        dependencies.elementFactory.updateElementStyle(elementId, 'fillColor', 'transparent');
+      }
+    }
+  }
+}
+
+// Keep the old function for backward compatibility
 export function removeElementFill(elementId) {
   if (dependencies.elementFactory && dependencies.elementFactory.updateElementStyle) {
-    dependencies.elementFactory.updateElementStyle(elementId, 'fillColor', null);
+    dependencies.elementFactory.updateElementStyle(elementId, 'fillColor', 'transparent');
   }
 }
 

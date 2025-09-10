@@ -988,6 +988,40 @@ export function updateElementPositionLocal(id, newX, newY) {
   }
 }
 
+export function updateElementStyle(elementId, styleProperty, styleValue) {
+  console.log('updateElementStyle called:', elementId, styleProperty, styleValue);
+
+  const element = elements.get(elementId);
+  if (!element) {
+    console.warn('Element not found for style update:', elementId);
+    return;
+  }
+
+  // Initialize data object if it doesn't exist
+  if (!element.data) {
+    element.data = {};
+  }
+
+  // Update the style property
+  element.data[styleProperty] = styleValue;
+
+  console.log('Element style updated:', elementId, styleProperty, styleValue);
+
+  // Redraw canvas to show changes
+  if (dependencies.redrawCanvas) {
+    dependencies.redrawCanvas();
+  }
+
+  // Send style update to server via SignalR if available
+  if (dependencies.updateElementStyle && dependencies.currentBoardId) {
+    try {
+      dependencies.updateElementStyle(elementId, element.data);
+    } catch (error) {
+      console.error('Error sending style update to server:', error);
+    }
+  }
+}
+
 export function deleteSelectedElement() {
   if (!selectedElementId) return;
 
@@ -2006,6 +2040,7 @@ if (typeof window !== 'undefined') {
   window.hideElementSelection = hideElementSelection;
   window.drawCollaborativeSelections = drawCollaborativeSelections;
   window.updateElementPosition = updateElementPosition;
+  window.updateElementStyle = updateElementStyle;
   window.deleteSelectedElement = deleteSelectedElement;
   window.duplicateSelectedElement = duplicateSelectedElement;
   window.copySelectedElement = copySelectedElement;

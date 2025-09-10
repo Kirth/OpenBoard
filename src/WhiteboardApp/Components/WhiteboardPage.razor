@@ -65,6 +65,12 @@
         await LoadBoardInfo();
     }
 
+    protected override async Task OnParametersSetAsync()
+    {
+        // Reload board info when BoardId parameter changes
+        await LoadBoardInfo();
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
@@ -76,10 +82,27 @@
 
     private async Task LoadBoardInfo()
     {
-        if (Guid.TryParse(BoardId, out var boardGuid))
+        try
         {
-            var board = await BoardService.GetBoardAsync(boardGuid);
-            boardName = board?.Name ?? "Unknown Board";
+            if (Guid.TryParse(BoardId, out var boardGuid))
+            {
+                var board = await BoardService.GetBoardAsync(boardGuid);
+                boardName = board?.Name ?? "Unknown Board";
+                
+                // Trigger a re-render to update the page title
+                StateHasChanged();
+            }
+            else
+            {
+                boardName = "Invalid Board ID";
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading board info: {ex.Message}");
+            boardName = "Error Loading Board";
+            StateHasChanged();
         }
     }
 
