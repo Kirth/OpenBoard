@@ -797,6 +797,10 @@ export function highlightElement(id) {
   }
 }
 
+export function selectElement(id) {
+  highlightElement(id);
+}
+
 export function clearSelection() {
   // Deselect current element if there is one
   if (selectedElementId && dependencies.sendElementDeselect && dependencies.currentBoardId) {
@@ -1467,6 +1471,12 @@ export function pasteElement() {
 
   saveCanvasState('Paste Element');
 
+  // Send element to server for persistence and synchronization
+  if (dependencies.sendElement && dependencies.currentBoardId) {
+    dependencies.sendElement(dependencies.currentBoardId, duplicate, duplicate.id);
+    markElementForSelection(duplicate.id);
+  }
+
   if (dependencies.redrawCanvas) {
     dependencies.redrawCanvas();
   }
@@ -1660,6 +1670,24 @@ export function startEditingTextElement(elementId, element) {
 export function stopEditingTextElement() {
   editingElement = null; // Legacy compatibility
   return editorManager.stopEditing();
+}
+
+export function startEditingElement(elementId) {
+  const element = elements.get(elementId);
+  if (!element) {
+    console.warn(`Element ${elementId} not found for editing`);
+    return;
+  }
+
+  switch (element.type) {
+    case 'StickyNote':
+      return startEditingStickyNote(elementId, element);
+    case 'Text':
+      return startEditingTextElement(elementId, element);
+    default:
+      console.log(`Element type ${element.type} is not editable`);
+      return;
+  }
 }
 
 // Element locking functions
