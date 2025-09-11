@@ -126,6 +126,7 @@ function setupModuleDependencies() {
     triggerImageUpload: interactionManager.triggerImageUpload,
     handleImageUpload: interactionManager.handleImageUpload,
     updateCursorForHover: interactionManager.updateCursorForHover,
+    startSelectionRectangle: interactionManager.startSelectionRectangle,
     updateSelectionRectangle: interactionManager.updateSelectionRectangle,
     finishSelectionRectangle: interactionManager.finishSelectionRectangle,
     updateElementRotation: interactionManager.updateElementRotation,

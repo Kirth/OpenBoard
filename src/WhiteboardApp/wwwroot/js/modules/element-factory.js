@@ -249,7 +249,11 @@ export class ElementFactory {
         endX: x2,
         endY: y2,
         locked: false,
-        rotation: 0
+        rotation: 0,
+        // Arrow head properties
+        startArrow: style.startArrow || 'none',
+        endArrow: style.endArrow || 'none',
+        arrowSize: style.arrowSize || 10
       }
     };
   }

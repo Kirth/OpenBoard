@@ -139,6 +139,15 @@ export function setupGlobalExposure() {
   window.undoAction = dependencies.uiFeatures.undoAction;
   window.redoAction = dependencies.uiFeatures.redoAction;
   window.pasteElementHere = dependencies.uiFeatures.pasteElementHere;
+  // Arrow control functions
+  window.updateLineArrow = dependencies.uiFeatures.updateLineArrow;
+  window.updateLineArrowSize = dependencies.uiFeatures.updateLineArrowSize;
+  
+  // Debug: Verify functions are exposed
+  console.log('Arrow functions exposed:', {
+    updateLineArrow: typeof window.updateLineArrow,
+    updateLineArrowSize: typeof window.updateLineArrowSize
+  });
 
   // Grid system
   window.toggleGrid = dependencies.uiFeatures.toggleGrid;

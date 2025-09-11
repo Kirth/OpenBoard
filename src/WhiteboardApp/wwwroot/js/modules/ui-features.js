@@ -340,6 +340,37 @@ function createElementContextMenu(element) {
         `;
   }
 
+  // Arrow controls for lines
+  if (isLine) {
+    menuHTML += `
+            <div class="context-menu-section">
+                <div class="context-menu-subtitle">Arrow Heads</div>
+                <div class="context-menu-color-row">
+                    <label>Start Arrow:</label>
+                    <select onchange="updateLineArrow('${element.id}', 'startArrow', this.value)" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px;">
+                        <option value="none" ${!element.data?.startArrow || element.data.startArrow === 'none' ? 'selected' : ''}>None</option>
+                        <option value="outline" ${element.data?.startArrow === 'outline' ? 'selected' : ''}>Arrow ➤</option>
+                        <option value="filled" ${element.data?.startArrow === 'filled' ? 'selected' : ''}>Filled ➤</option>
+                    </select>
+                </div>
+                <div class="context-menu-color-row">
+                    <label>End Arrow:</label>
+                    <select onchange="updateLineArrow('${element.id}', 'endArrow', this.value)" style="padding: 4px; border: 1px solid #ccc; border-radius: 4px;">
+                        <option value="none" ${!element.data?.endArrow || element.data.endArrow === 'none' ? 'selected' : ''}>None</option>
+                        <option value="outline" ${element.data?.endArrow === 'outline' ? 'selected' : ''}>Arrow ➤</option>
+                        <option value="filled" ${element.data?.endArrow === 'filled' ? 'selected' : ''}>Filled ➤</option>
+                    </select>
+                </div>
+                <div class="context-menu-range-row">
+                    <label>Arrow Size:</label>
+                    <input type="range" min="5" max="20" value="${element.data?.arrowSize || 10}" 
+                           class="context-menu-range" onchange="updateLineArrowSize('${element.id}', this.value)">
+                    <span class="range-value">${element.data?.arrowSize || 10}px</span>
+                </div>
+            </div>
+        `;
+  }
+
   // Sticky note color picker section
   if (isStickyNote) {
     menuHTML += `
@@ -869,6 +900,28 @@ export function removeElementFill(elementId) {
 export function updateStickyNoteColor(elementId, color) {
   if (dependencies.elementFactory && dependencies.elementFactory.updateElementStyle) {
     dependencies.elementFactory.updateElementStyle(elementId, 'color', color);
+  }
+}
+
+// Arrow control handlers
+export function updateLineArrow(elementId, arrowProperty, value) {
+  console.log('updateLineArrow called:', elementId, arrowProperty, value);
+  if (dependencies.elementFactory && dependencies.elementFactory.updateElementStyle) {
+    dependencies.elementFactory.updateElementStyle(elementId, arrowProperty, value);
+  }
+}
+
+export function updateLineArrowSize(elementId, size) {
+  console.log('updateLineArrowSize called:', elementId, size);
+  if (dependencies.elementFactory && dependencies.elementFactory.updateElementStyle) {
+    dependencies.elementFactory.updateElementStyle(elementId, 'arrowSize', parseInt(size));
+  }
+  
+  // Update the range value display
+  const rangeElement = event.target;
+  const valueSpan = rangeElement.nextElementSibling;
+  if (valueSpan && valueSpan.classList.contains('range-value')) {
+    valueSpan.textContent = `${size}px`;
   }
 }
 

@@ -828,10 +828,53 @@ function renderLine(el) {
   ctx.strokeStyle = stroke;
   ctx.lineWidth = width;
 
+  // Draw main line
   ctx.beginPath();
   ctx.moveTo(el.x, el.y);
   ctx.lineTo(el.x + el.width, el.y + el.height);
   ctx.stroke();
+
+  // Draw arrow heads if configured
+  if (el.data?.startArrow && el.data.startArrow !== 'none') {
+    drawArrowHead(el.x, el.y, el.x + el.width, el.y + el.height, el.data.arrowSize || 10, stroke, width, el.data.startArrow);
+  }
+  if (el.data?.endArrow && el.data.endArrow !== 'none') {
+    drawArrowHead(el.x + el.width, el.y + el.height, el.x, el.y, el.data.arrowSize || 10, stroke, width, el.data.endArrow);
+  }
+}
+
+function drawArrowHead(tipX, tipY, lineX, lineY, size, strokeColor, strokeWidth, arrowType) {
+  // Calculate the angle of the line
+  const angle = Math.atan2(tipY - lineY, tipX - lineX);
+  
+  // Calculate arrow head points
+  const arrowAngle = Math.PI / 6; // 30 degrees
+  const x1 = tipX - size * Math.cos(angle - arrowAngle);
+  const y1 = tipY - size * Math.sin(angle - arrowAngle);
+  const x2 = tipX - size * Math.cos(angle + arrowAngle);
+  const y2 = tipY - size * Math.sin(angle + arrowAngle);
+
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = strokeWidth;
+
+  if (arrowType === 'filled') {
+    // Filled arrow head
+    ctx.fillStyle = strokeColor;
+    ctx.beginPath();
+    ctx.moveTo(tipX, tipY);
+    ctx.lineTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.closePath();
+    ctx.fill();
+  } else if (arrowType === 'outline') {
+    // Outline arrow head
+    ctx.beginPath();
+    ctx.moveTo(tipX, tipY);
+    ctx.lineTo(x1, y1);
+    ctx.moveTo(tipX, tipY);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  }
 }
 
 function renderPath(el) {
