@@ -86,6 +86,9 @@ function setupModuleDependencies() {
     get lineOriginalStart() { return interactionManager.getLineOriginalStart(); },
     get lineOriginalEnd() { return interactionManager.getLineOriginalEnd(); },
     get isResizing() { return interactionManager.getIsResizing(); },
+    get isRotating() { return interactionManager.getIsRotating(); },
+    get rotationStartAngle() { return interactionManager.getRotationStartAngle(); },
+    get rotationElementStartAngle() { return interactionManager.getRotationElementStartAngle(); },
     get isSelectionDragging() { return interactionManager.getIsSelectionDragging(); },
     get longTouchTimer() { return interactionManager.getLongTouchTimer(); },
     // Interaction state setters
@@ -104,6 +107,9 @@ function setupModuleDependencies() {
     setLineOriginalEnd: interactionManager.setLineOriginalEnd,
     setLongTouchTimer: interactionManager.setLongTouchTimer,
     setSelectionDragging: interactionManager.setSelectionDragging,
+    setRotating: interactionManager.setRotating,
+    setRotationStartAngle: interactionManager.setRotationStartAngle,
+    setRotationElementStartAngle: interactionManager.setRotationElementStartAngle,
     // State variables
     get startX() { return startX; },
     get startY() { return startY; },
@@ -122,6 +128,9 @@ function setupModuleDependencies() {
     updateCursorForHover: interactionManager.updateCursorForHover,
     updateSelectionRectangle: interactionManager.updateSelectionRectangle,
     finishSelectionRectangle: interactionManager.finishSelectionRectangle,
+    updateElementRotation: interactionManager.updateElementRotation,
+    finishElementRotation: interactionManager.finishElementRotation,
+    get selectedElementIds() { return interactionManager.getSelectedElementIds(); },
     toggleDarkMode: uiFeatures.toggleDarkMode,
     toggleElementLockAction: uiFeatures.toggleElementLockAction,
     showContextMenu: uiFeatures.showContextMenu

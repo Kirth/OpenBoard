@@ -321,6 +321,20 @@ export function renderExistingElement(element) {
   if (!ctx || !element) return;
   try {
     ctx.save();
+    
+    // Apply rotation if the element has a rotation property
+    const rotation = element.data?.rotation || 0;
+    if (rotation !== 0) {
+      // Calculate the center point of the element
+      const centerX = element.x + element.width / 2;
+      const centerY = element.y + element.height / 2;
+      
+      // Translate to center, rotate, then translate back
+      ctx.translate(centerX, centerY);
+      ctx.rotate((rotation * Math.PI) / 180); // Convert degrees to radians
+      ctx.translate(-centerX, -centerY);
+    }
+    
     switch (element.type) {
       case 'Rectangle':
       case 'rectangle': renderRectangle(element); break;
@@ -410,6 +424,19 @@ export function renderElementToMinimap(element, minimapCtx) {
   if (!minimapCtx || !element) return;
   try {
     minimapCtx.save();
+    
+    // Apply rotation if the element has a rotation property
+    const rotation = element.data?.rotation || 0;
+    if (rotation !== 0) {
+      // Calculate the center point of the element
+      const centerX = element.x + element.width / 2;
+      const centerY = element.y + element.height / 2;
+      
+      // Translate to center, rotate, then translate back
+      minimapCtx.translate(centerX, centerY);
+      minimapCtx.rotate((rotation * Math.PI) / 180); // Convert degrees to radians
+      minimapCtx.translate(-centerX, -centerY);
+    }
 
     const stroke = element.data?.strokeColor ?? window.invertBlackToWhite(element.data?.color) ?? window.invertBlackToWhite('#000000');
 
@@ -616,9 +643,22 @@ function drawUIElements() {
             ctx.stroke();
           }
         } else {
-          // For other elements, show the traditional bounding box
+          // For other elements, show the traditional bounding box with rotation support
           const sw = el.data?.strokeWidth ?? 2;
           const inflate = sw * 0.5;
+          const rotation = el.data?.rotation || 0;
+
+          // Save context for rotation transforms
+          ctx.save();
+          
+          // Apply rotation for selection UI if element is rotated
+          if (rotation !== 0) {
+            const centerX = el.x + el.width / 2;
+            const centerY = el.y + el.height / 2;
+            ctx.translate(centerX, centerY);
+            ctx.rotate((rotation * Math.PI) / 180);
+            ctx.translate(-centerX, -centerY);
+          }
 
           ctx.strokeStyle = '#007bff';
           ctx.lineWidth = 2 / zoom;
@@ -629,7 +669,7 @@ function drawUIElements() {
             el.height + 2 * inflate
           );
 
-          // Draw handles as small rectangles in world space
+          // Draw resize handles as small rectangles in world space
           const handles = [
             { x: el.x, y: el.y }, // Top-left
             { x: el.x + el.width, y: el.y }, // Top-right
@@ -641,10 +681,53 @@ function drawUIElements() {
             { x: el.x + el.width, y: el.y + el.height / 2 } // Right-center
           ];
 
+          ctx.fillStyle = '#ffffff';
+          ctx.strokeStyle = '#007bff';
           for (const handle of handles) {
             ctx.fillRect(handle.x - handleSize / 2, handle.y - handleSize / 2, handleSize, handleSize);
             ctx.strokeRect(handle.x - handleSize / 2, handle.y - handleSize / 2, handleSize, handleSize);
           }
+          
+          // Draw rotation handle (small circle above the element)
+          const rotationHandleY = el.y - 30 / zoom;
+          const rotationHandleX = el.x + el.width / 2;
+          
+          // Draw line from top-center handle to rotation handle
+          ctx.strokeStyle = '#007bff';
+          ctx.lineWidth = 1 / zoom;
+          ctx.beginPath();
+          ctx.moveTo(el.x + el.width / 2, el.y);
+          ctx.lineTo(rotationHandleX, rotationHandleY);
+          ctx.stroke();
+          
+          // Draw rotation handle as a larger circle
+          ctx.fillStyle = '#ffffff';
+          ctx.strokeStyle = '#007bff';
+          ctx.lineWidth = 2 / zoom;
+          ctx.beginPath();
+          // Make the rotation handle visually bigger
+          const rotationHandleRadius = Math.max(handleSize / 2, 6 / zoom);
+          ctx.arc(rotationHandleX, rotationHandleY, rotationHandleRadius, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          
+          // Draw rotation icon inside the circle
+          ctx.strokeStyle = '#007bff';
+          ctx.lineWidth = 1.5 / zoom;
+          ctx.beginPath();
+          const iconRadius = rotationHandleRadius * 0.6;
+          ctx.arc(rotationHandleX, rotationHandleY, iconRadius, 0, Math.PI * 1.5);
+          ctx.stroke();
+          // Arrow head
+          const arrowSize = iconRadius * 0.3;
+          ctx.beginPath();
+          ctx.moveTo(rotationHandleX + iconRadius, rotationHandleY);
+          ctx.lineTo(rotationHandleX + iconRadius - arrowSize, rotationHandleY - arrowSize);
+          ctx.moveTo(rotationHandleX + iconRadius, rotationHandleY);
+          ctx.lineTo(rotationHandleX + iconRadius - arrowSize, rotationHandleY + arrowSize);
+          ctx.stroke();
+          
+          ctx.restore();
         }
 
         ctx.restore();

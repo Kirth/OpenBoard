@@ -445,6 +445,22 @@ public class CollaborationHub : Hub
             var existingDataObj = JsonSerializer.Deserialize<Dictionary<string, object>>(existingData) ?? new Dictionary<string, object>();
             var styleDataObj = JsonSerializer.Deserialize<Dictionary<string, object>>(JsonSerializer.Serialize(styleData)) ?? new Dictionary<string, object>();
             
+            // Validate rotation value if present
+            if (styleDataObj.ContainsKey("rotation") && styleDataObj["rotation"] != null)
+            {
+                if (double.TryParse(styleDataObj["rotation"].ToString(), out var rotation))
+                {
+                    // Normalize rotation to 0-360 degrees
+                    rotation = ((rotation % 360) + 360) % 360;
+                    styleDataObj["rotation"] = rotation;
+                }
+                else
+                {
+                    // Invalid rotation value, remove it
+                    styleDataObj.Remove("rotation");
+                }
+            }
+            
             // Update the style properties
             foreach (var kvp in styleDataObj)
             {
@@ -697,7 +713,8 @@ public class CollaborationHub : Hub
 
     private static bool IsStyleableElement(ElementType type)
     {
-        return type == ElementType.Shape || type == ElementType.Drawing || type == ElementType.Line;
+        return type == ElementType.Shape || type == ElementType.Drawing || type == ElementType.Line || 
+               type == ElementType.Text || type == ElementType.StickyNote || type == ElementType.Image;
     }
 
     private static bool HasLineCoordinateChanges(Dictionary<string, object> styleData)

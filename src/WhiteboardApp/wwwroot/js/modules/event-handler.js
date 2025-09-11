@@ -255,6 +255,13 @@ function handleMouseMove(event) {
       return;
     }
 
+    // Handle element rotation in select mode
+    if (dependencies.isRotating && currentTool === 'select') {
+      console.log('[MOVE] isRotating=', dependencies.isRotating, 'tool=', currentTool);
+      dependencies.updateElementRotation(worldPos.x, worldPos.y);
+      return;
+    }
+
     // Handle element dragging in select mode
     if (dependencies.isDragging && dependencies.draggedElementId && currentTool === 'select') {
       const deltaX = worldPos.x - dependencies.dragStartX;
@@ -409,6 +416,12 @@ function handleMouseUp(event) {
     if (dependencies.isResizing && dependencies.elementFactory.isCurrentlyResizing()) {
       dependencies.elementFactory.finishElementResize();
       dependencies.setResizing(false);
+      return;
+    }
+
+    // Handle element rotation end
+    if (dependencies.isRotating && currentTool === 'select') {
+      dependencies.finishElementRotation();
       return;
     }
 
@@ -759,6 +772,12 @@ function handleTouchMove(event) {
         return;
       }
 
+      // Handle element rotation
+      if (dependencies.isRotating && currentTool === 'select') {
+        dependencies.updateElementRotation(worldPos.x, worldPos.y);
+        return;
+      }
+
       // Handle element dragging
       if (dependencies.isDragging && dependencies.draggedElementId && currentTool === 'select') {
         const deltaX = worldPos.x - dependencies.dragStartX;
@@ -992,10 +1011,33 @@ function handleSelectTouchStart(x, y, event) {
   try {
     console.log(`[SELECT TOUCH] Starting select touch at (${x}, ${y})`);
 
+    // A) First, rotation handle on already selected elements
+    const selectedElementIds = dependencies.selectedElementIds || new Set();
+    if (selectedElementIds.size > 0) {
+      const ids = Array.from(selectedElementIds);
+      for (let i = ids.length - 1; i >= 0; i--) {
+        const el = dependencies.elementFactory.getElementById(ids[i]);
+        if (!el) continue;
+        if (dependencies.elementFactory.getRotationHandleAt(x, y, el) === 'rotate') {
+          console.log(`[SELECT TOUCH] Starting rotation for selected element: ${el.id}`);
+          dependencies.setRotating(true);
+          dependencies.setDraggedElementId(el.id);
+          
+          // Calculate initial angle from element center to touch position
+          const centerX = el.x + el.width / 2;
+          const centerY = el.y + el.height / 2;
+          dependencies.setRotationStartAngle(Math.atan2(y - centerY, x - centerX) * 180 / Math.PI);
+          dependencies.setRotationElementStartAngle(el.data?.rotation || 0);
+          
+          return; // start rotation; do not fall through
+        }
+      }
+    }
+
     // Clear any existing selection first
     dependencies.elementFactory.clearSelection();
 
-    // Check for element at touch point
+    // B) Otherwise hover element under pointer as usual
     const element = dependencies.elementFactory.getElementAtPoint(x, y);
 
     if (element) {
@@ -1016,6 +1058,21 @@ function handleSelectTouchStart(x, y, event) {
           dependencies.setLineOriginalEnd({ x: element.x + element.width, y: element.y + element.height });
           return;
         }
+      }
+
+      // Rotation handle for this hovered element (still useful)
+      if (dependencies.elementFactory.getRotationHandleAt(x, y, element) === 'rotate') {
+        console.log(`[SELECT TOUCH] Starting rotation for element: ${element.id}`);
+        dependencies.setRotating(true);
+        dependencies.setDraggedElementId(element.id);
+        
+        // Calculate initial angle from element center to touch position
+        const centerX = element.x + element.width / 2;
+        const centerY = element.y + element.height / 2;
+        dependencies.setRotationStartAngle(Math.atan2(y - centerY, x - centerX) * 180 / Math.PI);
+        dependencies.setRotationElementStartAngle(element.data?.rotation || 0);
+        
+        return;
       }
 
       // Check for resize handles

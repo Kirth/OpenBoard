@@ -24,6 +24,11 @@ let selectedElementIds = new Set();
 // Resize state
 let isResizing = false;
 
+// Rotation state
+let isRotating = false;
+let rotationStartAngle = 0;
+let rotationElementStartAngle = 0;
+
 // Selection rectangle state
 let isSelectionDragging = false;
 let selectionStartX = 0;
@@ -48,6 +53,9 @@ export function getDraggedLineHandle() { return draggedLineHandle; }
 export function getLineOriginalStart() { return lineOriginalStart; }
 export function getLineOriginalEnd() { return lineOriginalEnd; }
 export function getIsResizing() { return isResizing; }
+export function getIsRotating() { return isRotating; }
+export function getRotationStartAngle() { return rotationStartAngle; }
+export function getRotationElementStartAngle() { return rotationElementStartAngle; }
 export function getIsSelectionDragging() { return isSelectionDragging; }
 export function getLongTouchTimer() { return longTouchTimer; }
 
@@ -258,17 +266,46 @@ export function handleSelectMouseDown(x, y, event) {
   try {
     console.log(`[SELECT MOUSE] Starting select interaction at (${x}, ${y})`);
 
+    // A) First, rotation handle on already selected elements
+    if (selectedElementIds.size > 0) {
+      const ids = Array.from(selectedElementIds);
+      for (let i = ids.length - 1; i >= 0; i--) {
+        const el = dependencies.elementFactory.getElementById(ids[i]);
+        if (!el) continue;
+        if (dependencies.elementFactory.getRotationHandleAt(x, y, el) === 'rotate') {
+          console.log('[ROTATION] start on selected', el.id);
+          isRotating = true;
+          dependencies.setRotating?.(true);
+          draggedElementId = el.id;
+          dependencies.setDraggedElementId?.(el.id);
+          const cx = el.x + el.width / 2;
+          const cy = el.y + el.height / 2;
+          rotationStartAngle = Math.atan2(y - cy, x - cx) * 180 / Math.PI;
+          rotationElementStartAngle = el.data?.rotation || 0;
+          dependencies.setRotationStartAngle?.(rotationStartAngle);
+          dependencies.setRotationElementStartAngle?.(rotationElementStartAngle);
+          return; // start rotation; do not fall through
+        }
+      }
+    }
+
     // Clear any existing selection first if not shift-clicking
     if (!event.shiftKey) {
       dependencies.elementFactory.clearSelection();
       selectedElementIds.clear();
     }
 
-    // Check for element at click point
+    // B) Otherwise hover element under pointer as usual
     const element = dependencies.elementFactory.getElementAtPoint(x, y);
 
     if (element) {
       console.log(`[SELECT MOUSE] Found element: ${element.id} (${element.type})`);
+
+      // (optional) set selection if not selected
+      if (!selectedElementIds.has(element.id)) {
+        selectedElementIds.clear();
+        selectedElementIds.add(element.id);
+      }
 
       // Select the element (or add to selection if shift-clicking)
       if (event.shiftKey && selectedElementIds.has(element.id)) {
@@ -298,7 +335,23 @@ export function handleSelectMouseDown(x, y, event) {
         }
       }
 
-      // Check for resize handles
+      // Rotation handle for this hovered element (still useful)
+      if (dependencies.elementFactory.getRotationHandleAt(x, y, element) === 'rotate') {
+        console.log('[ROTATION] start on hovered element', element.id);
+        isRotating = true;
+        dependencies.setRotating?.(true);
+        draggedElementId = element.id;
+        dependencies.setDraggedElementId?.(element.id);
+        const cx = element.x + element.width / 2;
+        const cy = element.y + element.height / 2;
+        rotationStartAngle = Math.atan2(y - cy, x - cx) * 180 / Math.PI;
+        rotationElementStartAngle = element.data?.rotation || 0;
+        dependencies.setRotationStartAngle?.(rotationStartAngle);
+        dependencies.setRotationElementStartAngle?.(rotationElementStartAngle);
+        return;
+      }
+
+      // Resize / drag fallbacks...
       const resizeHandle = dependencies.elementFactory.getResizeHandleAt(x, y, element);
       if (resizeHandle) {
         console.log(`[SELECT MOUSE] Starting resize with handle: ${resizeHandle}`);
@@ -307,7 +360,7 @@ export function handleSelectMouseDown(x, y, event) {
         return;
       }
 
-      // Start dragging the element
+      // Start drag of element body
       console.log(`[SELECT MOUSE] Starting element drag for: ${element.id}`);
       isDragging = true;
       draggedElementId = element.id;
@@ -356,11 +409,28 @@ export function updateCursorForHover(worldX, worldY) {
       return;
     }
 
-    // In select mode, check what's under the cursor
+    // 1) If we have selected elements, check their rotation handles first (topmost selection first)
+    if (selectedElementIds.size > 0) {
+      const ids = Array.from(selectedElementIds);
+      for (let i = ids.length - 1; i >= 0; i--) {
+        const el = dependencies.elementFactory.getElementById(ids[i]);
+        if (!el) continue;
+        if (dependencies.elementFactory.getRotationHandleAt(worldX, worldY, el) === 'rotate') {
+          dependencies.canvasManager.updateCanvasCursor('alias'); // curved-arrow-ish
+          return;
+        }
+      }
+    }
+
+    // 2) Then do normal hit test for an element under pointer
     const element = dependencies.elementFactory.getElementAtPoint(worldX, worldY);
-    
     if (element) {
-      // Check for resize handles first
+      // Rotation handle (for the hovered element)
+      if (dependencies.elementFactory.getRotationHandleAt(worldX, worldY, element) === 'rotate') {
+        dependencies.canvasManager.updateCanvasCursor('alias');
+        return;
+      }
+      // Resize handles
       const resizeHandle = dependencies.elementFactory.getResizeHandleAt(worldX, worldY, element);
       if (resizeHandle) {
         const cursorMap = {
@@ -388,10 +458,11 @@ export function updateCursorForHover(worldX, worldY) {
       
       // Regular element hover
       dependencies.canvasManager.updateCanvasCursor('move');
-    } else {
-      // Empty space
-      dependencies.canvasManager.updateCanvasCursor('default');
+      return;
     }
+
+    // 3) Nothing
+    dependencies.canvasManager.updateCanvasCursor('default');
     
   } catch (error) {
     console.error('Error in updateCursorForHover:', error);
@@ -444,6 +515,60 @@ export function getElementSelectionRect(element) {
   }
 }
 
+// Rotation handling functions
+export function updateElementRotation(x, y) {
+  if (!isRotating || !draggedElementId) return false;
+  
+  const element = dependencies.elementFactory.getElementById(draggedElementId);
+  if (!element) return false;
+  
+  // Calculate current angle from element center to mouse position
+  const centerX = element.x + element.width / 2;
+  const centerY = element.y + element.height / 2;
+  const currentAngle = Math.atan2(y - centerY, x - centerX) * 180 / Math.PI;
+  
+  // Calculate rotation delta
+  const angleDelta = currentAngle - rotationStartAngle;
+  let newRotation = rotationElementStartAngle + angleDelta;
+  
+  // Optional: Snap to 15-degree increments if shift is held
+  // TODO: Add shift key detection
+  // if (shiftKeyPressed) {
+  //   newRotation = Math.round(newRotation / 15) * 15;
+  // }
+  
+  // Normalize to 0-360 degrees
+  newRotation = ((newRotation % 360) + 360) % 360;
+  
+  console.log('[ROTATION] update angle ->', newRotation);
+  
+  // Update element rotation
+  dependencies.elementFactory.rotateElement(element.id, newRotation);
+  
+  return true;
+}
+
+export function finishElementRotation() {
+  if (!isRotating) return false;
+  
+  const wasRotating = isRotating;
+  const elementId = draggedElementId;
+  
+  // Reset rotation state
+  isRotating = false;
+  draggedElementId = null;
+  rotationStartAngle = 0;
+  rotationElementStartAngle = 0;
+  
+  if (wasRotating && elementId) {
+    // Save state for undo/redo
+    dependencies.elementFactory.saveCanvasState('Rotate Element');
+    console.log(`Finished rotating element ${elementId}`);
+  }
+  
+  return wasRotating;
+}
+
 // Reset all interaction state
 export function resetInteractionState() {
   isDragging = false;
@@ -462,6 +587,9 @@ export function resetInteractionState() {
   
   selectedElementIds.clear();
   isResizing = false;
+  isRotating = false;
+  rotationStartAngle = 0;
+  rotationElementStartAngle = 0;
   isSelectionDragging = false;
   
   if (longTouchTimer) {
@@ -486,3 +614,7 @@ export function setLineOriginalStart(value) { lineOriginalStart = value; }
 export function setLineOriginalEnd(value) { lineOriginalEnd = value; }
 export function setLongTouchTimer(value) { longTouchTimer = value; }
 export function setSelectionDragging(value) { isSelectionDragging = value; }
+export function setRotating(value) { isRotating = value; }
+export function setRotationStartAngle(value) { rotationStartAngle = value; }
+export function setRotationElementStartAngle(value) { rotationElementStartAngle = value; }
+export function getSelectedElementIds() { return selectedElementIds; }

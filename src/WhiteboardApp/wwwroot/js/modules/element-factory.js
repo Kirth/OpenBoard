@@ -182,7 +182,8 @@ export class ElementFactory {
         color: color,
         fontSize: 14,
         isEditing: false,
-        locked: false
+        locked: false,
+        rotation: 0
       }
     };
   }
@@ -203,7 +204,8 @@ export class ElementFactory {
         fontFamily: 'Arial',
         color: color,
         isEditing: false,
-        locked: false
+        locked: false,
+        rotation: 0
       }
     };
   }
@@ -222,7 +224,8 @@ export class ElementFactory {
         color: style.color || '#000000',
         fillColor: style.fillColor || 'transparent',
         strokeWidth: style.strokeWidth || 2,
-        locked: false
+        locked: false,
+        rotation: 0
       }
     };
   }
@@ -245,7 +248,8 @@ export class ElementFactory {
         startY: y1,
         endX: x2,
         endY: y2,
-        locked: false
+        locked: false,
+        rotation: 0
       }
     };
   }
@@ -262,7 +266,8 @@ export class ElementFactory {
       createdAt: Date.now(),
       data: {
         imageData: imageData,
-        locked: false
+        locked: false,
+        rotation: 0
       }
     };
   }
@@ -290,7 +295,8 @@ export class ElementFactory {
         path: relativePath, // Store relative coordinates
         color: style.color || '#000000',
         strokeWidth: style.strokeWidth || 2,
-        locked: false
+        locked: false,
+        rotation: 0
       }
     };
   }
@@ -389,7 +395,7 @@ export class EditorManager {
 
       this.editingElementId = elementId;
       this.element = element;
-      
+
       // Store original content for undo/redo comparison
       this.originalContent = element.data?.content || '';
 
@@ -434,7 +440,7 @@ export class EditorManager {
         const newContent = this.editInput.value.trim();
         this.element.data.content = newContent;
         this.element.data.isEditing = false;
-        
+
         // Save undo state only if content actually changed
         if (newContent !== this.originalContent) {
           const actionType = this.element.type === 'StickyNote' ? 'Edit Sticky Note' : 'Edit Text';
@@ -752,7 +758,7 @@ export function getElementAtPoint(x, y, includeLockedElements = false) {
   const vx = dependencies.getViewportX ? dependencies.getViewportX() : (dependencies.viewportX ?? 0);
   const vy = dependencies.getViewportY ? dependencies.getViewportY() : (dependencies.viewportY ?? 0);
   const z = dependencies.getZoomLevel ? dependencies.getZoomLevel() : (dependencies.zoomLevel ?? 1);
-  console.log(`[hit-test] using viewport state: vx=${vx?.toFixed?.(1) ?? vx} vy=${vy?.toFixed?.(1) ?? vy} z=${z?.toFixed?.(2) ?? z}`);
+  //console.log(`[hit-test] using viewport state: vx=${vx?.toFixed?.(1) ?? vx} vy=${vy?.toFixed?.(1) ?? vy} z=${z?.toFixed?.(2) ?? z}`);
 
   for (const element of elementArray) {
     // Skip locked elements unless specifically requested
@@ -1022,6 +1028,63 @@ export function updateElementStyle(elementId, styleProperty, styleValue) {
   }
 }
 
+// Element rotation functions
+export function rotateElement(elementId, rotation) {
+  const element = elements.get(elementId);
+  if (!element) {
+    console.warn('Element not found for rotation:', elementId);
+    return;
+  }
+
+  // Check if element is locked
+  if (isElementLocked(element)) {
+    if (dependencies.showNotification) {
+      dependencies.showNotification('Cannot rotate locked element', 'warning');
+    }
+    return;
+  }
+
+  // Normalize rotation to 0-360 degrees
+  rotation = ((rotation % 360) + 360) % 360;
+
+  // Initialize data object if it doesn't exist
+  if (!element.data) {
+    element.data = {};
+  }
+
+  element.data.rotation = rotation;
+
+  console.log(`Element ${elementId} rotated to ${rotation} degrees`);
+
+  // Redraw canvas to show changes
+  if (dependencies.redrawCanvas) {
+    dependencies.redrawCanvas();
+  }
+
+  // Send rotation update to server via SignalR
+  if (dependencies.updateElementStyle && dependencies.currentBoardId) {
+    try {
+      dependencies.updateElementStyle(elementId, { rotation });
+    } catch (error) {
+      console.error('Error sending rotation update to server:', error);
+    }
+  }
+}
+
+export function setElementRotation(elementId, rotation) {
+  rotateElement(elementId, rotation);
+}
+
+export function getElementRotation(elementId) {
+  const element = elements.get(elementId);
+  return element?.data?.rotation || 0;
+}
+
+export function rotateElementBy(elementId, deltaRotation) {
+  const currentRotation = getElementRotation(elementId);
+  rotateElement(elementId, currentRotation + deltaRotation);
+}
+
 export function deleteSelectedElement() {
   if (!selectedElementId) return;
 
@@ -1046,7 +1109,7 @@ export function deleteSelectedElement() {
     console.log(`Adding poof effect for deleted element ${element.id} (${element.type})`);
     dependencies.addPoofEffectToElement(element);
   }
-  
+
   // Delete locally for immediate feedback
   elements.delete(selectedElementId);
   selectedElementId = null;
@@ -1229,6 +1292,30 @@ export function sendElementToBack(elementId) {
 export function isPointInElement(x, y, element) {
   if (!element) return false;
 
+  // Get rotation angle
+  const rotation = element.data?.rotation || 0;
+
+  // If element is rotated, transform the point to element's local coordinate system
+  let localX = x;
+  let localY = y;
+
+  if (rotation !== 0) {
+    // Calculate element center
+    const centerX = element.x + element.width / 2;
+    const centerY = element.y + element.height / 2;
+
+    // Translate point to origin (element center)
+    const translatedX = x - centerX;
+    const translatedY = y - centerY;
+
+    // Rotate point by negative rotation angle to get local coordinates
+    const cos = Math.cos((-rotation * Math.PI) / 180);
+    const sin = Math.sin((-rotation * Math.PI) / 180);
+
+    localX = centerX + translatedX * cos - translatedY * sin;
+    localY = centerY + translatedX * sin + translatedY * cos;
+  }
+
   // Always normalize possible negative sizes
   const nx1 = Math.min(element.x, element.x + element.width);
   const ny1 = Math.min(element.y, element.y + element.height);
@@ -1237,18 +1324,18 @@ export function isPointInElement(x, y, element) {
 
   switch (element.type) {
     case 'Line': {
-      // keep visual tolerance constant in screen px, convert to world units
+      // For lines, use the original coordinates since rotation is handled above
       const z = dependencies.getZoomLevel ? dependencies.getZoomLevel() : (dependencies.zoomLevel ?? 1);
       const tolWorld = LINE_TOLERANCE_PX / Math.max(z, 1e-6);
       return pointToLineDistance(
-        x, y,
+        localX, localY,
         element.x, element.y,
         element.x + element.width,
         element.y + element.height
       ) <= tolWorld;
     }
     default:
-      return x >= nx1 && x <= nx2 && y >= ny1 && y <= ny2;
+      return localX >= nx1 && localX <= nx2 && localY >= ny1 && localY <= ny2;
   }
 }
 
@@ -1313,6 +1400,53 @@ export function getResizeHandleAt(x, y, selectionRect) {
     if (distance <= tolerance) {
       return handle.type;
     }
+  }
+
+  return null;
+}
+
+// Get rotation handle at point (in world coordinates)
+export function getRotationHandleAt(x, y, element) {
+  if (!element) return null;
+
+  const zoom = dependencies.getZoomLevel ? dependencies.getZoomLevel() : 1;
+  const handleSize = 8 / zoom;
+  const tolerance = Math.max(50 / zoom, handleSize); // Larger hitbox - at least 50 pixels
+
+  // Calculate rotation handle position
+  const rotationHandleX = element.x + element.width / 2;
+  const rotationHandleY = element.y - 30 / zoom;
+
+  // Apply rotation transform to the handle position if element is rotated
+  const rotation = element.data?.rotation || 0;
+  let handleX = rotationHandleX;
+  let handleY = rotationHandleY;
+
+  if (rotation !== 0) {
+    const centerX = element.x + element.width / 2;
+    const centerY = element.y + element.height / 2;
+
+    // Transform the handle position by the element's rotation
+    const cos = Math.cos((rotation * Math.PI) / 180);
+    const sin = Math.sin((rotation * Math.PI) / 180);
+
+    const relativeX = rotationHandleX - centerX;
+    const relativeY = rotationHandleY - centerY;
+
+    handleX = centerX + relativeX * cos - relativeY * sin;
+    handleY = centerY + relativeX * sin + relativeY * cos;
+  }
+
+  const dx = x - handleX;
+  const dy = y - handleY;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+
+  // Debug logging
+  //console.log(`[ROTATION] Handle check: pos(${x.toFixed(1)}, ${y.toFixed(1)}) handle(${handleX.toFixed(1)}, ${handleY.toFixed(1)}) distance=${distance.toFixed(1)} tolerance=${tolerance.toFixed(1)}`);
+
+  if (distance <= tolerance) {
+    //console.log(`[ROTATION] Handle HIT detected!`);
+    return 'rotate';
   }
 
   return null;
@@ -1626,8 +1760,8 @@ function deepCloneElements(elementsMap) {
   for (const [id, element] of elementsMap.entries()) {
     try {
       // Use structuredClone if available (modern browsers), otherwise fall back to JSON
-      const clonedElement = typeof structuredClone !== 'undefined' 
-        ? structuredClone(element) 
+      const clonedElement = typeof structuredClone !== 'undefined'
+        ? structuredClone(element)
         : JSON.parse(JSON.stringify(element));
       result.push([id, clonedElement]);
     } catch (error) {
@@ -1700,8 +1834,8 @@ export async function undo() {
     for (const [id, element] of previousState.elements) {
       try {
         // Deep clone the element before adding it to current state to prevent future corruption
-        const clonedElement = typeof structuredClone !== 'undefined' 
-          ? structuredClone(element) 
+        const clonedElement = typeof structuredClone !== 'undefined'
+          ? structuredClone(element)
           : JSON.parse(JSON.stringify(element));
         console.log('UNDO: Restoring element', id, 'at position', clonedElement.x, clonedElement.y);
         elements.set(id, clonedElement);
@@ -1769,8 +1903,8 @@ export async function redo() {
     for (const [id, element] of nextState.elements) {
       try {
         // Deep clone the element before adding it to current state to prevent future corruption
-        const clonedElement = typeof structuredClone !== 'undefined' 
-          ? structuredClone(element) 
+        const clonedElement = typeof structuredClone !== 'undefined'
+          ? structuredClone(element)
           : JSON.parse(JSON.stringify(element));
         elements.set(id, clonedElement);
       } catch (error) {
@@ -1926,7 +2060,7 @@ export function getElementById(id) {
   return elements.get(id);
 }
 
-// Migrate existing elements to have z-index, createdAt, and locked properties
+// Migrate existing elements to have z-index, createdAt, locked, and rotation properties
 function migrateExistingElements() {
   let migrated = 0;
   for (const [id, element] of elements) {
@@ -1952,9 +2086,14 @@ function migrateExistingElements() {
       element.data.locked = false;
       migrated++;
     }
+    // Ensure rotation property exists
+    if (element.data.rotation === undefined) {
+      element.data.rotation = 0;
+      migrated++;
+    }
   }
   if (migrated > 0) {
-    console.log(`[migration] Updated ${Math.floor(migrated / 3)} existing elements with z-index, createdAt, and locked properties`);
+    console.log(`[migration] Updated ${Math.floor(migrated / 4)} existing elements with z-index, createdAt, locked, and rotation properties`);
     // Force redraw
     if (dependencies.redrawCanvas) {
       dependencies.redrawCanvas();
@@ -2056,6 +2195,7 @@ if (typeof window !== 'undefined') {
   // Resize functionality
   window.isElementResizable = isElementResizable;
   window.getResizeHandleAt = getResizeHandleAt;
+  window.getRotationHandleAt = getRotationHandleAt;
   window.getResizeCursor = getResizeCursor;
   window.startElementResize = startElementResize;
   window.updateElementResize = updateElementResize;
@@ -2070,4 +2210,9 @@ if (typeof window !== 'undefined') {
   // Z-index functionality
   window.bringElementToFront = bringElementToFront;
   window.sendElementToBack = sendElementToBack;
+  // Rotation functionality
+  window.rotateElement = rotateElement;
+  window.setElementRotation = setElementRotation;
+  window.getElementRotation = getElementRotation;
+  window.rotateElementBy = rotateElementBy;
 }
