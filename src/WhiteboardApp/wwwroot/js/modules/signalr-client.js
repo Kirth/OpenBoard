@@ -93,6 +93,7 @@ export async function initializeSignalR(boardId) {
     }
 }
 
+
 // Set up SignalR event handlers
 function setupEventHandlers() {
     if (!signalRConnection) return;

@@ -59,6 +59,38 @@ export function clearCanvasFromBlazor() {
   }
 }
 
+
+export async function disconnectFromBoard() {
+  try {
+    console.log('Disconnecting from current board');
+    
+    // 1. Clear canvas elements and selection
+    dependencies.elementFactory.elements.clear();
+    dependencies.elementFactory.clearSelection();
+    
+    // 2. Clear collaborative cursors and selections
+    if (dependencies.signalrClient.cursors) {
+      dependencies.signalrClient.cursors.clear();
+    }
+    if (dependencies.signalrClient.collaborativeSelections) {
+      dependencies.signalrClient.collaborativeSelections.clear();
+    }
+    
+    // 3. Clear canvas drawing
+    dependencies.canvasManager.clearCanvas();
+    
+    // 4. Disconnect SignalR
+    await dependencies.signalrClient.disconnect();
+    
+    // 5. Update minimap after clearing
+    dependencies.viewportManager.updateMinimapImmediate();
+    
+    console.log('Successfully disconnected from board');
+  } catch (error) {
+    console.error('Error disconnecting from board:', error);
+  }
+}
+
 // Tool functions for Blazor
 export function setCurrentTool(tool) {
   return dependencies.toolManager.setCurrentTool(tool);
@@ -83,6 +115,7 @@ export function setupGlobalExposure() {
   window.initializeSignalR = initializeSignalRConnection;
   window.setBlazorReference = setBlazorReference;
   window.clearCanvasFromBlazor = clearCanvasFromBlazor;
+  window.disconnectFromBoard = disconnectFromBoard;
   window.setCurrentTool = setCurrentTool;
 
   // Utility functions

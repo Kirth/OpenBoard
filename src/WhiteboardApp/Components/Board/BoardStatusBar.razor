@@ -2,9 +2,9 @@
 
 <div class="status-bar">
     <div class="status-left">
-        <button class="home-btn" @onclick="OnGoToHome" @onclick:stopPropagation="true" title="Back to Home">
+        <a href="/" class="home-btn" title="Back to Home">
             <span class="home-icon">«</span>
-        </button>
+        </a>
         <div class="board-menu-container">
             <button class="board-menu-trigger" @onclick="ToggleBoardMenu" @onclick:stopPropagation="true">
                 <span class="board-title">@BoardName</span>
@@ -38,7 +38,6 @@
 @code {
     [Parameter] public string BoardName { get; set; } = string.Empty;
     [Parameter] public bool IsConnected { get; set; } = false;
-    [Parameter] public EventCallback OnGoToHome { get; set; }
     [Parameter] public EventCallback OnClearBoard { get; set; }
 
     private bool showBoardMenu = false;
