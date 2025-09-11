@@ -1,4 +1,5 @@
 @using Microsoft.AspNetCore.SignalR.Client
+@using WhiteboardApp.Services
 
 <div class="status-bar">
     <div class="status-left">
@@ -11,13 +12,30 @@
                 <span class="dropdown-arrow">▼</span>
             </button>
             <div class="board-menu @(showBoardMenu ? "show" : "")" @onclick:stopPropagation="true">
-                <div class="board-menu-item" @onclick="OnClearBoard">
+                <div class="board-menu-item" @onclick="ShowBoardInfo">
+                    <span class="menu-icon">ℹ️</span>
+                    Board Info
+                </div>
+                <div class="board-menu-item" @onclick="ShowClearConfirmation">
                     <span class="menu-icon">🗑️</span>
                     Clear Board
                 </div>
-                <div class="board-menu-item" @onclick="() => showBoardMenu = false">
-                    <span class="menu-icon">ℹ️</span>
-                    Board Info
+                <div class="board-menu-item" @onclick="OnDuplicateBoard">
+                    <span class="menu-icon">📋</span>
+                    Duplicate Board
+                </div>
+                <div class="board-menu-section-title">Export Options</div>
+                <div class="board-menu-item" @onclick="ExportAsPng">
+                    <span class="menu-icon">🖼️</span>
+                    Export as PNG
+                </div>
+                <div class="board-menu-item" @onclick="ExportAsPdf">
+                    <span class="menu-icon">📄</span>
+                    Export as PDF
+                </div>
+                <div class="board-menu-item" @onclick="ExportAsHighResPng">
+                    <span class="menu-icon">🎯</span>
+                    Export HD PNG
                 </div>
             </div>
         </div>
@@ -33,18 +51,149 @@
     </div>
 </div>
 
+<!-- Board Info Modal -->
+@if (showBoardInfoModal && boardStats != null)
+{
+    <div class="modal" @onclick="HideBoardInfoModal">
+        <div class="modal-content" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Board Information</h3>
+                <button class="modal-close" @onclick="HideBoardInfoModal">&times;</button>
+            </div>
+            
+            <div class="modal-body">
+                <div class="board-info-section">
+                    <h4>Board Details</h4>
+                    <div class="info-row">
+                        <span class="info-label">Name:</span>
+                        <span class="info-value">@boardStats.BoardName</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Created:</span>
+                        <span class="info-value">@boardStats.CreatedAt.ToString("MMM dd, yyyy 'at' h:mm tt")</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Last Modified:</span>
+                        <span class="info-value">@boardStats.UpdatedAt.ToString("MMM dd, yyyy 'at' h:mm tt")</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Visibility:</span>
+                        <span class="info-value">@(boardStats.IsPublic ? "Public" : "Unlisted")</span>
+                    </div>
+                    @if (boardStats.HasAdminPin)
+                    {
+                        <div class="info-row">
+                            <span class="info-label">Admin Protected:</span>
+                            <span class="info-value">Yes</span>
+                        </div>
+                    }
+                </div>
+                
+                <div class="board-info-section">
+                    <h4>Content Statistics</h4>
+                    <div class="info-row">
+                        <span class="info-label">Total Elements:</span>
+                        <span class="info-value">@boardStats.TotalElements</span>
+                    </div>
+                    @if (boardStats.ElementsByType.Any())
+                    {
+                        @foreach (var elementType in boardStats.ElementsByType.OrderByDescending(kvp => kvp.Value))
+                        {
+                            <div class="info-row">
+                                <span class="info-label">@elementType.Key:</span>
+                                <span class="info-value">@elementType.Value</span>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Clear Board Confirmation Modal -->
+@if (showClearConfirmModal)
+{
+    <div class="modal" @onclick="HideClearConfirmModal">
+        <div class="modal-content" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Clear Board</h3>
+                <button class="modal-close" @onclick="HideClearConfirmModal">&times;</button>
+            </div>
+            
+            <div class="modal-body">
+                <p><strong>Warning:</strong> This will permanently delete all elements on this board.</p>
+                <p>Are you sure you want to continue?</p>
+            </div>
+            
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="HideClearConfirmModal">Cancel</button>
+                <button class="btn btn-danger" @onclick="ConfirmClearBoard">Clear Board</button>
+            </div>
+        </div>
+    </div>
+}
+
 @inject IJSRuntime JSRuntime
+@inject BoardService BoardService
+@inject ExportService ExportService
 
 @code {
     [Parameter] public string BoardName { get; set; } = string.Empty;
+    [Parameter] public string BoardId { get; set; } = string.Empty;
     [Parameter] public bool IsConnected { get; set; } = false;
     [Parameter] public EventCallback OnClearBoard { get; set; }
+    [Parameter] public EventCallback OnDuplicateBoard { get; set; }
 
     private bool showBoardMenu = false;
+    private bool showBoardInfoModal = false;
+    private bool showClearConfirmModal = false;
+    private BoardStats? boardStats = null;
 
     private void ToggleBoardMenu()
     {
         showBoardMenu = !showBoardMenu;
+    }
+
+    private async Task ShowBoardInfo()
+    {
+        showBoardMenu = false;
+        try
+        {
+            if (Guid.TryParse(BoardId, out var boardGuid))
+            {
+                boardStats = await BoardService.GetBoardStatsAsync(boardGuid);
+                showBoardInfoModal = true;
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading board stats: {ex.Message}");
+        }
+    }
+
+    private void HideBoardInfoModal()
+    {
+        showBoardInfoModal = false;
+        boardStats = null;
+    }
+
+    private void ShowClearConfirmation()
+    {
+        showBoardMenu = false;
+        showClearConfirmModal = true;
+    }
+
+    private void HideClearConfirmModal()
+    {
+        showClearConfirmModal = false;
+    }
+
+    private async Task ConfirmClearBoard()
+    {
+        showClearConfirmModal = false;
+        await OnClearBoard.InvokeAsync();
     }
 
     private async Task ToggleTheme()
@@ -56,6 +205,63 @@
         catch (Exception ex)
         {
             Console.WriteLine($"Error toggling theme: {ex.Message}");
+        }
+    }
+
+    private async Task ExportAsPng()
+    {
+        showBoardMenu = false;
+        try
+        {
+            if (Guid.TryParse(BoardId, out var boardGuid))
+            {
+                await ExportService.ExportBoardAsPngAsync(boardGuid);
+                await JSRuntime.InvokeVoidAsync("showNotification", "Board exported as PNG successfully!", "success");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error exporting PNG: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("showNotification", "Failed to export board as PNG", "error");
+        }
+    }
+
+    private async Task ExportAsPdf()
+    {
+        showBoardMenu = false;
+        try
+        {
+            if (Guid.TryParse(BoardId, out var boardGuid))
+            {
+                await ExportService.ExportBoardAsPdfAsync(boardGuid);
+                await JSRuntime.InvokeVoidAsync("showNotification", "Board exported as PDF successfully!", "success");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error exporting PDF: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("showNotification", "Failed to export board as PDF", "error");
+        }
+    }
+
+    private async Task ExportAsHighResPng()
+    {
+        showBoardMenu = false;
+        try
+        {
+            if (Guid.TryParse(BoardId, out var boardGuid))
+            {
+                // Export at 2x resolution
+                var board = await BoardService.GetBoardAsync(boardGuid);
+                var filename = $"{board?.Name ?? "Board"}_HD_{DateTime.Now:yyyyMMdd_HHmmss}.png";
+                await JSRuntime.InvokeVoidAsync("exportHighResPng", filename, 2);
+                await JSRuntime.InvokeVoidAsync("showNotification", "Board exported as HD PNG successfully!", "success");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error exporting HD PNG: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("showNotification", "Failed to export board as HD PNG", "error");
         }
     }
 

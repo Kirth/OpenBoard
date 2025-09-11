@@ -27,6 +27,7 @@ builder.Services.AddDbContext<WhiteboardContext>(options =>
 builder.Services.AddScoped<BoardService>();
 builder.Services.AddScoped<ElementService>();
 builder.Services.AddScoped<ImageService>();
+builder.Services.AddScoped<ExportService>();
 builder.Services.AddSingleton<IUserSessionManager, UserSessionManager>();
 
 // Add memory cache for session management

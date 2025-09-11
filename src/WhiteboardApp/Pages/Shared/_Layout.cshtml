@@ -31,6 +31,10 @@
         // Expose signalR to modules
         window.signalR = signalR;
     </script>
+    <!-- Pre-load jsPDF library -->
+    <script src="https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    <!-- Export functions must be loaded before Blazor interop -->
+    <script src="~/js/export-functions.js"></script>
     <script type="module" src="~/js/main.js"></script>
 </body>
 </html>

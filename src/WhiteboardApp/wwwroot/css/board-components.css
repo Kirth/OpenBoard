@@ -156,6 +156,23 @@
     text-align: center;
 }
 
+/* Board Menu Section Title */
+.board-menu-section-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 8px 12px 4px 12px;
+    margin-top: 8px;
+    border-top: 1px solid var(--border-light);
+}
+
+.board-menu-section-title:first-child {
+    margin-top: 0;
+    border-top: none;
+}
+
 .connection-status {
     display: flex;
     align-items: center;
@@ -718,4 +735,167 @@
         min-width: 36px;
         min-height: 36px;
     }
+}
+
+/* Modal Styles */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 20px;
+}
+
+.modal-content {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 500px;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 24px 24px 0 24px;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 24px;
+}
+
+.modal-header h3 {
+    margin: 0 0 20px 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    transition: background-color 0.2s ease;
+}
+
+.modal-close:hover {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.modal-body {
+    padding: 0 24px 24px 24px;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    padding: 0 24px 24px 24px;
+    border-top: 1px solid var(--border-color);
+    margin-top: 24px;
+    padding-top: 20px;
+}
+
+/* Board Info Modal Specific Styles */
+.board-info-section {
+    margin-bottom: 24px;
+}
+
+.board-info-section h4 {
+    margin: 0 0 12px 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 8px;
+}
+
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid transparent;
+}
+
+.info-row:not(:last-child) {
+    border-bottom-color: var(--border-light);
+}
+
+.info-label {
+    font-weight: 500;
+    color: var(--text-secondary);
+    min-width: 120px;
+}
+
+.info-value {
+    font-weight: 400;
+    color: var(--text-primary);
+    text-align: right;
+    word-break: break-word;
+}
+
+/* Button Styles */
+.btn {
+    padding: 10px 16px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-secondary {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+}
+
+.btn-secondary:hover {
+    background-color: var(--bg-hover);
+}
+
+.btn-danger {
+    background-color: #dc3545;
+    color: white;
+}
+
+.btn-danger:hover {
+    background-color: #c82333;
+}
+
+/* Dark mode specific modal adjustments */
+@media (prefers-color-scheme: dark) {
+    .modal {
+        background: rgba(0, 0, 0, 0.7);
+    }
+    
+    .modal-content {
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+    }
+}
 }

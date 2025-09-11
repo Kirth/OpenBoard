@@ -143,10 +143,20 @@ export function setupGlobalExposure() {
   window.updateLineArrow = dependencies.uiFeatures.updateLineArrow;
   window.updateLineArrowSize = dependencies.uiFeatures.updateLineArrowSize;
   
+  // Export functions are now loaded globally via export-functions.js
+  // No need to expose them here as they're already available on window
+  
   // Debug: Verify functions are exposed
   console.log('Arrow functions exposed:', {
     updateLineArrow: typeof window.updateLineArrow,
     updateLineArrowSize: typeof window.updateLineArrowSize
+  });
+  
+  console.log('Export functions available:', {
+    exportCanvasAsPng: typeof window.exportCanvasAsPng,
+    exportCanvasAsPdf: typeof window.exportCanvasAsPdf,
+    exportHighResPng: typeof window.exportHighResPng,
+    getCanvasInfo: typeof window.getCanvasInfo
   });
 
   // Grid system

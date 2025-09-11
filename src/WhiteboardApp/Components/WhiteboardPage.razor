@@ -19,8 +19,10 @@
     <!-- Status Bar Component -->
     <BoardStatusBar 
         BoardName="@boardName"
+        BoardId="@BoardId"
         IsConnected="@signalRConnected"
-        OnClearBoard="ClearBoard" />
+        OnClearBoard="ClearBoard"
+        OnDuplicateBoard="DuplicateBoard" />
     
     <!-- Canvas Component -->
     <BoardCanvas 
@@ -186,6 +188,21 @@
             Console.WriteLine($"Failed to clear board: {ex.Message}");
         }
     }
+
+    private async Task DuplicateBoard()
+    {
+        try
+        {
+            // TODO: Implement board duplication
+            Console.WriteLine("DuplicateBoard called - feature coming soon");
+            await JSRuntime.InvokeVoidAsync("showNotification", "Board duplication coming soon!", "info");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to duplicate board: {ex.Message}");
+        }
+    }
+
 
     // Methods callable from JavaScript
     [JSInvokable]

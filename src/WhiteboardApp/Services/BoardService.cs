@@ -58,4 +58,41 @@ public class BoardService
             .OrderByDescending(b => b.UpdatedAt)
             .ToListAsync();
     }
+
+    public async Task<BoardStats> GetBoardStatsAsync(Guid boardId)
+    {
+        var board = await GetBoardAsync(boardId);
+        if (board == null)
+        {
+            throw new ArgumentException($"Board with ID {boardId} not found.");
+        }
+
+        var elementsByType = board.Elements
+            .GroupBy(e => e.Type)
+            .ToDictionary(g => g.Key.ToString(), g => g.Count());
+
+        return new BoardStats
+        {
+            BoardId = board.Id,
+            BoardName = board.Name,
+            CreatedAt = board.CreatedAt,
+            UpdatedAt = board.UpdatedAt,
+            IsPublic = board.IsPublic,
+            HasAdminPin = !string.IsNullOrEmpty(board.AdminPin),
+            TotalElements = board.Elements.Count,
+            ElementsByType = elementsByType
+        };
+    }
+}
+
+public class BoardStats
+{
+    public Guid BoardId { get; set; }
+    public string BoardName { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public bool IsPublic { get; set; }
+    public bool HasAdminPin { get; set; }
+    public int TotalElements { get; set; }
+    public Dictionary<string, int> ElementsByType { get; set; } = new();
 }
