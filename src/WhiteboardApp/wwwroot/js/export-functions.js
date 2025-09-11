@@ -74,12 +74,13 @@ window.exportCanvasAsPdf = async function(filename = null) {
     // Convert canvas to image data URL
     const imgDataUrl = canvas.toDataURL('image/png', 1.0);
 
-    // Check if jsPDF is available
-    if (typeof window.jsPDF === 'undefined') {
-      throw new Error('jsPDF library not available. Please reload the page.');
+    // Check if jsPDF is available (newer versions use window.jspdf.jsPDF)
+    if (typeof window.jspdf === 'undefined' || typeof window.jspdf.jsPDF === 'undefined') {
+      console.error('jsPDF library not loaded. Checking window object:', Object.keys(window).filter(k => k.includes('jsPDF') || k.includes('pdf') || k.includes('jspdf')));
+      throw new Error('jsPDF failed to load');
     }
 
-    const { jsPDF } = window;
+    const { jsPDF } = window.jspdf;
     
     // Calculate PDF dimensions (A4 landscape or fit to content)
     const a4Width = 297; // A4 width in mm (landscape)
@@ -198,7 +199,7 @@ window.getCanvasInfo = function() {
 
 
 // Debug: Check if jsPDF is available
-if (typeof window.jsPDF !== 'undefined') {
+if (typeof window.jspdf !== 'undefined' && typeof window.jspdf.jsPDF !== 'undefined') {
   console.log('Export functions loaded with jsPDF available');
 } else {
   console.warn('Export functions loaded but jsPDF not available');
