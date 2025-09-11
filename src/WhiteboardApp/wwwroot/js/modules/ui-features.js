@@ -731,18 +731,37 @@ function getDefaultDuration(type) {
 
 // Grid system functions
 export function toggleGrid() {
+  console.log('ui-features toggleGrid called');
+  console.log('dependencies.canvasManager:', dependencies.canvasManager);
+  console.log('toggleGrid function exists:', typeof dependencies.canvasManager?.toggleGrid);
+  
   if (dependencies.canvasManager) {
-    dependencies.canvasManager.toggleGrid();
-    const isEnabled = dependencies.canvasManager.isGridEnabled();
-    showNotification(`Grid ${isEnabled ? 'enabled' : 'disabled'}`, 'info', 2000);
+    if (typeof dependencies.canvasManager.toggleGrid === 'function') {
+      dependencies.canvasManager.toggleGrid();
+      const isEnabled = dependencies.canvasManager.isGridEnabled();
+      showNotification(`Grid ${isEnabled ? 'enabled' : 'disabled'}`, 'info', 2000);
+    } else {
+      console.error('toggleGrid is not a function. Available functions:', Object.keys(dependencies.canvasManager));
+    }
+  } else {
+    console.error('dependencies.canvasManager is not available');
   }
 }
 
 export function toggleSnapToGrid() {
+  console.log('ui-features toggleSnapToGrid called');
+  console.log('toggleSnapToGrid function exists:', typeof dependencies.canvasManager?.toggleSnapToGrid);
+  
   if (dependencies.canvasManager) {
-    dependencies.canvasManager.toggleSnapToGrid();
-    const isEnabled = dependencies.canvasManager.isSnapToGridEnabled();
-    showNotification(`Snap to grid ${isEnabled ? 'enabled' : 'disabled'}`, 'info', 2000);
+    if (typeof dependencies.canvasManager.toggleSnapToGrid === 'function') {
+      dependencies.canvasManager.toggleSnapToGrid();
+      const isEnabled = dependencies.canvasManager.isSnapToGridEnabled();
+      showNotification(`Snap to grid ${isEnabled ? 'enabled' : 'disabled'}`, 'info', 2000);
+    } else {
+      console.error('toggleSnapToGrid is not a function. Available functions:', Object.keys(dependencies.canvasManager));
+    }
+  } else {
+    console.error('dependencies.canvasManager is not available');
   }
 }
 
@@ -852,3 +871,5 @@ export function updateStickyNoteColor(elementId, color) {
     dependencies.elementFactory.updateElementStyle(elementId, 'color', color);
   }
 }
+
+console.log('UI Features module loaded with grid toggle debugging v1.1');

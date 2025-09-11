@@ -1984,6 +1984,25 @@ export function isSnapToGridEnabled() {
   return snapToGrid;
 }
 
+// Toggle grid visibility
+export function toggleGrid() {
+  console.log('toggleGrid called, gridEnabled was:', gridEnabled);
+  gridEnabled = !gridEnabled;
+  console.log('toggleGrid: gridEnabled is now:', gridEnabled);
+  if (dependencies.requestRedraw) {
+    dependencies.requestRedraw();
+  } else {
+    redrawCanvas();
+  }
+}
+
+// Toggle snap to grid
+export function toggleSnapToGrid() {
+  console.log('toggleSnapToGrid called, snapToGrid was:', snapToGrid);
+  snapToGrid = !snapToGrid;
+  console.log('toggleSnapToGrid: snapToGrid is now:', snapToGrid);
+}
+
 // Snap coordinate to grid
 export function snapToGridCoordinate(coord) {
   if (!snapToGrid) return coord;
@@ -2010,7 +2029,7 @@ export function isCanvasInitialized() { return canvas !== null && ctx !== null; 
 // --- Init -------------------------------------------------------------------
 
 export function init() {
-  console.log('Canvas Manager module loaded');
+  console.log('Canvas Manager module loaded - with toggleGrid functions v1.1');
 }
 
 // --- Backward compatibility -------------------------------------------------
@@ -2041,10 +2060,12 @@ if (typeof window !== 'undefined') {
     // Grid system
     setGridEnabled,
     isGridEnabled,
+    toggleGrid,
     setGridSize,
     getGridSize,
     setSnapToGrid,
     isSnapToGridEnabled,
+    toggleSnapToGrid,
     snapToGridCoordinate,
     snapToGridPoint
   };
