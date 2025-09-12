@@ -272,7 +272,7 @@ function createElementContextMenu(element) {
   const isLine = element.type === 'Line';
   const isPath = element.type === 'Path' || element.type === 'Drawing';
   const isStickyNote = element.type === 'StickyNote';
-  const hasStylng = isShape || isLine || isPath;
+  const hasStylng = isShape || isLine;
   console.log('isPath:', isPath, 'hasStylng:', hasStylng);
 
   let menuHTML = `
@@ -292,7 +292,7 @@ function createElementContextMenu(element) {
         </div>
     `;
 
-  if (hasStylng) { // TODO: hasBorder? 
+  if (hasStylng) {
     menuHTML += `
             <div class="context-menu-section">
                 <div class="context-menu-subtitle">Styling</div>
@@ -335,7 +335,7 @@ function createElementContextMenu(element) {
                 </div>
                 <div class="context-menu-range-row">
                     <label>Border Width:</label>
-                    <input type="range" min="1" max="10" value="${element.data?.strokeWidth || 2}" 
+                    <input type="range" min="1" max="30" value="${element.data?.strokeWidth || 2}" 
                            class="context-menu-range" onchange="updateElementBorderWidth('${element.id}', this.value)">
                     <span class="range-value">${element.data?.strokeWidth || 2}px</span>
                 </div>
@@ -366,7 +366,7 @@ function createElementContextMenu(element) {
                 </div>
                 <div class="context-menu-range-row">
                     <label>Arrow Size:</label>
-                    <input type="range" min="5" max="20" value="${element.data?.arrowSize || 10}" 
+                    <input type="range" min="2" max="40" value="${element.data?.arrowSize || 10}" 
                            class="context-menu-range" onchange="updateLineArrowSize('${element.id}', this.value)">
                     <span class="range-value">${element.data?.arrowSize || 10}px</span>
                 </div>
@@ -396,7 +396,7 @@ function createElementContextMenu(element) {
                 </div>
                 <div class="context-menu-range-row">
                     <label>Stroke Width:</label>
-                    <input type="range" min="1" max="10" value="${element.data?.strokeWidth || 2}" 
+                    <input type="range" min="1" max="40" value="${element.data?.strokeWidth || 2}" 
                            class="context-menu-range" onchange="updateElementBorderWidth('${element.id}', this.value)">
                     <span class="range-value">${element.data?.strokeWidth || 2}px</span>
                 </div>
@@ -480,7 +480,7 @@ function createGeneralContextMenu() {
             </button>
             <div class="context-menu-range-row">
                 <label>Grid Size:</label>
-                <input type="range" min="10" max="50" step="5" value="${gridSize}" 
+                <input type="range" min="10" max="150" step="5" value="${gridSize}" 
                        class="context-menu-range" onchange="updateGridSize(this.value)">
                 <span class="range-value">${gridSize}px</span>
             </div>
