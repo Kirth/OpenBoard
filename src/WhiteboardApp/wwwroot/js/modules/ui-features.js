@@ -256,21 +256,24 @@ function getValidHexColor(color, defaultColor) {
   if (!color || color === 'transparent' || color === 'none' || color === null || color === undefined) {
     return defaultColor;
   }
-  
+
   // Check if it's already a valid hex color
   if (typeof color === 'string' && /^#[0-9a-fA-F]{6}$/.test(color)) {
     return color;
   }
-  
+
   // Try to handle other color formats or return default
   return defaultColor;
 }
 
 function createElementContextMenu(element) {
+  console.log('Creating context menu for element:', element.type, element);
   const isShape = ['rectangle', 'circle', 'triangle', 'diamond', 'ellipse', 'star'].includes(element.type);
   const isLine = element.type === 'Line';
+  const isPath = element.type === 'Path' || element.type === 'Drawing';
   const isStickyNote = element.type === 'StickyNote';
-  const hasStylng = isShape || isLine;
+  const hasStylng = isShape || isLine || isPath;
+  console.log('isPath:', isPath, 'hasStylng:', hasStylng);
 
   let menuHTML = `
         <div class="context-menu-section">
@@ -289,7 +292,7 @@ function createElementContextMenu(element) {
         </div>
     `;
 
-  if (hasStylng) {
+  if (hasStylng) { // TODO: hasBorder? 
     menuHTML += `
             <div class="context-menu-section">
                 <div class="context-menu-subtitle">Styling</div>
@@ -366,6 +369,36 @@ function createElementContextMenu(element) {
                     <input type="range" min="5" max="20" value="${element.data?.arrowSize || 10}" 
                            class="context-menu-range" onchange="updateLineArrowSize('${element.id}', this.value)">
                     <span class="range-value">${element.data?.arrowSize || 10}px</span>
+                </div>
+            </div>
+        `;
+  }
+
+  // Path styling controls
+  if (isPath) {
+    menuHTML += `
+            <div class="context-menu-section">
+                <div class="context-menu-subtitle">Path Styling</div>
+                <div class="context-menu-color-row">
+                    <label>Stroke Color:</label>
+                    <div class="color-input-wrapper" style="position: relative; display: inline-block;">
+                        <input type="color" id="pathColorInput_${element.id}" 
+                               style="position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer;"
+                               value="${getValidHexColor(element.data?.color, '#000000')}"
+                               onchange="updateElementBorderColor('${element.id}', this.value); hideContextMenu();"
+                               oninput="updateElementBorderColor('${element.id}', this.value);">
+                        <button class="color-preview-btn" 
+                                onclick="document.getElementById('pathColorInput_${element.id}').click()"
+                                style="width: 32px; height: 24px; border: 2px solid #ccc; border-radius: 4px; cursor: pointer; background-color: ${getValidHexColor(element.data?.color, '#000000')};"
+                                title="Current stroke color - click to change">
+                        </button>
+                    </div>
+                </div>
+                <div class="context-menu-range-row">
+                    <label>Stroke Width:</label>
+                    <input type="range" min="1" max="10" value="${element.data?.strokeWidth || 2}" 
+                           class="context-menu-range" onchange="updateElementBorderWidth('${element.id}', this.value)">
+                    <span class="range-value">${element.data?.strokeWidth || 2}px</span>
                 </div>
             </div>
         `;
@@ -765,7 +798,7 @@ export function toggleGrid() {
   console.log('ui-features toggleGrid called');
   console.log('dependencies.canvasManager:', dependencies.canvasManager);
   console.log('toggleGrid function exists:', typeof dependencies.canvasManager?.toggleGrid);
-  
+
   if (dependencies.canvasManager) {
     if (typeof dependencies.canvasManager.toggleGrid === 'function') {
       dependencies.canvasManager.toggleGrid();
@@ -782,7 +815,7 @@ export function toggleGrid() {
 export function toggleSnapToGrid() {
   console.log('ui-features toggleSnapToGrid called');
   console.log('toggleSnapToGrid function exists:', typeof dependencies.canvasManager?.toggleSnapToGrid);
-  
+
   if (dependencies.canvasManager) {
     if (typeof dependencies.canvasManager.toggleSnapToGrid === 'function') {
       dependencies.canvasManager.toggleSnapToGrid();
@@ -875,10 +908,10 @@ export function toggleElementFill(elementId) {
   if (dependencies.elementFactory && dependencies.elementFactory.updateElementStyle) {
     // Get current element to check fill state
     const element = dependencies.elementFactory.getElementById ? dependencies.elementFactory.getElementById(elementId) : null;
-    
+
     if (element) {
       const currentFill = element.data?.fillColor;
-      
+
       if (!currentFill || currentFill === 'transparent' || currentFill === 'none') {
         // Add fill - set to white as default
         dependencies.elementFactory.updateElementStyle(elementId, 'fillColor', '#ffffff');
@@ -916,7 +949,7 @@ export function updateLineArrowSize(elementId, size) {
   if (dependencies.elementFactory && dependencies.elementFactory.updateElementStyle) {
     dependencies.elementFactory.updateElementStyle(elementId, 'arrowSize', parseInt(size));
   }
-  
+
   // Update the range value display
   const rangeElement = event.target;
   const valueSpan = rangeElement.nextElementSibling;

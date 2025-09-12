@@ -614,6 +614,7 @@ function handleCanvasRightClick(event) {
 
     // Check if we clicked on an element
     const element = dependencies.elementFactory.getElementAtPoint(worldPos.x, worldPos.y);
+    console.log('Right-click detected element:', element ? element.type : 'none', element);
 
     if (element) {
       // If not selected, select it first
