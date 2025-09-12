@@ -678,6 +678,10 @@ async function loadExistingElements(boardId) {
 
         console.log(`Loading ${elements.length} existing elements`);
 
+        // Track image elements for loading awareness
+        let imageElements = [];
+        let totalElements = elements.length;
+
         // Add each element to the canvas
         for (const element of elements) {
             console.log('Loading element:', {
@@ -687,6 +691,11 @@ async function loadExistingElements(boardId) {
                 dataType: typeof element.data,
                 dataConstructor: element.data?.constructor?.name
             });
+            
+            // Track image elements
+            if (element.type === 'image' && element.data?.imageData) {
+                imageElements.push(element);
+            }
             
             if (dependencies.drawElement) {
                 dependencies.drawElement(
@@ -701,9 +710,13 @@ async function loadExistingElements(boardId) {
             }
         }
 
-        // Redraw canvas to show all elements
-        if (dependencies.redrawCanvas) {
-            dependencies.redrawCanvas();
+        // Immediate redraw to show non-image elements
+        dependencies.requestRedraw?.();
+
+        // One more nudge after initial batch load; images fire their own onload invalidations
+        if (imageElements.length > 0) {
+            console.log(`Detected ${imageElements.length} image elements, images will trigger redraws when loaded`);
+            setTimeout(() => dependencies.requestRedraw?.(), 100);
         }
 
         // Update minimap

@@ -250,6 +250,17 @@ export function clearCanvas() {
   ctx.restore();
 }
 
+// RAF-throttled redraw for better performance
+let rafPending = false;
+export function requestRedraw() {
+  if (rafPending) return;
+  rafPending = true;
+  requestAnimationFrame(() => {
+    rafPending = false;
+    redrawCanvas();
+  });
+}
+
 export function redrawCanvas() {
   if (!canvas || !ctx) return;
 
@@ -1848,16 +1859,28 @@ function getCachedImage(src) {
   if (entry) return entry;
 
   const img = new Image();
-  entry = { img, ready: false };
+  entry = { img, ready: false, retryCount: 0 };
   imageCache.set(src, entry);
 
   img.onload = () => {
     entry.ready = true;
+    console.log(`Image loaded successfully: ${src.substring(0, 50)}...`);
     dependencies.requestRedraw?.();
   };
   img.onerror = () => {
     console.warn('Failed to load image src:', src);
-    imageCache.delete(src);
+    entry.retryCount = (entry.retryCount || 0) + 1;
+    
+    // Retry up to 3 times with increasing delays
+    if (entry.retryCount < 3) {
+      setTimeout(() => {
+        console.log(`Retrying image load (attempt ${entry.retryCount + 1}):`, src.substring(0, 50));
+        img.src = src; // Trigger retry
+      }, entry.retryCount * 1000);
+    } else {
+      console.error(`Failed to load image after ${entry.retryCount} attempts:`, src);
+      imageCache.delete(src);
+    }
   };
   img.src = src;
   return entry;
@@ -1885,8 +1908,14 @@ function renderImage(el) {
   }
 
   const entry = getCachedImage(src);
-  if (!entry || !entry.ready) return;
-  ctx.drawImage(entry.img, el.x, el.y, el.width, el.height);
+  if (!entry) return;
+  if (entry.ready) {
+    ctx.drawImage(entry.img, el.x, el.y, el.width, el.height);
+  } else {
+    // Optional light placeholder, or no-op to avoid extra paint cost.
+    ctx.fillStyle = '#f0f0f0';
+    ctx.fillRect(el.x, el.y, el.width, el.height);
+  }
 }
 
 // Throttled warning function to prevent console spam

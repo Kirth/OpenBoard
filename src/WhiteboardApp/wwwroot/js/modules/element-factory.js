@@ -722,6 +722,21 @@ export function drawElement(id, x, y, type, data, width, height) {
       // Don't add the element to prevent rendering errors
       return;
     }
+    
+    // For image elements, trigger preloading to improve display
+    console.log(`Preloading image for element ${id}: ${data.imageData.substring(0, 50)}...`);
+    
+    // Create temporary image to trigger loading
+    const preloadImg = new Image();
+    preloadImg.onload = () => {
+      console.log(`Image preloaded successfully for element ${id}`);
+      // Trigger a redraw after image loads
+      dependencies.requestRedraw?.();
+    };
+    preloadImg.onerror = () => {
+      console.warn(`Failed to preload image for element ${id}:`, data.imageData);
+    };
+    preloadImg.src = data.imageData;
   }
 
   const element = {

@@ -64,7 +64,8 @@ export function setupDependencies() {
     getViewportX: viewportManager.getViewportX,
     getViewportY: viewportManager.getViewportY,
     getZoomLevel: viewportManager.getZoomLevel,
-    renderSparkleEffects: sparkleEffects.renderSparkleEffects
+    renderSparkleEffects: sparkleEffects.renderSparkleEffects,
+    requestRedraw: canvasManager.requestRedraw // expose a throttled version
   });
 
   // Tool Manager Dependencies
@@ -121,6 +122,7 @@ export function setupDependencies() {
     worldToScreen: canvasManager.worldToScreen,
     applyViewportTransform: canvasManager.applyViewportTransform,
     redrawCanvas: canvasManager.redrawCanvas,
+    requestRedraw: canvasManager.requestRedraw,
     signalRConnection: signalrClient.getConnection(),
     currentBoardId: signalrClient.getCurrentBoardId(),
     sendElement: signalrClient.sendElement,
@@ -151,6 +153,7 @@ export function setupDependencies() {
     updateElementPosition: elementFactory.updateElementPosition,
     updateElementPositionLocal: elementFactory.updateElementPositionLocal,
     redrawCanvas: canvasManager.redrawCanvas,
+    requestRedraw: canvasManager.requestRedraw,
     clearCanvas: canvasManager.clearCanvas,
     highlightElement: elementFactory.highlightElement,
     clearSelection: elementFactory.clearSelection,
