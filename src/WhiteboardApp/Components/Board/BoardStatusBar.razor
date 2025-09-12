@@ -123,12 +123,16 @@
             
             <div class="modal-body">
                 <p><strong>Warning:</strong> This will permanently delete all elements on this board.</p>
-                <p>Are you sure you want to continue?</p>
+                <p>To confirm, please type the exact board name: <strong>@BoardName</strong></p>
+                <div class="form-group">
+                    <input type="text" class="form-control" @bind="confirmationBoardName" @bind:event="oninput" 
+                           placeholder="Enter board name to confirm" autocomplete="off" />
+                </div>
             </div>
             
             <div class="modal-footer">
                 <button class="btn btn-secondary" @onclick="HideClearConfirmModal">Cancel</button>
-                <button class="btn btn-danger" @onclick="ConfirmClearBoard">Clear Board</button>
+                <button class="btn btn-danger" @onclick="ConfirmClearBoard" disabled="@(!IsConfirmationValid)">Clear Board</button>
             </div>
         </div>
     </div>
@@ -149,6 +153,7 @@
     private bool showBoardInfoModal = false;
     private bool showClearConfirmModal = false;
     private BoardStats? boardStats = null;
+    private string confirmationBoardName = string.Empty;
 
     private void ToggleBoardMenu()
     {
@@ -188,11 +193,18 @@
     private void HideClearConfirmModal()
     {
         showClearConfirmModal = false;
+        confirmationBoardName = string.Empty;
     }
+
+    private bool IsConfirmationValid => string.Equals(confirmationBoardName.Trim(), BoardName.Trim(), StringComparison.Ordinal);
 
     private async Task ConfirmClearBoard()
     {
+        if (!IsConfirmationValid)
+            return;
+            
         showClearConfirmModal = false;
+        confirmationBoardName = string.Empty;
         await OnClearBoard.InvokeAsync();
     }
 
