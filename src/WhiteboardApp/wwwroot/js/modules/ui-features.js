@@ -182,6 +182,8 @@ export function showContextMenu(x, y, element = null) {
     // Create context menu element
     contextMenuElement = document.createElement('div');
     contextMenuElement.className = 'context-menu';
+    
+    // Initial styling with visibility hidden to measure dimensions
     contextMenuElement.style.cssText = `
             position: fixed;
             left: ${x}px;
@@ -194,6 +196,7 @@ export function showContextMenu(x, y, element = null) {
             min-width: 180px;
             font-family: Arial, sans-serif;
             font-size: 14px;
+            visibility: hidden;
         `;
 
     if (element) {
@@ -204,7 +207,44 @@ export function showContextMenu(x, y, element = null) {
       contextMenuElement.innerHTML = createGeneralContextMenu();
     }
 
+    // Append to DOM to measure dimensions
     document.body.appendChild(contextMenuElement);
+    
+    // Get menu dimensions and viewport size
+    const menuRect = contextMenuElement.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const margin = 10; // Minimum margin from screen edges
+    
+    // Calculate adjusted position
+    let adjustedX = x;
+    let adjustedY = y;
+    
+    // Check horizontal overflow
+    if (x + menuRect.width > viewportWidth - margin) {
+      // Position menu to the left of cursor
+      adjustedX = x - menuRect.width;
+      // Ensure it doesn't go off the left edge
+      if (adjustedX < margin) {
+        adjustedX = margin;
+      }
+    }
+    
+    // Check vertical overflow
+    if (y + menuRect.height > viewportHeight - margin) {
+      // Position menu above cursor
+      adjustedY = y - menuRect.height;
+      // Ensure it doesn't go off the top edge
+      if (adjustedY < margin) {
+        adjustedY = margin;
+      }
+    }
+    
+    // Apply final positioning and make visible
+    contextMenuElement.style.left = `${adjustedX}px`;
+    contextMenuElement.style.top = `${adjustedY}px`;
+    contextMenuElement.style.visibility = 'visible';
+    
     currentContextMenu = element;
 
     // Add click listener to hide menu when clicking outside
