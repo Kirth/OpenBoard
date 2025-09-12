@@ -189,17 +189,27 @@
         }
     }
 
-    private async Task DuplicateBoard()
+    private async Task DuplicateBoard(string newBoardName)
     {
         try
         {
-            // TODO: Implement board duplication
-            Console.WriteLine("DuplicateBoard called - feature coming soon");
-            await JSRuntime.InvokeVoidAsync("showNotification", "Board duplication coming soon!", "info");
+            if (Guid.TryParse(BoardId, out var sourceBoardGuid))
+            {
+                var newBoard = await BoardService.DuplicateBoardAsync(sourceBoardGuid, newBoardName);
+                await JSRuntime.InvokeVoidAsync("showNotification", $"Board duplicated successfully as '{newBoardName}'", "success");
+                
+                // Navigate to the new board
+                Navigation.NavigateTo($"/board/{newBoard.Id}");
+            }
+            else
+            {
+                await JSRuntime.InvokeVoidAsync("showNotification", "Invalid board ID", "error");
+            }
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Failed to duplicate board: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("showNotification", "Failed to duplicate board", "error");
         }
     }
 

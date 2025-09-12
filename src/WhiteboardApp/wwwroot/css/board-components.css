@@ -163,14 +163,34 @@
     color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    padding: 8px 12px 4px 12px;
-    margin-top: 8px;
+    padding: 8px 16px 4px 16px;
+    margin-top: 4px;
     border-top: 1px solid var(--border-light);
 }
 
 .board-menu-section-title:first-child {
     margin-top: 0;
     border-top: none;
+    padding-top: 4px;
+}
+
+/* Board Menu Section */
+.board-menu-section {
+    margin-bottom: 4px;
+}
+
+.board-menu-section:last-child {
+    margin-bottom: 0;
+}
+
+/* Danger menu item styling */
+.board-menu-item.danger {
+    color: #dc3545;
+}
+
+.board-menu-item.danger:hover {
+    background-color: #f8d7da;
+    color: #721c24;
 }
 
 .connection-status {
@@ -886,6 +906,50 @@
 
 .btn-danger:hover {
     background-color: #c82333;
+}
+
+.btn-primary {
+    background-color: #007bff;
+    color: white;
+}
+
+.btn-primary:hover {
+    background-color: #0056b3;
+}
+
+.btn-primary:disabled {
+    background-color: #6c757d;
+    cursor: not-allowed;
+}
+
+/* Form elements in modals */
+.form-group {
+    margin-bottom: 16px;
+}
+
+.form-group label {
+    display: block;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+    font-size: 14px;
+}
+
+.form-control {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 14px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.form-control:focus {
+    outline: none;
+    border-color: #007bff;
+    box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
 }
 
 /* Dark mode specific modal adjustments */

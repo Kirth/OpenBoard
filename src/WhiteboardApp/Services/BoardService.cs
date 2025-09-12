@@ -83,6 +83,55 @@ public class BoardService
             ElementsByType = elementsByType
         };
     }
+
+    public async Task<Board> DuplicateBoardAsync(Guid sourceBoardId, string newBoardName)
+    {
+        var sourceBoard = await GetBoardAsync(sourceBoardId);
+        if (sourceBoard == null)
+        {
+            throw new ArgumentException($"Source board with ID {sourceBoardId} not found.");
+        }
+
+        // Create new board with same settings as source
+        var newBoard = new Board
+        {
+            Id = Guid.NewGuid(),
+            Name = newBoardName,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            IsPublic = sourceBoard.IsPublic,
+            AdminPin = sourceBoard.AdminPin
+        };
+
+        _context.Boards.Add(newBoard);
+        await _context.SaveChangesAsync();
+
+        // Duplicate all elements
+        if (sourceBoard.Elements.Any())
+        {
+            var duplicatedElements = sourceBoard.Elements.Select(element => new BoardElement
+            {
+                Id = Guid.NewGuid(),
+                BoardId = newBoard.Id,
+                Type = element.Type,
+                X = element.X,
+                Y = element.Y,
+                Width = element.Width,
+                Height = element.Height,
+                ZIndex = element.ZIndex,
+                CreatedBy = element.CreatedBy,
+                CreatedAt = DateTime.UtcNow,
+                Data = element.Data != null ? 
+                    System.Text.Json.JsonDocument.Parse(element.Data.RootElement.GetRawText()) : 
+                    null
+            }).ToList();
+
+            _context.BoardElements.AddRange(duplicatedElements);
+            await _context.SaveChangesAsync();
+        }
+
+        return newBoard;
+    }
 }
 
 public class BoardStats

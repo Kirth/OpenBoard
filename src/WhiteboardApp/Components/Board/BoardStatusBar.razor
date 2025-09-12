@@ -12,30 +12,43 @@
                 <span class="dropdown-arrow">▼</span>
             </button>
             <div class="board-menu @(showBoardMenu ? "show" : "")" @onclick:stopPropagation="true">
-                <div class="board-menu-item" @onclick="ShowBoardInfo">
-                    <span class="menu-icon">ℹ️</span>
-                    Board Info
+                <!-- Board Information Section -->
+                <div class="board-menu-section">
+                    <div class="board-menu-section-title">Board Information</div>
+                    <div class="board-menu-item" @onclick="ShowBoardInfo">
+                        <span class="menu-icon">ℹ️</span>
+                        View Details
+                    </div>
                 </div>
-                <div class="board-menu-item" @onclick="ShowClearConfirmation">
-                    <span class="menu-icon">🗑️</span>
-                    Clear Board
+                
+                <!-- Board Actions Section -->
+                <div class="board-menu-section">
+                    <div class="board-menu-section-title">Board Actions</div>
+                    <div class="board-menu-item" @onclick="OnDuplicateBoardFromMenu">
+                        <span class="menu-icon">📋</span>
+                        Duplicate Board
+                    </div>
+                    <div class="board-menu-item danger" @onclick="ShowClearConfirmation">
+                        <span class="menu-icon">🗑️</span>
+                        Clear Board
+                    </div>
                 </div>
-                <div class="board-menu-item" @onclick="OnDuplicateBoard">
-                    <span class="menu-icon">📋</span>
-                    Duplicate Board
-                </div>
-                <div class="board-menu-section-title">Export Options</div>
-                <div class="board-menu-item" @onclick="ExportAsPng">
-                    <span class="menu-icon">🖼️</span>
-                    Export as PNG
-                </div>
-                <div class="board-menu-item" @onclick="ExportAsPdf">
-                    <span class="menu-icon">📄</span>
-                    Export as PDF
-                </div>
-                <div class="board-menu-item" @onclick="ExportAsHighResPng">
-                    <span class="menu-icon">🎯</span>
-                    Export HD PNG
+
+                <!-- Export Section -->
+                <div class="board-menu-section">
+                    <div class="board-menu-section-title">Export Options</div>
+                    <div class="board-menu-item" @onclick="ExportAsPngFromMenu">
+                        <span class="menu-icon">🖼️</span>
+                        Export as PNG
+                    </div>
+                    <div class="board-menu-item" @onclick="ExportAsPdfFromMenu">
+                        <span class="menu-icon">📄</span>
+                        Export as PDF
+                    </div>
+                    <div class="board-menu-item" @onclick="ExportAsHighResPngFromMenu">
+                        <span class="menu-icon">🎯</span>
+                        Export HD PNG
+                    </div>
                 </div>
             </div>
         </div>
@@ -107,6 +120,10 @@
                     }
                 </div>
             </div>
+            
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="HideBoardInfoModal">Close</button>
+            </div>
         </div>
     </div>
 }
@@ -138,6 +155,33 @@
     </div>
 }
 
+<!-- Duplicate Board Modal -->
+@if (showDuplicateModal)
+{
+    <div class="modal" @onclick="HideDuplicateModal">
+        <div class="modal-content" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Duplicate Board</h3>
+                <button class="modal-close" @onclick="HideDuplicateModal">&times;</button>
+            </div>
+            
+            <div class="modal-body">
+                <p>Create a copy of this board with all its content.</p>
+                <div class="form-group">
+                    <label>New Board Name</label>
+                    <input type="text" class="form-control" @bind="newBoardName" @bind:event="oninput" 
+                           placeholder="Enter name for the new board" autocomplete="off" />
+                </div>
+            </div>
+            
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="HideDuplicateModal">Cancel</button>
+                <button class="btn btn-primary" @onclick="ConfirmDuplicateBoard" disabled="@(!IsNewBoardNameValid)">Duplicate Board</button>
+            </div>
+        </div>
+    </div>
+}
+
 @inject IJSRuntime JSRuntime
 @inject BoardService BoardService
 @inject ExportService ExportService
@@ -147,13 +191,15 @@
     [Parameter] public string BoardId { get; set; } = string.Empty;
     [Parameter] public bool IsConnected { get; set; } = false;
     [Parameter] public EventCallback OnClearBoard { get; set; }
-    [Parameter] public EventCallback OnDuplicateBoard { get; set; }
+    [Parameter] public EventCallback<string> OnDuplicateBoard { get; set; }
 
     private bool showBoardMenu = false;
     private bool showBoardInfoModal = false;
     private bool showClearConfirmModal = false;
+    private bool showDuplicateModal = false;
     private BoardStats? boardStats = null;
     private string confirmationBoardName = string.Empty;
+    private string newBoardName = string.Empty;
 
     private void ToggleBoardMenu()
     {
@@ -220,7 +266,37 @@
         }
     }
 
-    private async Task ExportAsPng()
+    private void OnDuplicateBoardFromMenu()
+    {
+        showBoardMenu = false;
+        ShowDuplicateModal();
+    }
+
+    private void ShowDuplicateModal()
+    {
+        newBoardName = $"Copy of {BoardName}";
+        showDuplicateModal = true;
+    }
+
+    private void HideDuplicateModal()
+    {
+        showDuplicateModal = false;
+        newBoardName = string.Empty;
+    }
+
+    private bool IsNewBoardNameValid => !string.IsNullOrWhiteSpace(newBoardName.Trim());
+
+    private async Task ConfirmDuplicateBoard()
+    {
+        if (!IsNewBoardNameValid)
+            return;
+            
+        showDuplicateModal = false;
+        await OnDuplicateBoard.InvokeAsync(newBoardName.Trim());
+        newBoardName = string.Empty;
+    }
+
+    private async Task ExportAsPngFromMenu()
     {
         showBoardMenu = false;
         try
@@ -238,7 +314,7 @@
         }
     }
 
-    private async Task ExportAsPdf()
+    private async Task ExportAsPdfFromMenu()
     {
         showBoardMenu = false;
         try
@@ -256,7 +332,7 @@
         }
     }
 
-    private async Task ExportAsHighResPng()
+    private async Task ExportAsHighResPngFromMenu()
     {
         showBoardMenu = false;
         try
