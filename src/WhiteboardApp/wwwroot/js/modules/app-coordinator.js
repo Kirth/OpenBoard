@@ -98,6 +98,8 @@ export function setupDependencies() {
     sendElement: signalrClient.sendElement,
     sendDrawingPath: signalrClient.sendDrawingPath,
     deleteSelectedElement: elementFactory.deleteSelectedElement,
+    elementFactory: elementFactory,
+    signalrClient: signalrClient,
     copySelectedElement: elementFactory.copySelectedElement,
     pasteElement: elementFactory.pasteElement,
     duplicateSelectedElement: elementFactory.duplicateSelectedElement,
@@ -144,7 +146,8 @@ export function setupDependencies() {
     blazorReference: null, // Will be set by Blazor
     showNotification: uiFeatures.showNotification,
     addSparkleEffectsToElements: sparkleEffects.addSparkleEffectsToElements,
-    addPoofEffectToElement: sparkleEffects.addPoofEffectToElement
+    addPoofEffectToElement: sparkleEffects.addPoofEffectToElement,
+    addPoofEffectsToElements: sparkleEffects.addPoofEffectsToElements
   });
 
   // SignalR Client Dependencies

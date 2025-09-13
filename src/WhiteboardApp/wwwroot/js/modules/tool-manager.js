@@ -292,63 +292,32 @@ function handleDeleteKey() {
         }
         
         if (selectedIds.size > 1) {
-            // Group deletion
+            // Group deletion - use the dedicated multi-element deletion function
             console.log(`Deleting ${selectedIds.size} selected elements`);
             
-            // Save undo state before deletion
-            if (dependencies.elementFactory && dependencies.elementFactory.saveCanvasState) {
-                dependencies.elementFactory.saveCanvasState('Delete Group');
-            }
-            
-            // Delete all selected elements
-            for (const id of selectedIds) {
-                const element = dependencies.elements.get(id);
-                if (element) {
-                    // Check if element is locked
-                    if (dependencies.elementFactory && dependencies.elementFactory.isElementLocked && dependencies.elementFactory.isElementLocked(element)) {
-                        console.warn(`Cannot delete locked element: ${id}`);
-                        continue;
-                    }
+            if (dependencies.elementFactory && dependencies.elementFactory.deleteMultipleElements) {
+                const deletedIds = dependencies.elementFactory.deleteMultipleElements(selectedIds);
+                console.log(`Successfully initiated deletion of ${deletedIds.length} elements`);
+                
+                // Clear multi-selection after deletion
+                selectedIds.clear();
+                
+                // Clear global multi-selection and broadcast the change
+                if (typeof window !== 'undefined' && window.getSelectedElementIds) {
+                    const globalSelectedIds = window.getSelectedElementIds();
+                    globalSelectedIds.clear();
                     
-                    // Add poof effect if available
-                    if (dependencies.elementFactory && dependencies.elementFactory.addPoofEffect) {
-                        dependencies.elementFactory.addPoofEffect(element);
-                    }
-                    
-                    // Delete the element
-                    if (dependencies.elements) {
-                        dependencies.elements.delete(id);
-                    }
-                    
-                    // Send delete to server
-                    if (dependencies.sendElement && dependencies.currentBoardId) {
-                        // Note: sendElement might need to be replaced with correct SignalR delete function
-                        console.log('Sending element delete to server:', id);
+                    // Broadcast clear selection to other clients
+                    if (dependencies.signalrClient && dependencies.currentBoardId) {
+                        dependencies.signalrClient.sendSelectionClear(dependencies.currentBoardId);
                     }
                 }
-            }
-            
-            // Clear selection
-            if (dependencies.elementFactory && dependencies.elementFactory.clearSelection) {
-                dependencies.elementFactory.clearSelection();
-            }
-            
-            // Clear multi-selection and broadcast the change
-            selectedIds.clear();
-            
-            // Broadcast clear selection to other clients
-            if (typeof window !== 'undefined' && window.getSelectedElementIds) {
-                // Update the global selected IDs and broadcast
-                const globalSelectedIds = window.getSelectedElementIds();
-                globalSelectedIds.clear();
-                if (dependencies.signalrClient && dependencies.currentBoardId) {
-                    dependencies.signalrClient.sendSelectionClear(dependencies.currentBoardId);
+            } else {
+                console.error('deleteMultipleElements function not available in elementFactory');
+                // Fallback to single element deletion
+                if (dependencies.deleteSelectedElement) {
+                    dependencies.deleteSelectedElement();
                 }
-            }
-            
-            // Redraw canvas
-            if (dependencies.redrawCanvas) {
-                dependencies.redrawCanvas();
             }
         } else if (selectedIds.size === 1) {
             // Single element deletion - use existing function

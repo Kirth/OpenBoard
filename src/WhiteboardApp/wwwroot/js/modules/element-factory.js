@@ -1192,6 +1192,114 @@ export function deleteSelectedElement() {
   }
 }
 
+export function deleteMultipleElements(elementIds) {
+  if (!elementIds || elementIds.size === 0) {
+    console.log('deleteMultipleElements: No elements to delete');
+    return [];
+  }
+
+  console.log(`deleteMultipleElements: Deleting ${elementIds.size} elements`);
+  
+  // Collect elements and validate they exist and aren't locked
+  const elementsToDelete = [];
+  const lockedElements = [];
+  const elementIdsToDelete = [];
+
+  for (const elementId of elementIds) {
+    const element = elements.get(elementId);
+    if (!element) {
+      console.warn(`Element ${elementId} not found for deletion`);
+      continue;
+    }
+
+    // Check if element is locked
+    if (isElementLocked(element)) {
+      lockedElements.push(element);
+      continue;
+    }
+
+    elementsToDelete.push(element);
+    elementIdsToDelete.push(elementId);
+  }
+
+  // Notify about locked elements
+  if (lockedElements.length > 0) {
+    if (dependencies.showNotification) {
+      const message = lockedElements.length === 1 
+        ? 'Cannot delete locked element'
+        : `Cannot delete ${lockedElements.length} locked elements`;
+      dependencies.showNotification(message, 'warning');
+    }
+  }
+
+  // If no elements can be deleted, return early
+  if (elementsToDelete.length === 0) {
+    console.log('deleteMultipleElements: No deletable elements found');
+    return [];
+  }
+
+  // Save undo state BEFORE deleting the elements
+  saveCanvasState(`Delete ${elementsToDelete.length} Elements`);
+
+  // Add poof effects before deleting (while elements still exist)
+  if (dependencies.addPoofEffectsToElements && elementsToDelete.length > 0) {
+    console.log(`Adding poof effects for ${elementsToDelete.length} deleted elements`);
+    dependencies.addPoofEffectsToElements(elementsToDelete);
+  }
+
+  // Delete locally for immediate feedback
+  for (const elementId of elementIdsToDelete) {
+    elements.delete(elementId);
+    
+    // Clear selection if this element was selected
+    if (selectedElementId === elementId) {
+      selectedElementId = null;
+    }
+  }
+
+  // Redraw canvas to show changes
+  if (dependencies.redrawCanvas) {
+    dependencies.redrawCanvas();
+  }
+
+  // Send deletions to server to sync with other clients and persist to database
+  if (dependencies.sendElementDelete && dependencies.currentBoardId) {
+    const deletionPromises = elementIdsToDelete.map(elementId => 
+      dependencies.sendElementDelete(dependencies.currentBoardId, elementId)
+        .catch(error => {
+          console.error(`Failed to delete element ${elementId} on server:`, error);
+          return { elementId, error };
+        })
+    );
+
+    Promise.all(deletionPromises)
+      .then(results => {
+        const failures = results.filter(result => result && result.error);
+        if (failures.length > 0) {
+          console.error(`Failed to delete ${failures.length} elements on server`);
+          if (dependencies.showNotification) {
+            const message = failures.length === 1
+              ? 'Failed to delete 1 element on server - other clients may not see the change'
+              : `Failed to delete ${failures.length} elements on server - other clients may not see the changes`;
+            dependencies.showNotification(message, 'warning');
+          }
+        } else {
+          console.log(`Successfully deleted ${elementIdsToDelete.length} elements on server`);
+        }
+      });
+  } else {
+    console.warn('Cannot delete elements on server - SignalR not available or board ID missing');
+    if (dependencies.showNotification) {
+      const message = elementIdsToDelete.length === 1
+        ? 'Element deleted locally only - may not be synced with other clients'
+        : `${elementIdsToDelete.length} elements deleted locally only - may not be synced with other clients`;
+      dependencies.showNotification(message, 'warning');
+    }
+  }
+
+  return elementIdsToDelete;
+}
+
 export function duplicateSelectedElement() {
   if (!selectedElementId) return;
 
@@ -2237,6 +2345,7 @@ if (typeof window !== 'undefined') {
   window.updateElementPosition = updateElementPosition;
   window.updateElementStyle = updateElementStyle;
   window.deleteSelectedElement = deleteSelectedElement;
+  window.deleteMultipleElements = deleteMultipleElements;
   window.duplicateSelectedElement = duplicateSelectedElement;
   window.copySelectedElement = copySelectedElement;
   window.pasteElement = pasteElement;
