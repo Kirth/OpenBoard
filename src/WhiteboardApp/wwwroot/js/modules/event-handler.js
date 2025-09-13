@@ -130,23 +130,13 @@ function handleMouseDown(event) {
       return; // Stop further processing if link was clicked
     }
 
-    // Handle hand tool dual-mode behavior (pan vs select)
+    // Handle hand tool - always pan regardless of what's under cursor
     if (currentTool === 'hand') {
-      const worldPos = dependencies.canvasManager.screenToWorld(screenX, screenY);
-      const elementUnderCursor = dependencies.elementFactory.getElementAtPoint(worldPos.x, worldPos.y);
-      
-      if (elementUnderCursor) {
-        // Pan mode: element exists under cursor
-        dependencies.viewportManager.startPan(screenX, screenY);
-        dependencies.toolManager.setHandToolMode('panning');
-        // Update cursor to grabbing state during pan
-        dependencies.canvasManager.updateCanvasCursor('grabbing');
-      } else {
-        // Selection mode: empty space
-        dependencies.interactionManager.startSelectionRectangle(worldPos.x, worldPos.y);
-        dependencies.toolManager.setHandToolMode('selecting');
-        dependencies.toolManager.setHandToolStartPoint({ x: screenX, y: screenY });
-      }
+      // Always start panning when using hand tool
+      dependencies.viewportManager.startPan(screenX, screenY);
+      dependencies.toolManager.setHandToolMode('panning');
+      // Update cursor to grabbing state during pan
+      dependencies.canvasManager.updateCanvasCursor('grabbing');
       return;
     }
 

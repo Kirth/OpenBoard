@@ -74,6 +74,7 @@ function setupModuleDependencies() {
     elementFactory,
     signalrClient,
     viewportManager,
+    interactionManager,
     // Interaction state accessors
     get isDragging() { return interactionManager.getIsDragging(); },
     get draggedElementId() { return interactionManager.getDraggedElementId(); },
