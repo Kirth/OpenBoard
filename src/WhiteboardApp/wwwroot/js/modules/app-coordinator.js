@@ -168,7 +168,11 @@ export function setupDependencies() {
     updateMinimapImmediate: viewportManager.updateMinimapImmediate,
     showNotification: uiFeatures.showNotification,
     screenToWorld: canvasManager.screenToWorld,
-    editorManager: elementFactory.editorManager
+    editorManager: elementFactory.editorManager,
+    addSparkleEffectsToElements: sparkleEffects.addSparkleEffectsToElements,
+    addPoofEffectToElement: sparkleEffects.addPoofEffectToElement,
+    addPoofEffectsToElements: sparkleEffects.addPoofEffectsToElements,
+    addSparkleEffectToElement: sparkleEffects.addSparkleEffectToElement
   });
 
   // Viewport Manager Dependencies

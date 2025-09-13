@@ -147,6 +147,21 @@ function setupEventHandlers() {
             }
 
             console.log('Element added via SignalR:', elementData.id);
+
+            // Check if this might be a restored element and add sparkle effects
+            if (dependencies.addSparkleEffectToElement && dependencies.elements) {
+                const element = dependencies.elements.get(elementData.id);
+                if (element) {
+                    // Use a heuristic: if element creation time is very recent, it's likely restored via undo
+                    const now = Date.now();
+                    const isRecentlyCreated = element.createdAt && (now - element.createdAt < 2000); // 2 second window
+                    
+                    if (isRecentlyCreated) {
+                        console.log(`Adding sparkle effect for potentially restored element ${elementData.id} (${elementData.type})`);
+                        dependencies.addSparkleEffectToElement(element);
+                    }
+                }
+            }
         } catch (error) {
             console.error('Error handling ElementAdded:', error);
         }
