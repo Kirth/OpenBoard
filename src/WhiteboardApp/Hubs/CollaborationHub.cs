@@ -536,6 +536,169 @@ public class CollaborationHub : Hub
         }
     }
 
+    // Group Operations
+    public async Task CreateGroup(string boardId, string[] elementIds)
+    {
+        try
+        {
+            if (!await ValidateBoardAccess(boardId))
+                return;
+
+            var elementGuids = elementIds.Select(id => Guid.Parse(id)).ToList();
+            var groupId = await _elementService.CreateGroupAsync(Guid.Parse(boardId), elementGuids, 
+                Context.UserIdentifier ?? "Anonymous");
+
+            await Clients.Group($"Board_{boardId}").SendAsync("GroupCreated", new
+            {
+                groupId = groupId.ToString(),
+                elementIds = elementIds,
+                createdBy = Context.UserIdentifier ?? "Anonymous"
+            });
+
+            _logger.LogInformation("Group {GroupId} created with {ElementCount} elements in board {BoardId}", 
+                groupId, elementIds.Length, boardId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating group in board {BoardId}", boardId);
+            await Clients.Caller.SendAsync("Error", "Failed to create group");
+        }
+    }
+
+    public async Task UngroupElements(string boardId, string groupId)
+    {
+        try
+        {
+            if (!await ValidateBoardAccess(boardId) || !Guid.TryParse(groupId, out var groupGuid))
+                return;
+
+            var groupElements = await _elementService.GetGroupElementsAsync(groupGuid);
+            var elementIds = groupElements.Select(e => e.Id.ToString()).ToArray();
+
+            var success = await _elementService.UngroupElementsAsync(groupGuid);
+            if (success)
+            {
+                await Clients.Group($"Board_{boardId}").SendAsync("GroupUngrouped", new
+                {
+                    groupId = groupId,
+                    elementIds = elementIds
+                });
+
+                _logger.LogInformation("Group {GroupId} ungrouped in board {BoardId}", groupId, boardId);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error ungrouping group {GroupId} in board {BoardId}", groupId, boardId);
+            await Clients.Caller.SendAsync("Error", "Failed to ungroup elements");
+        }
+    }
+
+    public async Task MoveGroup(string boardId, string groupId, double deltaX, double deltaY)
+    {
+        try
+        {
+            if (!await ValidateBoardAccess(boardId) || !Guid.TryParse(groupId, out var groupGuid))
+                return;
+
+            var success = await _elementService.MoveGroupAsync(groupGuid, deltaX, deltaY);
+            if (success)
+            {
+                await Clients.Group($"Board_{boardId}").SendAsync("GroupMoved", new
+                {
+                    groupId = groupId,
+                    deltaX = deltaX,
+                    deltaY = deltaY
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error moving group {GroupId} in board {BoardId}", groupId, boardId);
+            await Clients.Caller.SendAsync("Error", "Failed to move group");
+        }
+    }
+
+    public async Task DeleteGroup(string boardId, string groupId)
+    {
+        try
+        {
+            if (!await ValidateBoardAccess(boardId) || !Guid.TryParse(groupId, out var groupGuid))
+                return;
+
+            var success = await _elementService.DeleteGroupAsync(groupGuid);
+            if (success)
+            {
+                await Clients.Group($"Board_{boardId}").SendAsync("GroupDeleted", new
+                {
+                    groupId = groupId
+                });
+
+                _logger.LogInformation("Group {GroupId} deleted from board {BoardId}", groupId, boardId);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting group {GroupId} from board {BoardId}", groupId, boardId);
+            await Clients.Caller.SendAsync("Error", "Failed to delete group");
+        }
+    }
+
+    public async Task BringGroupToFront(string boardId, string groupId)
+    {
+        try
+        {
+            if (!await ValidateBoardAccess(boardId) || !Guid.TryParse(groupId, out var groupGuid))
+                return;
+
+            var maxZIndex = await _elementService.GetMaxZIndexAsync(Guid.Parse(boardId));
+            var success = await _elementService.SetGroupZIndexAsync(groupGuid, maxZIndex + 1);
+            
+            if (success)
+            {
+                await Clients.Group($"Board_{boardId}").SendAsync("GroupZIndexChanged", new
+                {
+                    groupId = groupId,
+                    newBaseZIndex = maxZIndex + 1
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error bringing group {GroupId} to front in board {BoardId}", groupId, boardId);
+            await Clients.Caller.SendAsync("Error", "Failed to bring group to front");
+        }
+    }
+
+    public async Task SendGroupToBack(string boardId, string groupId)
+    {
+        try
+        {
+            if (!await ValidateBoardAccess(boardId) || !Guid.TryParse(groupId, out var groupGuid))
+                return;
+
+            var minZIndex = await _elementService.GetMinZIndexAsync(Guid.Parse(boardId));
+            var groupElements = await _elementService.GetGroupElementsAsync(groupGuid);
+            var newBaseZIndex = minZIndex - groupElements.Count;
+            
+            var success = await _elementService.SetGroupZIndexAsync(groupGuid, newBaseZIndex);
+            
+            if (success)
+            {
+                await Clients.Group($"Board_{boardId}").SendAsync("GroupZIndexChanged", new
+                {
+                    groupId = groupId,
+                    newBaseZIndex = newBaseZIndex
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error sending group {GroupId} to back in board {BoardId}", groupId, boardId);
+            await Clients.Caller.SendAsync("Error", "Failed to send group to back");
+        }
+    }
+
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
         try

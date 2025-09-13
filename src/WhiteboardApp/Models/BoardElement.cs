@@ -26,6 +26,10 @@ public class BoardElement
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public JsonDocument? Data { get; set; }
     
+    // Group properties
+    public Guid? GroupId { get; set; }
+    public int? GroupOrder { get; set; }
+    
     // Navigation property
     public Board? Board { get; set; }
 }

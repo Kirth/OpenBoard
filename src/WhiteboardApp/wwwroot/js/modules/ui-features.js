@@ -478,6 +478,69 @@ function createElementContextMenu(element) {
         `;
   }
 
+  // Add group management options
+  if (dependencies.groupManager) {
+    const selectedElements = dependencies.elementFactory?.getSelectedElements?.() || [];
+    const isInGroup = dependencies.groupManager.isElementInGroup(element.id);
+    const hasMultipleSelected = selectedElements.length >= 2;
+    const hasGroupedElements = selectedElements.some(el => dependencies.groupManager.isElementInGroup(el.id));
+    const allUngrouped = selectedElements.every(el => !dependencies.groupManager.isElementInGroup(el.id));
+
+    console.log('GROUP MENU DEBUG:', {
+      selectedElementsCount: selectedElements.length,
+      selectedElementIds: selectedElements.map(el => el.id),
+      elementId: element.id,
+      isInGroup,
+      hasMultipleSelected,
+      hasGroupedElements,
+      allUngrouped
+    });
+
+    let groupOptions = '';
+
+    // Show "Group Selected" if multiple elements selected and all are ungrouped
+    if (hasMultipleSelected && allUngrouped) {
+      console.log('✅ ADDING Group Selected button');
+      groupOptions += `<button class="context-menu-item" onclick="groupSelected(); hideContextMenu();">
+                🔗 Group Selected
+            </button>`;
+    } else {
+      console.log('❌ NOT adding Group Selected:', { hasMultipleSelected, allUngrouped });
+    }
+
+    // Show "Ungroup" if any selected elements are in groups
+    if (hasGroupedElements) {
+      console.log('✅ ADDING Ungroup button');
+      groupOptions += `<button class="context-menu-item" onclick="ungroupSelected(); hideContextMenu();">
+                🔓 Ungroup
+            </button>`;
+    } else {
+      console.log('❌ NOT adding Ungroup:', { hasGroupedElements });
+    }
+
+    // Show "Select Group" if single element is part of a group
+    if (selectedElements.length === 1 && isInGroup) {
+      console.log('✅ ADDING Select Group button');
+      groupOptions += `<button class="context-menu-item" onclick="selectGroup(); hideContextMenu();">
+                🎯 Select Group
+            </button>`;
+    } else {
+      console.log('❌ NOT adding Select Group:', { singleElement: selectedElements.length === 1, isInGroup });
+    }
+
+    console.log('Final group options HTML length:', groupOptions.length);
+    console.log('Final group options HTML:', groupOptions);
+    
+    if (groupOptions) {
+      console.log('✅ ADDING group section to menu HTML');
+      const groupSection = `<div class="context-menu-section">${groupOptions}</div>`;
+      menuHTML += groupSection;
+      console.log('Group section HTML being added:', groupSection);
+    } else {
+      console.log('❌ NO group options to add');
+    }
+  }
+
   menuHTML += `
         <div class="context-menu-section">
             <button class="context-menu-item context-menu-delete" onclick="deleteElement('${element.id}')">
@@ -486,6 +549,9 @@ function createElementContextMenu(element) {
         </div>
     `;
 
+  console.log('Final complete menu HTML length:', menuHTML.length);
+  console.log('Final complete menu HTML:', menuHTML);
+  
   return menuHTML + getContextMenuStyles();
 }
 

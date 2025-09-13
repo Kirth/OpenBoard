@@ -28,7 +28,8 @@ let dependencies = {
     hideElementSelection: null,
     updateMinimapImmediate: null,
     showNotification: null,
-    screenToWorld: null
+    screenToWorld: null,
+    groupManager: null
 };
 
 // Set dependencies from other modules
@@ -586,6 +587,62 @@ function setupEventHandlers() {
         }
     });
 
+    // Group event handlers
+    signalRConnection.on("GroupCreated", (data) => {
+        try {
+            console.log('Group created:', data);
+            if (dependencies.groupManager) {
+                dependencies.groupManager.onGroupCreated(data);
+            }
+        } catch (error) {
+            console.error('Error handling GroupCreated:', error);
+        }
+    });
+
+    signalRConnection.on("GroupUngrouped", (data) => {
+        try {
+            console.log('Group ungrouped:', data);
+            if (dependencies.groupManager) {
+                dependencies.groupManager.onGroupUngrouped(data);
+            }
+        } catch (error) {
+            console.error('Error handling GroupUngrouped:', error);
+        }
+    });
+
+    signalRConnection.on("GroupMoved", (data) => {
+        try {
+            console.log('Group moved:', data);
+            if (dependencies.groupManager) {
+                dependencies.groupManager.onGroupMoved(data);
+            }
+        } catch (error) {
+            console.error('Error handling GroupMoved:', error);
+        }
+    });
+
+    signalRConnection.on("GroupDeleted", (data) => {
+        try {
+            console.log('Group deleted:', data);
+            if (dependencies.groupManager) {
+                dependencies.groupManager.onGroupDeleted(data);
+            }
+        } catch (error) {
+            console.error('Error handling GroupDeleted:', error);
+        }
+    });
+
+    signalRConnection.on("GroupZIndexChanged", (data) => {
+        try {
+            console.log('Group z-index changed:', data);
+            if (dependencies.groupManager) {
+                dependencies.groupManager.onGroupZIndexChanged(data);
+            }
+        } catch (error) {
+            console.error('Error handling GroupZIndexChanged:', error);
+        }
+    });
+
     // User disconnected handler
     signalRConnection.on("UserLeft", (userData) => {
         try {
@@ -1125,6 +1182,133 @@ export async function sendElementLock(boardId, elementId, locked) {
         return true;
     } catch (error) {
         console.error("Failed to update element lock state:", error);
+        return false;
+    }
+}
+
+// Group management functions
+export async function sendCreateGroup(elementIds) {
+    try {
+        if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
+            console.warn("SignalR not connected, cannot create group");
+            return false;
+        }
+        if (!currentBoardId) {
+            console.warn("No board ID available, cannot create group");
+            return false;
+        }
+
+        console.log(`Creating group with ${elementIds.length} elements:`, elementIds);
+        await signalRConnection.invoke("CreateGroup", currentBoardId, elementIds);
+        console.log('Group creation sent successfully');
+        return true;
+    } catch (error) {
+        console.error("Failed to create group:", error);
+        return false;
+    }
+}
+
+export async function sendUngroupElements(groupId) {
+    try {
+        if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
+            console.warn("SignalR not connected, cannot ungroup elements");
+            return false;
+        }
+        if (!currentBoardId) {
+            console.warn("No board ID available, cannot ungroup elements");
+            return false;
+        }
+
+        console.log(`Ungrouping group: ${groupId}`);
+        await signalRConnection.invoke("UngroupElements", currentBoardId, groupId);
+        console.log('Group ungroup sent successfully');
+        return true;
+    } catch (error) {
+        console.error("Failed to ungroup elements:", error);
+        return false;
+    }
+}
+
+export async function sendMoveGroup(groupId, deltaX, deltaY) {
+    try {
+        if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
+            console.warn("SignalR not connected, cannot move group");
+            return false;
+        }
+        if (!currentBoardId) {
+            console.warn("No board ID available, cannot move group");
+            return false;
+        }
+
+        console.log(`Moving group ${groupId} by (${deltaX}, ${deltaY})`);
+        await signalRConnection.invoke("MoveGroup", currentBoardId, groupId, deltaX, deltaY);
+        console.log('Group move sent successfully');
+        return true;
+    } catch (error) {
+        console.error("Failed to move group:", error);
+        return false;
+    }
+}
+
+export async function sendDeleteGroup(groupId) {
+    try {
+        if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
+            console.warn("SignalR not connected, cannot delete group");
+            return false;
+        }
+        if (!currentBoardId) {
+            console.warn("No board ID available, cannot delete group");
+            return false;
+        }
+
+        console.log(`Deleting group: ${groupId}`);
+        await signalRConnection.invoke("DeleteGroup", currentBoardId, groupId);
+        console.log('Group delete sent successfully');
+        return true;
+    } catch (error) {
+        console.error("Failed to delete group:", error);
+        return false;
+    }
+}
+
+export async function sendBringGroupToFront(groupId) {
+    try {
+        if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
+            console.warn("SignalR not connected, cannot bring group to front");
+            return false;
+        }
+        if (!currentBoardId) {
+            console.warn("No board ID available, cannot bring group to front");
+            return false;
+        }
+
+        console.log(`Bringing group to front: ${groupId}`);
+        await signalRConnection.invoke("BringGroupToFront", currentBoardId, groupId);
+        console.log('Group bring to front sent successfully');
+        return true;
+    } catch (error) {
+        console.error("Failed to bring group to front:", error);
+        return false;
+    }
+}
+
+export async function sendSendGroupToBack(groupId) {
+    try {
+        if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
+            console.warn("SignalR not connected, cannot send group to back");
+            return false;
+        }
+        if (!currentBoardId) {
+            console.warn("No board ID available, cannot send group to back");
+            return false;
+        }
+
+        console.log(`Sending group to back: ${groupId}`);
+        await signalRConnection.invoke("SendGroupToBack", currentBoardId, groupId);
+        console.log('Group send to back sent successfully');
+        return true;
+    } catch (error) {
+        console.error("Failed to send group to back:", error);
         return false;
     }
 }

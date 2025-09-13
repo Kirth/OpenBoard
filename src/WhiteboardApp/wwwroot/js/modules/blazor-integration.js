@@ -219,6 +219,74 @@ export function setupGlobalExposure() {
   window.undo = dependencies.elementFactory.undo;
   window.redo = dependencies.elementFactory.redo;
 
+  // Expose group management functions
+  window.groupSelected = () => {
+    if (dependencies.groupManager) {
+      return dependencies.groupManager.createGroupFromSelection();
+    }
+    console.warn('GroupManager not available');
+  };
+  window.ungroupSelected = () => {
+    if (dependencies.groupManager) {
+      return dependencies.groupManager.ungroupSelected();
+    }
+    console.warn('GroupManager not available');
+  };
+  window.selectGroup = () => {
+    const selectedElements = dependencies.elementFactory.getSelectedElements();
+    if (selectedElements.length === 1 && dependencies.groupManager) {
+      const groupId = dependencies.groupManager.getElementGroupId(selectedElements[0].id);
+      if (groupId) {
+        return dependencies.groupManager.selectGroup(groupId);
+      }
+    }
+    console.warn('No group to select or GroupManager not available');
+  };
+
+  // Context menu visibility functions
+  window.updateContextMenuForSelection = (selectedElements) => {
+    const groupSelectedItem = document.getElementById('groupSelected');
+    const ungroupSelectedItem = document.getElementById('ungroupSelected');
+    const selectGroupItem = document.getElementById('selectGroup');
+    const groupDivider = document.getElementById('groupDivider');
+    
+    let showGroupDivider = false;
+
+    if (groupSelectedItem && ungroupSelectedItem && selectGroupItem) {
+      // Show "Group Selected" if multiple elements are selected and all are ungrouped
+      if (selectedElements.length >= 2 && dependencies.groupManager) {
+        const allUngrouped = selectedElements.every(el => !dependencies.groupManager.isElementInGroup(el.id));
+        groupSelectedItem.style.display = allUngrouped ? 'block' : 'none';
+        if (allUngrouped) showGroupDivider = true;
+      } else {
+        groupSelectedItem.style.display = 'none';
+      }
+
+      // Show "Ungroup" if any selected elements are in groups
+      if (selectedElements.length >= 1 && dependencies.groupManager) {
+        const hasGroupedElements = selectedElements.some(el => dependencies.groupManager.isElementInGroup(el.id));
+        ungroupSelectedItem.style.display = hasGroupedElements ? 'block' : 'none';
+        if (hasGroupedElements) showGroupDivider = true;
+      } else {
+        ungroupSelectedItem.style.display = 'none';
+      }
+
+      // Show "Select Group" if single element is part of a group
+      if (selectedElements.length === 1 && dependencies.groupManager) {
+        const isInGroup = dependencies.groupManager.isElementInGroup(selectedElements[0].id);
+        selectGroupItem.style.display = isInGroup ? 'block' : 'none';
+        if (isInGroup) showGroupDivider = true;
+      } else {
+        selectGroupItem.style.display = 'none';
+      }
+    }
+
+    // Show/hide divider based on whether any group options are visible
+    if (groupDivider) {
+      groupDivider.style.display = showGroupDivider ? 'block' : 'none';
+    }
+  };
+
   // Expose canvas manager functions
   window.redrawCanvas = dependencies.canvasManager.redrawCanvas;
   window.clearCanvas = dependencies.canvasManager.clearCanvas;

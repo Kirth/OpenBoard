@@ -317,6 +317,10 @@ export function handleSelectMouseDown(x, y, event) {
     if (element) {
       console.log(`[SELECT MOUSE] Found element: ${element.id} (${element.type})`);
 
+      // Check if element is part of a group
+      const isInGroup = dependencies.groupManager && dependencies.groupManager.isElementInGroup(element.id);
+      const groupId = isInGroup ? dependencies.groupManager.getElementGroupId(element.id) : null;
+
       // Handle selection logic based on current state and modifiers
       if (event.shiftKey) {
         // Shift-clicking: toggle element in/out of selection
@@ -340,7 +344,25 @@ export function handleSelectMouseDown(x, y, event) {
         }
       } else {
         // Regular clicking
-        if (selectedElementIds.has(element.id) && selectedElementIds.size > 1) {
+        if (isInGroup && !event.ctrlKey) {
+          // Clicking on grouped element without Ctrl - select entire group
+          console.log(`[DEBUG] Selecting entire group: ${groupId}`);
+          const groupElements = dependencies.groupManager.getGroupElements(groupId);
+          
+          // Clear current selection
+          dependencies.elementFactory.clearSelection();
+          selectedElementIds.clear();
+          
+          // Select all elements in the group
+          groupElements.forEach(groupElement => {
+            selectedElementIds.add(groupElement.id);
+          });
+          
+          // Set primary selection to the clicked element
+          if (groupElements.length > 0) {
+            dependencies.elementFactory.selectElement(element.id);
+          }
+        } else if (selectedElementIds.has(element.id) && selectedElementIds.size > 1) {
           // Clicking on an element that's part of multi-selection - keep all selections
           // This will trigger group drag, don't change selections
           // Note: Don't call elementFactory.selectElement() as it would clear the multi-selection

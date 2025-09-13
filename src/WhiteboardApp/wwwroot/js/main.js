@@ -15,6 +15,7 @@ import * as eventHandler from './modules/event-handler.js';
 import * as interactionManager from './modules/interaction-manager.js';
 import * as uiFeatures from './modules/ui-features.js';
 import * as blazorIntegration from './modules/blazor-integration.js';
+import groupManager from './modules/group-manager.js';
 
 // Global state variables for coordination (minimal set)
 export let pendingImagePosition = null;
@@ -62,7 +63,8 @@ function setupModuleDependencies() {
     elementFactory,
     signalrClient,
     viewportManager,
-    appCoordinator
+    appCoordinator,
+    groupManager
   };
 
   // Set up event handler dependencies
@@ -149,9 +151,36 @@ function setupModuleDependencies() {
     elementFactory,
     signalrClient,
     viewportManager,
+    groupManager,
     showNotification: uiFeatures.showNotification,
     get pendingImagePosition() { return pendingImagePosition; },
     set pendingImagePosition(value) { pendingImagePosition = value; }
+  });
+
+  // Set up group manager dependencies
+  groupManager.setDependencies({
+    canvasManager,
+    elementFactory,
+    signalrClient,
+    viewportManager
+  });
+
+  // Update canvas manager dependencies (add groupManager)
+  canvasManager.setDependencies({
+    groupManager,
+    elementFactory
+  });
+
+  // Set up element factory dependencies (add groupManager and interactionManager)
+  elementFactory.setDependencies({
+    groupManager,
+    interactionManager,
+    addSparkleEffectsToElements: uiFeatures.addSparkleEffectsToElements
+  });
+
+  // Set up SignalR client dependencies (add groupManager)
+  signalrClient.setDependencies({
+    groupManager
   });
 
   // Set up UI features dependencies
@@ -160,7 +189,8 @@ function setupModuleDependencies() {
     toolManager,
     elementFactory,
     signalrClient,
-    viewportManager
+    viewportManager,
+    groupManager
   });
 
   // Set up Blazor integration dependencies
@@ -170,6 +200,7 @@ function setupModuleDependencies() {
     elementFactory,
     signalrClient,
     viewportManager,
+    groupManager,
     appCoordinator,
     eventHandler,
     interactionManager,

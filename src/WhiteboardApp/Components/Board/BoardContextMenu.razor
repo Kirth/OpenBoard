@@ -134,6 +134,30 @@
     </div>
     
     <div class="context-menu-divider"></div>
+    
+    <!-- Group operations -->
+    <div id="groupSelected" class="context-menu-item" onclick="groupSelected()" style="display: none;">
+        <div class="context-item-content">
+            <span class="context-icon">🔗</span>
+            Group Selected
+        </div>
+        <span class="context-hotkey">Ctrl+G</span>
+    </div>
+    <div id="ungroupSelected" class="context-menu-item" onclick="ungroupSelected()" style="display: none;">
+        <div class="context-item-content">
+            <span class="context-icon">🔓</span>
+            Ungroup
+        </div>
+        <span class="context-hotkey">Ctrl+Shift+G</span>
+    </div>
+    <div id="selectGroup" class="context-menu-item" onclick="selectGroup()" style="display: none;">
+        <div class="context-item-content">
+            <span class="context-icon">🎯</span>
+            Select Group
+        </div>
+    </div>
+    <div id="groupDivider" class="context-menu-divider" style="display: none;"></div>
+    
     <div class="context-menu-item" onclick="duplicateSelected()">
         <div class="context-item-content">
             <span class="context-icon">📋</span>

@@ -283,6 +283,10 @@ export function redrawCanvas() {
     }
 
     renderAllElements();
+    
+    // Draw group bounds for selected groups
+    drawGroupBounds();
+    
     ctx.restore();            // back to DPR baseline
 
     // 3) Draw screen-space overlays/UI
@@ -2375,6 +2379,35 @@ export function isCanvasInitialized() { return canvas !== null && ctx !== null; 
 
 export function init() {
   console.log('Canvas Manager module loaded - with toggleGrid functions v1.1');
+}
+
+// --- Group rendering --------------------------------------------------------
+
+function drawGroupBounds() {
+  if (!dependencies.groupManager || !ctx) return;
+
+  // Optimize: Cache selected elements to avoid excessive calls during redraws
+  const selectedElements = dependencies.elementFactory?.getSelectedElements?.() || [];
+  if (selectedElements.length === 0) return;
+
+  // Find groups that have selected elements
+  const selectedGroupIds = new Set();
+  selectedElements.forEach(element => {
+    if (dependencies.groupManager.isElementInGroup(element.id)) {
+      const groupId = dependencies.groupManager.getElementGroupId(element.id);
+      if (groupId) {
+        selectedGroupIds.add(groupId);
+      }
+    }
+  });
+
+  // Draw bounds for each selected group
+  selectedGroupIds.forEach(groupId => {
+    const group = dependencies.groupManager.getGroupById(groupId);
+    if (group) {
+      dependencies.groupManager.drawGroupBounds(group, ctx);
+    }
+  });
 }
 
 // --- Backward compatibility -------------------------------------------------

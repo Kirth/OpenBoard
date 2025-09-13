@@ -157,7 +157,9 @@ let dependencies = {
   updateStickyNoteContent: null,
   updateTextElementContent: null,
   blazorReference: null,
-  showNotification: null
+  showNotification: null,
+  groupManager: null,
+  addSparkleEffectsToElements: null
 };
 
 // Set dependencies from other modules
@@ -837,21 +839,7 @@ export function highlightElement(id) {
   }
 }
 
-export function selectElement(id) {
-  highlightElement(id);
-}
-
-export function clearSelection() {
-  // Deselect current element if there is one
-  if (selectedElementId && dependencies.sendElementDeselect && dependencies.currentBoardId) {
-    dependencies.sendElementDeselect(selectedElementId);
-  }
-
-  selectedElementId = null;
-  if (dependencies.redrawCanvas) {
-    dependencies.redrawCanvas();
-  }
-}
+// Note: selectElement and clearSelection functions are defined below with multi-selection support
 
 export function showElementSelection(elementId, userName, connectionId) {
   // Add this selection to collaborative selections
@@ -891,6 +879,103 @@ export function hideElementSelection(elementId, connectionId) {
   if (dependencies.redrawCanvas) {
     dependencies.redrawCanvas();
   }
+}
+
+// Multi-selection support for grouping
+export let multiSelection = new Set();
+
+export function getSelectedElements() {
+  const selected = [];
+  
+  // Check if interaction manager has multi-selection (for selection rectangles)
+  const interactionSelectedIds = dependencies.interactionManager?.getSelectedElementIds?.() || new Set();
+  
+  if (interactionSelectedIds.size > 0) {
+    // Use interaction manager's selection if it has multiple elements
+    interactionSelectedIds.forEach(id => {
+      if (elements.has(id)) {
+        selected.push(elements.get(id));
+      }
+    });
+  } else {
+    // Fall back to element factory's own selection system
+    // Add currently selected single element
+    if (selectedElementId && elements.has(selectedElementId)) {
+      selected.push(elements.get(selectedElementId));
+    }
+    
+    // Add multi-selected elements
+    multiSelection.forEach(id => {
+      if (elements.has(id) && id !== selectedElementId) {
+        selected.push(elements.get(id));
+      }
+    });
+  }
+  
+  // console.log('getSelectedElements() returning:', selected.map(el => el.id));
+  return selected;
+}
+
+export function selectElement(id, addToSelection = false) {
+  // Check if element is part of a group and handle group selection
+  if (dependencies.groupManager && dependencies.groupManager.isElementInGroup(id)) {
+    return dependencies.groupManager.handleElementSelection(id, addToSelection);
+  }
+
+  if (addToSelection) {
+    // Add to multi-selection
+    multiSelection.add(id);
+  } else {
+    // Clear previous selection and select this element
+    clearSelection();
+    selectedElementId = id;
+  }
+  
+  highlightElement(id);
+  
+  // Send selection to server
+  if (dependencies.sendElementSelect && dependencies.currentBoardId) {
+    dependencies.sendElementSelect(id).catch(error => {
+      console.error('Failed to send element select:', error);
+    });
+  }
+}
+
+export function clearSelection() {
+  // Deselect current element if there is one
+  if (selectedElementId && dependencies.sendElementDeselect && dependencies.currentBoardId) {
+    dependencies.sendElementDeselect(selectedElementId);
+  }
+
+  selectedElementId = null;
+  multiSelection.clear();
+  
+  if (dependencies.redrawCanvas) {
+    dependencies.redrawCanvas();
+  }
+}
+
+export function addToSelection(id) {
+  if (elements.has(id)) {
+    multiSelection.add(id);
+    if (dependencies.redrawCanvas) {
+      dependencies.redrawCanvas();
+    }
+  }
+}
+
+export function removeFromSelection(id) {
+  multiSelection.delete(id);
+  if (selectedElementId === id) {
+    selectedElementId = null;
+  }
+  if (dependencies.redrawCanvas) {
+    dependencies.redrawCanvas();
+  }
+}
+
+export function isSelected(id) {
+  return selectedElementId === id || multiSelection.has(id);
 }
 
 export function drawCollaborativeSelections() {

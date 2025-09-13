@@ -53,6 +53,8 @@ public class WhiteboardContext : DbContext
             entity.Property(e => e.CreatedBy).HasColumnName("createdby").HasMaxLength(100);
             entity.Property(e => e.CreatedAt).HasColumnName("createdat").HasDefaultValueSql("NOW()");
             entity.Property(e => e.Data).HasColumnName("data").HasColumnType("jsonb");
+            entity.Property(e => e.GroupId).HasColumnName("groupid");
+            entity.Property(e => e.GroupOrder).HasColumnName("grouporder");
             
             entity.HasOne(e => e.Board)
                   .WithMany(b => b.Elements)
@@ -61,6 +63,7 @@ public class WhiteboardContext : DbContext
 
             entity.HasIndex(e => e.BoardId);
             entity.HasIndex(e => e.Type);
+            entity.HasIndex(e => e.GroupId);
         });
 
         base.OnModelCreating(modelBuilder);

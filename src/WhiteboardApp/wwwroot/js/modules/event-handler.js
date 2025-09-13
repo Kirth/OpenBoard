@@ -724,8 +724,21 @@ function handleCanvasRightClick(event) {
     console.log('Right-click detected element:', element ? element.type : 'none', element);
 
     if (element) {
-      // If not selected, select it first
-      if (dependencies.elementFactory.getSelectedElementId() !== element.id) {
+      // Check if this element is already in the current selection
+      const currentSelectedId = dependencies.elementFactory.getSelectedElementId?.();
+      const selectedElements = dependencies.elementFactory.getSelectedElements?.() || [];
+      const isAlreadySelected = selectedElements.some(el => el.id === element.id);
+      
+      console.log('Right-click selection check:', {
+        elementId: element.id,
+        currentSelectedId,
+        selectedElementsCount: selectedElements.length,
+        isAlreadySelected,
+        selectedElements: selectedElements.map(el => el.id)
+      });
+      
+      // If not selected, select it (this will clear other selections unless it's part of a multi-select scenario)
+      if (!isAlreadySelected) {
         dependencies.elementFactory.selectElement(element.id);
       }
     } else {
