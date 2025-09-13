@@ -35,6 +35,10 @@ let redoStack = [];
 let maxUndoSteps = 50;
 let isUndoRedoOperation = false;
 
+// Style update debouncing system
+let styleUpdateTimeouts = new Map(); // elementId -> timeout
+const STYLE_UPDATE_DEBOUNCE_MS = 200; // 200ms debounce delay
+
 // Helper function to sync element changes to server after undo/redo
 async function syncElementChangesToServer(oldElements, newElements) {
   if (!dependencies.currentBoardId) {
@@ -808,19 +812,28 @@ export function highlightElement(id) {
   // Deselect previous element first if there was one
   if (selectedElementId && selectedElementId !== id) {
     if (dependencies.sendElementDeselect && dependencies.currentBoardId) {
-      dependencies.sendElementDeselect(selectedElementId);
+      // OPTIMIZATION: Make deselect async and non-blocking for better performance
+      dependencies.sendElementDeselect(selectedElementId).catch(error => {
+        console.warn('Failed to send element deselect to server:', error);
+        // Continue with local state update regardless of server response
+      });
     }
   }
 
+  // OPTIMIZATION: Update local selection state immediately for instant visual feedback
   selectedElementId = id;
 
-  // Send selection notification to other users
-  if (id && dependencies.sendElementSelect && dependencies.currentBoardId) {
-    dependencies.sendElementSelect(id);
-  }
-
+  // Trigger immediate canvas redraw for instant visual response
   if (dependencies.redrawCanvas) {
     dependencies.redrawCanvas();
+  }
+
+  // OPTIMIZATION: Send selection notification to server asynchronously (optimistic UI)
+  if (id && dependencies.sendElementSelect && dependencies.currentBoardId) {
+    dependencies.sendElementSelect(id).catch(error => {
+      console.warn('Failed to send element select to server:', error);
+      // Consider implementing retry logic or user notification for critical failures
+    });
   }
 }
 
@@ -1027,24 +1040,48 @@ export function updateElementStyle(elementId, styleProperty, styleValue) {
     element.data = {};
   }
 
-  // Update the style property
+  // OPTIMIZATION: Update local style property immediately for instant visual feedback
   element.data[styleProperty] = styleValue;
 
-  console.log('Element style updated:', elementId, styleProperty, styleValue);
+  console.log('Element style updated locally:', elementId, styleProperty, styleValue);
 
-  // Redraw canvas to show changes
+  // OPTIMIZATION: Redraw canvas immediately for smooth user experience
   if (dependencies.redrawCanvas) {
     dependencies.redrawCanvas();
   }
 
-  // Send style update to server via SignalR if available
-  if (dependencies.updateElementStyle && dependencies.currentBoardId) {
-    try {
-      dependencies.updateElementStyle(elementId, element.data);
-    } catch (error) {
-      console.error('Error sending style update to server:', error);
-    }
+  // OPTIMIZATION: Debounce server updates to reduce network traffic during rapid changes
+  debouncedStyleUpdate(elementId);
+}
+
+// Debounced function to send style updates to server
+function debouncedStyleUpdate(elementId) {
+  // Clear existing timeout for this element
+  if (styleUpdateTimeouts.has(elementId)) {
+    clearTimeout(styleUpdateTimeouts.get(elementId));
   }
+
+  // Set new timeout to send update after debounce period
+  const timeout = setTimeout(() => {
+    const element = elements.get(elementId);
+    
+    if (element && dependencies.updateElementStyle && dependencies.currentBoardId) {
+      try {
+        console.log('Sending debounced style update to server:', elementId);
+        dependencies.updateElementStyle(elementId, element.data).catch(error => {
+          console.warn('Failed to send debounced style update to server:', error);
+        });
+      } catch (error) {
+        console.error('Error in debounced style update:', error);
+      }
+    }
+
+    // Clean up timeout reference
+    styleUpdateTimeouts.delete(elementId);
+  }, STYLE_UPDATE_DEBOUNCE_MS);
+
+  // Store timeout reference
+  styleUpdateTimeouts.set(elementId, timeout);
 }
 
 // Element rotation functions

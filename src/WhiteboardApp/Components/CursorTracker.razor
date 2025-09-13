@@ -33,6 +33,13 @@
     private Dictionary<string, CursorInfo> activeCursors = new();
     private List<UserInfo> activeUsers = new();
     private readonly string[] userColors = { "#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD", "#98D8C8", "#F7DC6F" };
+    
+    // Cursor update throttling
+    private DateTime _lastCursorUpdate = DateTime.MinValue;
+    private const int CURSOR_THROTTLE_MS = 66; // 15 fps (1000/15 ≈ 66ms)
+    private double _pendingCursorX = 0;
+    private double _pendingCursorY = 0;
+    private bool _hasPendingCursorUpdate = false;
 
     public class CursorInfo
     {
@@ -66,9 +73,59 @@
     [JSInvokable]
     public async Task OnMouseMove(double x, double y)
     {
-        if (HubConnection?.State == HubConnectionState.Connected)
+        if (HubConnection?.State != HubConnectionState.Connected)
+            return;
+
+        var now = DateTime.UtcNow;
+        var timeSinceLastUpdate = (now - _lastCursorUpdate).TotalMilliseconds;
+
+        // Store the latest cursor position
+        _pendingCursorX = x;
+        _pendingCursorY = y;
+        _hasPendingCursorUpdate = true;
+
+        // If enough time has passed, send the update immediately
+        if (timeSinceLastUpdate >= CURSOR_THROTTLE_MS)
         {
-            await HubConnection.SendAsync("UpdateCursor", BoardId, x, y);
+            await SendCursorUpdate();
+        }
+        else if (!_isThrottleTimerRunning)
+        {
+            // Start a timer to send the update after the throttle period
+            _ = Task.Run(async () =>
+            {
+                _isThrottleTimerRunning = true;
+                var remainingTime = CURSOR_THROTTLE_MS - (int)timeSinceLastUpdate;
+                if (remainingTime > 0)
+                {
+                    await Task.Delay(remainingTime);
+                }
+                
+                if (_hasPendingCursorUpdate)
+                {
+                    await InvokeAsync(async () => await SendCursorUpdate());
+                }
+                _isThrottleTimerRunning = false;
+            });
+        }
+    }
+
+    private bool _isThrottleTimerRunning = false;
+
+    private async Task SendCursorUpdate()
+    {
+        if (!_hasPendingCursorUpdate || HubConnection?.State != HubConnectionState.Connected)
+            return;
+
+        try
+        {
+            await HubConnection.SendAsync("UpdateCursor", BoardId, _pendingCursorX, _pendingCursorY);
+            _lastCursorUpdate = DateTime.UtcNow;
+            _hasPendingCursorUpdate = false;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error sending cursor update: {ex.Message}");
         }
     }
 
