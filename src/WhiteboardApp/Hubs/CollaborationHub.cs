@@ -13,7 +13,7 @@ public class CollaborationHub : Hub
     private readonly ILogger<CollaborationHub> _logger;
 
     public CollaborationHub(
-        ElementService elementService, 
+        ElementService elementService,
         BoardService boardService,
         IUserSessionManager userSessionManager,
         ILogger<CollaborationHub> logger)
@@ -43,24 +43,25 @@ public class CollaborationHub : Hub
             }
 
             await Groups.AddToGroupAsync(Context.ConnectionId, $"Board_{boardId}");
-            
+
             // Create user session
             var userSession = await _userSessionManager.CreateSessionAsync(Context.ConnectionId, boardGuid, userName);
-            
+
             // Get all active users for this board
             var activeUsers = await _userSessionManager.GetBoardSessionsAsync(boardGuid);
             var activeUserList = activeUsers
                 .Where(u => u.IsActive)
-                .Select(u => new { 
-                    connectionId = u.ConnectionId, 
-                    userName = u.UserName, 
-                    cursorX = u.CursorX, 
-                    cursorY = u.CursorY 
+                .Select(u => new
+                {
+                    connectionId = u.ConnectionId,
+                    userName = u.UserName,
+                    cursorX = u.CursorX,
+                    cursorY = u.CursorY
                 })
                 .ToList();
-            
+
             // Notify others that user joined and send current user list to new user
-            await Clients.Group($"Board_{boardId}").SendAsync("UserJoined", 
+            await Clients.Group($"Board_{boardId}").SendAsync("UserJoined",
                 new { connectionId = Context.ConnectionId, userName = userName });
             await Clients.Caller.SendAsync("ActiveUsersUpdated", activeUserList);
 
@@ -78,16 +79,16 @@ public class CollaborationHub : Hub
         try
         {
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"Board_{boardId}");
-            
+
             // Get user session before removing
             var userSession = await _userSessionManager.GetSessionAsync(Context.ConnectionId);
             if (userSession != null)
             {
                 await _userSessionManager.RemoveSessionAsync(Context.ConnectionId);
-                await Clients.Group($"Board_{boardId}").SendAsync("UserLeft", 
+                await Clients.Group($"Board_{boardId}").SendAsync("UserLeft",
                     new { connectionId = Context.ConnectionId, userName = userSession.UserName });
-                
-                _logger.LogInformation("User {UserName} left board {BoardId}", 
+
+                _logger.LogInformation("User {UserName} left board {BoardId}",
                     userSession.UserName, boardId);
             }
         }
@@ -105,7 +106,7 @@ public class CollaborationHub : Hub
                 return;
 
             var jsonData = JsonDocument.Parse(JsonSerializer.Serialize(pathData));
-            
+
             var element = new BoardElement
             {
                 BoardId = Guid.Parse(boardId),
@@ -117,7 +118,7 @@ public class CollaborationHub : Hub
             };
 
             var savedElement = await _elementService.AddElementAsync(element);
-            
+
             // Broadcast to all users in the board  
             await Clients.Group($"Board_{boardId}").SendAsync("ElementAdded", CreateElementResponse(savedElement, null));
         }
@@ -169,7 +170,7 @@ public class CollaborationHub : Hub
             {
                 dataDict["shapeType"] = elementType; // Preserve original shape type (rectangle, circle, etc.)
             }
-            
+
             var element = new BoardElement
             {
                 BoardId = Guid.Parse(boardId),
@@ -183,7 +184,7 @@ public class CollaborationHub : Hub
             };
 
             var savedElement = await _elementService.AddElementAsync(element);
-            
+
             // Broadcast to all users in the board
             await Clients.Group($"Board_{boardId}").SendAsync("ElementAdded", CreateElementResponse(savedElement, tempId));
         }
@@ -224,24 +225,27 @@ public class CollaborationHub : Hub
             // Calculate the offset for line endpoint translation
             var deltaX = newX - element.X;
             var deltaY = newY - element.Y;
-            
+
             element.X = newX;
             element.Y = newY;
-            
+
             // For lines, also update endpoint coordinates in the data
             if (element.Type == ElementType.Line && element.Data != null)
             {
                 UpdateLineEndpoints(element, deltaX, deltaY);
             }
-            
-            // For drawings, also update path coordinates in the data
-            if (element.Type == ElementType.Drawing && element.Data != null)
-            {
-                UpdateDrawingPathCoordinates(element, deltaX, deltaY);
-            }
-            
+
+            // For drawings, we used to also update path coordinates in the data
+            // this lead to a bug after refreshing 
+            // where the path's bounding box would still be in the right place
+            // but the drawing itself would be double-off distance-wise 
+            //if (element.Type == ElementType.Drawing && element.Data != null)
+            //{
+            //                UpdateDrawingPathCoordinates(element, deltaX, deltaY);
+            //}
+
             await _elementService.UpdateElementAsync(element);
-            
+
             // Broadcast to all users in the board
             await Clients.Group($"Board_{boardId}").SendAsync("ElementMoved", elementId, newX, newY);
         }
@@ -289,7 +293,7 @@ public class CollaborationHub : Hub
             var userSession = await _userSessionManager.GetSessionAsync(Context.ConnectionId);
             if (userSession != null)
             {
-                await Clients.OthersInGroup($"Board_{boardId}").SendAsync("ElementSelected", 
+                await Clients.OthersInGroup($"Board_{boardId}").SendAsync("ElementSelected",
                     elementId, userSession.UserName, Context.ConnectionId);
             }
         }
@@ -374,7 +378,7 @@ public class CollaborationHub : Hub
                 element.Width = width;
                 element.Height = height;
                 await _elementService.UpdateElementAsync(element);
-                
+
                 await Clients.Group($"Board_{boardId}").SendAsync("ElementResized", elementId, x, y, width, height);
             }
         }
@@ -404,16 +408,16 @@ public class CollaborationHub : Hub
                 // Update absolute coordinates in data
                 var existingData = element.Data?.RootElement.GetRawText() ?? "{}";
                 var dataObj = JsonSerializer.Deserialize<Dictionary<string, object>>(existingData) ?? new Dictionary<string, object>();
-                
+
                 dataObj["startX"] = startX;
                 dataObj["startY"] = startY;
                 dataObj["endX"] = endX;
                 dataObj["endY"] = endY;
-                
+
                 element.Data = JsonDocument.Parse(JsonSerializer.Serialize(dataObj));
-                
+
                 await _elementService.UpdateElementAsync(element);
-                
+
                 // Broadcast line endpoint update to all clients
                 await Clients.Group($"Board_{boardId}").SendAsync("LineEndpointsUpdated", elementId, startX, startY, endX, endY);
             }
@@ -444,7 +448,7 @@ public class CollaborationHub : Hub
             var existingData = element.Data?.RootElement.GetRawText() ?? "{}";
             var existingDataObj = JsonSerializer.Deserialize<Dictionary<string, object>>(existingData) ?? new Dictionary<string, object>();
             var styleDataObj = JsonSerializer.Deserialize<Dictionary<string, object>>(JsonSerializer.Serialize(styleData)) ?? new Dictionary<string, object>();
-            
+
             // Validate rotation value if present
             if (styleDataObj.ContainsKey("rotation") && styleDataObj["rotation"] != null)
             {
@@ -460,23 +464,23 @@ public class CollaborationHub : Hub
                     styleDataObj.Remove("rotation");
                 }
             }
-            
+
             // Update the style properties
             foreach (var kvp in styleDataObj)
             {
                 existingDataObj[kvp.Key] = kvp.Value;
             }
-            
+
             element.Data = JsonDocument.Parse(JsonSerializer.Serialize(existingDataObj));
-            
+
             // For lines, also update the bounding box if endpoint coordinates changed
             if (element.Type == ElementType.Line && HasLineCoordinateChanges(styleDataObj))
             {
                 UpdateLineBoundingBox(element, existingDataObj);
             }
-            
+
             await _elementService.UpdateElementAsync(element);
-            
+
             // Broadcast to all users in the board
             await Clients.Group($"Board_{boardId}").SendAsync("ElementStyleUpdated", elementId, styleData);
         }
@@ -501,17 +505,17 @@ public class CollaborationHub : Hub
             // Update the locked property in the element data
             var existingData = element.Data?.RootElement.GetRawText() ?? "{}";
             var existingDataObj = JsonSerializer.Deserialize<Dictionary<string, object>>(existingData) ?? new Dictionary<string, object>();
-            
+
             // Set the locked property
             existingDataObj["locked"] = locked;
-            
+
             element.Data = JsonDocument.Parse(JsonSerializer.Serialize(existingDataObj));
-            
+
             await _elementService.UpdateElementAsync(element);
-            
+
             // Broadcast to all users in the board
             await Clients.Group($"Board_{boardId}").SendAsync("ElementLockUpdated", elementId, locked);
-            
+
             _logger.LogInformation("Element {ElementId} lock state updated to {Locked} in board {BoardId}", elementId, locked, boardId);
         }
         catch (Exception ex)
@@ -529,10 +533,10 @@ public class CollaborationHub : Hub
             if (userSession != null)
             {
                 await _userSessionManager.RemoveSessionAsync(Context.ConnectionId);
-                await Clients.Group($"Board_{userSession.BoardId}").SendAsync("UserLeft", 
+                await Clients.Group($"Board_{userSession.BoardId}").SendAsync("UserLeft",
                     new { connectionId = Context.ConnectionId, userName = userSession.UserName });
-                
-                _logger.LogInformation("User {UserName} disconnected from board {BoardId}", 
+
+                _logger.LogInformation("User {UserName} disconnected from board {BoardId}",
                     userSession.UserName, userSession.BoardId);
             }
         }
@@ -540,7 +544,7 @@ public class CollaborationHub : Hub
         {
             _logger.LogError(ex, "Error handling disconnect for connection {ConnectionId}", Context.ConnectionId);
         }
-        
+
         await base.OnDisconnectedAsync(exception);
     }
 
@@ -576,16 +580,16 @@ public class CollaborationHub : Hub
                 var existingData = element.Data?.RootElement.GetRawText() ?? "{}";
                 var existingDataObj = JsonSerializer.Deserialize<Dictionary<string, object>>(existingData) ?? new Dictionary<string, object>();
                 var updatedDataObj = JsonSerializer.Deserialize<Dictionary<string, object>>(JsonSerializer.Serialize(updatedData)) ?? new Dictionary<string, object>();
-                
+
                 // Merge the properties (updatedData takes precedence)
                 foreach (var kvp in updatedDataObj)
                 {
                     existingDataObj[kvp.Key] = kvp.Value;
                 }
-                
+
                 element.Data = JsonDocument.Parse(JsonSerializer.Serialize(existingDataObj));
                 await _elementService.UpdateElementAsync(element);
-                
+
                 // Send back the merged data to all clients
                 await Clients.Group($"Board_{boardId}").SendAsync(eventName, elementId, existingDataObj);
             }
@@ -609,7 +613,7 @@ public class CollaborationHub : Hub
             {
                 element.ZIndex = await getNewZIndex(element);
                 await _elementService.UpdateElementAsync(element);
-                
+
                 await Clients.Group($"Board_{boardId}").SendAsync("ElementZIndexUpdated", elementId, element.ZIndex);
             }
         }
@@ -639,7 +643,7 @@ public class CollaborationHub : Hub
                 // Fallback to enum string if parsing fails
             }
         }
-        
+
         return new
         {
             id = savedElement.Id.ToString(),
@@ -659,7 +663,7 @@ public class CollaborationHub : Hub
     {
         var existingData = element.Data?.RootElement.GetRawText() ?? "{}";
         var dataObj = JsonSerializer.Deserialize<Dictionary<string, object>>(existingData) ?? new Dictionary<string, object>();
-        
+
         if (dataObj.TryGetValue("startX", out var startXObj) && double.TryParse(startXObj.ToString(), out var startX) &&
             dataObj.TryGetValue("startY", out var startYObj) && double.TryParse(startYObj.ToString(), out var startY) &&
             dataObj.TryGetValue("endX", out var endXObj) && double.TryParse(endXObj.ToString(), out var endX) &&
@@ -669,7 +673,7 @@ public class CollaborationHub : Hub
             dataObj["startY"] = startY + deltaY;
             dataObj["endX"] = endX + deltaX;
             dataObj["endY"] = endY + deltaY;
-            
+
             element.Data = JsonDocument.Parse(JsonSerializer.Serialize(dataObj));
         }
     }
@@ -678,33 +682,33 @@ public class CollaborationHub : Hub
     {
         var existingData = element.Data?.RootElement.GetRawText() ?? "{}";
         var dataObj = JsonSerializer.Deserialize<Dictionary<string, object>>(existingData) ?? new Dictionary<string, object>();
-        
+
         // Check if path data exists
         if (dataObj.TryGetValue("path", out var pathObj) && pathObj is JsonElement pathElement && pathElement.ValueKind == JsonValueKind.Array)
         {
             var updatedPath = new List<Dictionary<string, object>>();
-            
+
             foreach (var pointElement in pathElement.EnumerateArray())
             {
                 if (pointElement.ValueKind == JsonValueKind.Object)
                 {
                     var pointObj = JsonSerializer.Deserialize<Dictionary<string, object>>(pointElement.GetRawText()) ?? new Dictionary<string, object>();
-                    
+
                     // Update x and y coordinates if they exist
                     if (pointObj.TryGetValue("x", out var xObj) && double.TryParse(xObj.ToString(), out var x))
                     {
                         pointObj["x"] = x + deltaX;
                     }
-                    
+
                     if (pointObj.TryGetValue("y", out var yObj) && double.TryParse(yObj.ToString(), out var y))
                     {
                         pointObj["y"] = y + deltaY;
                     }
-                    
+
                     updatedPath.Add(pointObj);
                 }
             }
-            
+
             // Update the path in the data object
             dataObj["path"] = updatedPath;
             element.Data = JsonDocument.Parse(JsonSerializer.Serialize(dataObj));
@@ -713,13 +717,13 @@ public class CollaborationHub : Hub
 
     private static bool IsStyleableElement(ElementType type)
     {
-        return type == ElementType.Shape || type == ElementType.Drawing || type == ElementType.Line || 
+        return type == ElementType.Shape || type == ElementType.Drawing || type == ElementType.Line ||
                type == ElementType.Text || type == ElementType.StickyNote || type == ElementType.Image;
     }
 
     private static bool HasLineCoordinateChanges(Dictionary<string, object> styleData)
     {
-        return styleData.ContainsKey("startX") || styleData.ContainsKey("startY") || 
+        return styleData.ContainsKey("startX") || styleData.ContainsKey("startY") ||
                styleData.ContainsKey("endX") || styleData.ContainsKey("endY");
     }
 
