@@ -21,6 +21,10 @@ let lineOriginalEnd = { x: 0, y: 0 };
 // Multi-select state
 let selectedElementIds = new Set();
 
+// Group dragging state
+let isDraggingGroup = false;
+let groupInitialPositions = new Map(); // Store initial positions of all selected elements
+
 // Resize state
 let isResizing = false;
 
@@ -58,6 +62,9 @@ export function getRotationStartAngle() { return rotationStartAngle; }
 export function getRotationElementStartAngle() { return rotationElementStartAngle; }
 export function getIsSelectionDragging() { return isSelectionDragging; }
 export function getLongTouchTimer() { return longTouchTimer; }
+export function getIsDraggingGroup() { return isDraggingGroup; }
+export function getGroupInitialPositions() { return groupInitialPositions; }
+export function getDragStart() { return { x: dragStartX, y: dragStartY }; }
 
 export function setDependencies(deps) {
   dependencies = deps;
@@ -143,6 +150,18 @@ export function finishSelectionRectangle() {
   } else if (selectedElementIds.size > 1) {
     // Multiple selection - implement multi-select UI if needed
     console.log(`Multiple elements selected: ${selectedElementIds.size}`);
+  }
+  
+  // Broadcast multi-selection state to other clients
+  if (dependencies.signalrClient && selectedElementIds.size > 0) {
+    const boardId = dependencies.signalrClient.getCurrentBoardId();
+    if (boardId) {
+      if (selectedElementIds.size > 0) {
+        dependencies.signalrClient.sendSelectionUpdate(boardId, selectedElementIds);
+      } else {
+        dependencies.signalrClient.sendSelectionClear(boardId);
+      }
+    }
   }
   
   isSelectionDragging = false;
@@ -265,6 +284,7 @@ export function handleImageUpload(event) {
 export function handleSelectMouseDown(x, y, event) {
   try {
     console.log(`[SELECT MOUSE] Starting select interaction at (${x}, ${y})`);
+    console.log(`[DEBUG] selectedElementIds before processing: ${selectedElementIds.size} elements:`, Array.from(selectedElementIds));
 
     // A) First, rotation handle on already selected elements
     if (selectedElementIds.size > 0) {
@@ -289,11 +309,7 @@ export function handleSelectMouseDown(x, y, event) {
       }
     }
 
-    // Clear any existing selection first if not shift-clicking
-    if (!event.shiftKey) {
-      dependencies.elementFactory.clearSelection();
-      selectedElementIds.clear();
-    }
+    // Don't pre-clear - only clear when truly replacing selection
 
     // B) Otherwise hover element under pointer as usual
     const element = dependencies.elementFactory.getElementAtPoint(x, y);
@@ -301,25 +317,47 @@ export function handleSelectMouseDown(x, y, event) {
     if (element) {
       console.log(`[SELECT MOUSE] Found element: ${element.id} (${element.type})`);
 
-      // (optional) set selection if not selected
-      if (!selectedElementIds.has(element.id)) {
-        selectedElementIds.clear();
-        selectedElementIds.add(element.id);
-      }
-
-      // Select the element (or add to selection if shift-clicking)
-      if (event.shiftKey && selectedElementIds.has(element.id)) {
-        // Deselect if already selected and shift-clicking
-        selectedElementIds.delete(element.id);
-        if (dependencies.elementFactory.getSelectedElementId() === element.id) {
-          dependencies.elementFactory.clearSelection();
+      // Handle selection logic based on current state and modifiers
+      if (event.shiftKey) {
+        // Shift-clicking: toggle element in/out of selection
+        if (selectedElementIds.has(element.id)) {
+          // Remove from selection
+          selectedElementIds.delete(element.id);
+          if (dependencies.elementFactory.getSelectedElementId() === element.id) {
+            // If this was the primary selection, clear it
+            dependencies.elementFactory.clearSelection();
+            // If there are other selected elements, make one of them primary
+            if (selectedElementIds.size > 0) {
+              const newPrimary = Array.from(selectedElementIds)[0];
+              dependencies.elementFactory.selectElement(newPrimary);
+            }
+          }
+        } else {
+          // Add to selection (do NOT call legacy selectElement here)
+          selectedElementIds.add(element.id);
+          // Optional: set a primary without clearing, if you implement it:
+          // dependencies.elementFactory?.setPrimarySelection?.(element.id);
         }
       } else {
-        dependencies.elementFactory.selectElement(element.id);
-        if (event.shiftKey) {
+        // Regular clicking
+        if (selectedElementIds.has(element.id) && selectedElementIds.size > 1) {
+          // Clicking on an element that's part of multi-selection - keep all selections
+          // This will trigger group drag, don't change selections
+          // Note: Don't call elementFactory.selectElement() as it would clear the multi-selection
+          console.log(`[DEBUG] Preserving multi-selection (${selectedElementIds.size} elements) - clicked on selected element`);
+        } else {
+          // Single element or clicking outside multi-selection - replace selection
+          console.log(`[DEBUG] Replacing selection with single element: ${element.id}`);
+          // Clear legacy + multi ONLY here:
+          dependencies.elementFactory.clearSelection();
+          selectedElementIds.clear();
           selectedElementIds.add(element.id);
+          dependencies.elementFactory.selectElement(element.id);
+          console.log(`[DEBUG] selectedElementIds after single select: ${selectedElementIds.size} elements`);
         }
       }
+
+      // Don't broadcast yet - wait until after drag logic determines final state
 
       // Check for line handles if it's a line
       if (element.type === 'Line') {
@@ -360,16 +398,43 @@ export function handleSelectMouseDown(x, y, event) {
         return;
       }
 
-      // Start drag of element body
-      console.log(`[SELECT MOUSE] Starting element drag for: ${element.id}`);
-      isDragging = true;
-      draggedElementId = element.id;
-      dragStartX = x;
-      dragStartY = y;
-      elementStartX = element.x;
-      elementStartY = element.y;
-      elementHasMoved = false;
-      undoStateSaved = false;
+      // Start drag of element body (single or group)
+      if (selectedElementIds.size > 1 && selectedElementIds.has(element.id)) {
+        // Start group drag operation
+        console.log(`[SELECT MOUSE] Starting group drag for ${selectedElementIds.size} elements`);
+        console.log(`[DEBUG] Final selectedElementIds for group drag:`, Array.from(selectedElementIds));
+        isDraggingGroup = true;
+        dragStartX = x;
+        dragStartY = y;
+        elementHasMoved = false;
+        undoStateSaved = false;
+        
+        // Store initial positions for all selected elements
+        groupInitialPositions.clear();
+        for (const id of selectedElementIds) {
+          const el = dependencies.elementFactory.getElementById(id);
+          if (el) {
+            groupInitialPositions.set(id, { x: el.x, y: el.y });
+          }
+        }
+        
+        // Broadcast final selection state after determining group drag
+        broadcastSelectionState();
+      } else {
+        // Start single element drag
+        console.log(`[SELECT MOUSE] Starting element drag for: ${element.id}`);
+        isDragging = true;
+        draggedElementId = element.id;
+        dragStartX = x;
+        dragStartY = y;
+        elementStartX = element.x;
+        elementStartY = element.y;
+        elementHasMoved = false;
+        undoStateSaved = false;
+        
+        // Broadcast final selection state after determining single drag
+        broadcastSelectionState();
+      }
 
     } else {
       console.log(`[SELECT MOUSE] No element found`);
@@ -585,6 +650,9 @@ export function resetInteractionState() {
   lineOriginalStart = { x: 0, y: 0 };
   lineOriginalEnd = { x: 0, y: 0 };
   
+  isDraggingGroup = false;
+  groupInitialPositions.clear();
+  
   selectedElementIds.clear();
   isResizing = false;
   isRotating = false;
@@ -617,4 +685,37 @@ export function setSelectionDragging(value) { isSelectionDragging = value; }
 export function setRotating(value) { isRotating = value; }
 export function setRotationStartAngle(value) { rotationStartAngle = value; }
 export function setRotationElementStartAngle(value) { rotationElementStartAngle = value; }
+export function setDraggingGroup(value) { isDraggingGroup = value; }
+export function setGroupInitialPositions(value) { 
+  groupInitialPositions.clear();
+  if (value instanceof Map) {
+    for (const [key, val] of value) {
+      groupInitialPositions.set(key, val);
+    }
+  }
+}
 export function getSelectedElementIds() { return selectedElementIds; }
+
+// Helper function to broadcast selection state to other clients
+function broadcastSelectionState() {
+  try {
+    console.log(`[DEBUG BROADCAST] Broadcasting selection state: ${selectedElementIds.size} elements:`, Array.from(selectedElementIds));
+    if (dependencies.signalrClient) {
+      const boardId = dependencies.signalrClient.getCurrentBoardId();
+      if (boardId) {
+        if (selectedElementIds.size > 0) {
+          dependencies.signalrClient.sendSelectionUpdate(boardId, selectedElementIds);
+        } else {
+          dependencies.signalrClient.sendSelectionClear(boardId);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error broadcasting selection state:', error);
+  }
+}
+
+// Expose to window for global access
+if (typeof window !== 'undefined') {
+  window.getSelectedElementIds = getSelectedElementIds;
+}

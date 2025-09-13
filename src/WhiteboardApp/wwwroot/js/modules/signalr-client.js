@@ -258,27 +258,78 @@ function setupEventHandlers() {
         }
     });
 
-    // Element selected handler
-    signalRConnection.on("ElementSelected", (elementId, userName, connectionId) => {
+    // Multi-selection updated handler
+    signalRConnection.on("SelectionUpdated", (elementIds, userName, connectionId) => {
         try {
-            if (dependencies.showElementSelection) {
-                dependencies.showElementSelection(elementId, userName, connectionId);
+            if (elementIds && elementIds.length > 0) {
+                collaborativeSelections.set(connectionId, {
+                    elementIds: new Set(elementIds),
+                    userName: userName,
+                    connectionId: connectionId,
+                    color: getColorForConnection(connectionId)
+                });
+            } else {
+                collaborativeSelections.delete(connectionId);
             }
 
-            console.log(`${userName} selected element ${elementId}`);
+            if (dependencies.redrawCanvas) {
+                dependencies.redrawCanvas();
+            }
+
+            console.log(`${userName} selected ${elementIds.length} elements`);
+        } catch (error) {
+            console.error('Error handling SelectionUpdated:', error);
+        }
+    });
+
+    // Selection cleared handler
+    signalRConnection.on("SelectionCleared", (connectionId) => {
+        try {
+            collaborativeSelections.delete(connectionId);
+            
+            if (dependencies.redrawCanvas) {
+                dependencies.redrawCanvas();
+            }
+
+            console.log(`Selection cleared for user ${connectionId}`);
+        } catch (error) {
+            console.error('Error handling SelectionCleared:', error);
+        }
+    });
+
+    // Legacy handlers for backward compatibility - map to new multi-select model
+    signalRConnection.on("ElementSelected", (elementId, userName, connectionId) => {
+        try {
+            // Map legacy single selection to new multi-select model
+            if (elementId) {
+                collaborativeSelections.set(connectionId, {
+                    elementIds: new Set([elementId]),
+                    userName: userName,
+                    connectionId: connectionId,
+                    color: getColorForConnection(connectionId)
+                });
+
+                if (dependencies.redrawCanvas) {
+                    dependencies.redrawCanvas();
+                }
+            }
+
+            console.log(`${userName} selected element ${elementId} (legacy)`);
         } catch (error) {
             console.error('Error handling ElementSelected:', error);
         }
     });
 
-    // Element deselected handler
     signalRConnection.on("ElementDeselected", (elementId, connectionId) => {
         try {
-            if (dependencies.hideElementSelection) {
-                dependencies.hideElementSelection(elementId, connectionId);
+            // Map legacy deselect to clear selection
+            collaborativeSelections.delete(connectionId);
+            
+            if (dependencies.redrawCanvas) {
+                dependencies.redrawCanvas();
             }
 
-            console.log(`Element ${elementId} deselected`);
+            console.log(`Element ${elementId} deselected (legacy)`);
         } catch (error) {
             console.error('Error handling ElementDeselected:', error);
         }
@@ -876,6 +927,39 @@ export async function sendElementDeselect(elementId) {
         return true;
     } catch (error) {
         console.error("Failed to send element deselect:", error);
+        return false;
+    }
+}
+
+export async function sendSelectionUpdate(boardId, elementIds) {
+    try {
+        if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
+            return false;
+        }
+
+        const elementIdsArray = Array.from(elementIds);
+        console.log(`Sending selection update for ${elementIdsArray.length} elements`);
+        await signalRConnection.invoke("UpdateSelection", boardId, elementIdsArray);
+        console.log('Selection update sent successfully');
+        return true;
+    } catch (error) {
+        console.error("Failed to send selection update:", error);
+        return false;
+    }
+}
+
+export async function sendSelectionClear(boardId) {
+    try {
+        if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
+            return false;
+        }
+
+        console.log('Sending selection clear');
+        await signalRConnection.invoke("ClearSelection", boardId);
+        console.log('Selection clear sent successfully');
+        return true;
+    } catch (error) {
+        console.error("Failed to send selection clear:", error);
         return false;
     }
 }

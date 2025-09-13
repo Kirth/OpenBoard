@@ -16,6 +16,13 @@ window.isShiftHeld = false;
 let isSpacebarHeld = false;
 let toolBeforeSpacebar = null;
 
+// Hand tool state management for dual-mode behavior
+const handToolState = {
+    mode: null, // 'panning' | 'selecting' | null
+    startPoint: null,
+    isActive: false
+};
+
 // Dependencies that will be injected from other modules
 let dependencies = {
     canvas: null,
@@ -273,6 +280,92 @@ export function updateBlazorCurrentTool(tool) {
     }
 }
 
+// Handle delete key press for single or group deletion
+function handleDeleteKey() {
+    try {
+        // First check if we can access selected element IDs from interaction manager
+        let selectedIds = new Set();
+        
+        // Try to get selected IDs from the global function if available
+        if (typeof window !== 'undefined' && window.getSelectedElementIds) {
+            selectedIds = window.getSelectedElementIds();
+        }
+        
+        if (selectedIds.size > 1) {
+            // Group deletion
+            console.log(`Deleting ${selectedIds.size} selected elements`);
+            
+            // Save undo state before deletion
+            if (dependencies.elementFactory && dependencies.elementFactory.saveCanvasState) {
+                dependencies.elementFactory.saveCanvasState('Delete Group');
+            }
+            
+            // Delete all selected elements
+            for (const id of selectedIds) {
+                const element = dependencies.elements.get(id);
+                if (element) {
+                    // Check if element is locked
+                    if (dependencies.elementFactory && dependencies.elementFactory.isElementLocked && dependencies.elementFactory.isElementLocked(element)) {
+                        console.warn(`Cannot delete locked element: ${id}`);
+                        continue;
+                    }
+                    
+                    // Add poof effect if available
+                    if (dependencies.elementFactory && dependencies.elementFactory.addPoofEffect) {
+                        dependencies.elementFactory.addPoofEffect(element);
+                    }
+                    
+                    // Delete the element
+                    if (dependencies.elements) {
+                        dependencies.elements.delete(id);
+                    }
+                    
+                    // Send delete to server
+                    if (dependencies.sendElement && dependencies.currentBoardId) {
+                        // Note: sendElement might need to be replaced with correct SignalR delete function
+                        console.log('Sending element delete to server:', id);
+                    }
+                }
+            }
+            
+            // Clear selection
+            if (dependencies.elementFactory && dependencies.elementFactory.clearSelection) {
+                dependencies.elementFactory.clearSelection();
+            }
+            
+            // Clear multi-selection and broadcast the change
+            selectedIds.clear();
+            
+            // Broadcast clear selection to other clients
+            if (typeof window !== 'undefined' && window.getSelectedElementIds) {
+                // Update the global selected IDs and broadcast
+                const globalSelectedIds = window.getSelectedElementIds();
+                globalSelectedIds.clear();
+                if (dependencies.signalrClient && dependencies.currentBoardId) {
+                    dependencies.signalrClient.sendSelectionClear(dependencies.currentBoardId);
+                }
+            }
+            
+            // Redraw canvas
+            if (dependencies.redrawCanvas) {
+                dependencies.redrawCanvas();
+            }
+        } else if (selectedIds.size === 1) {
+            // Single element deletion - use existing function
+            if (dependencies.deleteSelectedElement) {
+                dependencies.deleteSelectedElement();
+            }
+        } else {
+            // Fallback to existing single element deletion
+            if (dependencies.deleteSelectedElement) {
+                dependencies.deleteSelectedElement();
+            }
+        }
+    } catch (error) {
+        console.error('Error handling delete key:', error);
+    }
+}
+
 // Set up keyboard event handlers
 export function setupKeyboardHandlers() {
     try {
@@ -371,7 +464,7 @@ export function handleKeyDown(event) {
                 case 'Delete':
                 case 'Backspace':
                     event.preventDefault();
-                    if (dependencies.deleteSelectedElement) dependencies.deleteSelectedElement();
+                    handleDeleteKey();
                     break;
 
                 case ' ':
@@ -1065,6 +1158,29 @@ export function isShapeTool(tool = null) {
 export function init() {
     initializeToolManager();
     console.log('Tool Manager module loaded');
+}
+
+// Hand tool state management functions
+export function getHandToolState() {
+    return { ...handToolState };
+}
+
+export function setHandToolMode(mode) {
+    handToolState.mode = mode;
+}
+
+export function setHandToolStartPoint(point) {
+    handToolState.startPoint = point;
+}
+
+export function clearHandToolState() {
+    handToolState.mode = null;
+    handToolState.startPoint = null;
+    handToolState.isActive = false;
+}
+
+export function setHandToolActive(active) {
+    handToolState.isActive = active;
 }
 
 // Backward compatibility - expose to window

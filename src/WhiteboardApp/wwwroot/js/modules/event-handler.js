@@ -130,11 +130,23 @@ function handleMouseDown(event) {
       return; // Stop further processing if link was clicked
     }
 
-    // Handle hand tool panning
+    // Handle hand tool dual-mode behavior (pan vs select)
     if (currentTool === 'hand') {
-      dependencies.viewportManager.startPan(screenX, screenY);
-      // Update cursor to grabbing state during pan
-      dependencies.canvasManager.updateCanvasCursor('grabbing');
+      const worldPos = dependencies.canvasManager.screenToWorld(screenX, screenY);
+      const elementUnderCursor = dependencies.elementFactory.getElementAtPoint(worldPos.x, worldPos.y);
+      
+      if (elementUnderCursor) {
+        // Pan mode: element exists under cursor
+        dependencies.viewportManager.startPan(screenX, screenY);
+        dependencies.toolManager.setHandToolMode('panning');
+        // Update cursor to grabbing state during pan
+        dependencies.canvasManager.updateCanvasCursor('grabbing');
+      } else {
+        // Selection mode: empty space
+        dependencies.interactionManager.startSelectionRectangle(worldPos.x, worldPos.y);
+        dependencies.toolManager.setHandToolMode('selecting');
+        dependencies.toolManager.setHandToolStartPoint({ x: screenX, y: screenY });
+      }
       return;
     }
 
@@ -208,6 +220,13 @@ function handleMouseMove(event) {
     }
 
     const currentTool = dependencies.toolManager.getCurrentTool();
+    
+    // Handle hand tool selection mode
+    if (currentTool === 'hand' && dependencies.toolManager.getHandToolState().mode === 'selecting') {
+      const worldPos = dependencies.canvasManager.screenToWorld(screenX, screenY);
+      dependencies.interactionManager.updateSelectionRectangle(worldPos.x, worldPos.y);
+      return;
+    }
 
     // Handle line handle dragging in select mode
     if (dependencies.isDraggingLineHandle && dependencies.draggedElementId && currentTool === 'select') {
@@ -306,6 +325,55 @@ function handleMouseMove(event) {
       return;
     }
 
+    // Handle group dragging in select mode or hand mode (when not panning)
+    if (dependencies.isDraggingGroup && (currentTool === 'select' || (currentTool === 'hand' && dependencies.toolManager.getHandToolState().mode !== 'panning'))) {
+      const { x: startX, y: startY } = dependencies.getDragStart();
+      const deltaX = worldPos.x - startX;
+      const deltaY = worldPos.y - startY;
+
+      // Check if elements have moved significantly (threshold of 3 world units)
+      const moveDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+      if (moveDistance > 3 && !dependencies.elementHasMoved) {
+        console.log('GROUP MOVEMENT DETECTED: Distance', moveDistance, 'elements:', dependencies.groupInitialPositions.size);
+        dependencies.setElementHasMoved(true);
+        // Save undo state when significant movement is first detected
+        if (!dependencies.undoStateSaved) {
+          console.log('SAVING UNDO STATE for group movement');
+          dependencies.elementFactory.saveCanvasState('Move Group');
+          dependencies.setUndoStateSaved(true);
+        }
+      }
+
+      // Move all selected elements
+      if (dependencies.canvasManager.isSnapToGridEnabled() && dependencies.groupInitialPositions.size > 0) {
+        // Snap-to-grid enabled: use first element as reference and apply same snap to all
+        const firstId = Array.from(dependencies.groupInitialPositions.keys())[0];
+        const firstInitialPos = dependencies.groupInitialPositions.get(firstId);
+        const firstNewX = firstInitialPos.x + deltaX;
+        const firstNewY = firstInitialPos.y + deltaY;
+        const snapped = dependencies.canvasManager.snapToGridPoint(firstNewX, firstNewY);
+        const snapDeltaX = snapped.x - firstNewX;
+        const snapDeltaY = snapped.y - firstNewY;
+        
+        // Apply the same snap delta to all elements
+        for (const [id, initialPos] of dependencies.groupInitialPositions) {
+          const newX = initialPos.x + deltaX + snapDeltaX;
+          const newY = initialPos.y + deltaY + snapDeltaY;
+          dependencies.elementFactory.updateElementPositionLocal(id, newX, newY);
+        }
+      } else {
+        // No snapping: move all elements by exact delta
+        for (const [id, initialPos] of dependencies.groupInitialPositions) {
+          const newX = initialPos.x + deltaX;
+          const newY = initialPos.y + deltaY;
+          dependencies.elementFactory.updateElementPositionLocal(id, newX, newY);
+        }
+      }
+      
+      dependencies.canvasManager.redrawCanvas();
+      return;
+    }
+
     // Handle selection dragging
     if (dependencies.isSelectionDragging && currentTool === 'select') {
       dependencies.updateSelectionRectangle(worldPos.x, worldPos.y);
@@ -377,14 +445,25 @@ function handleMouseUp(event) {
 
     const currentTool = dependencies.toolManager.getCurrentTool();
 
-    // Handle viewport panning end
-    if (dependencies.viewportManager.getViewportInfo().isPanning) {
-      dependencies.viewportManager.endPan();
+    // Handle hand tool mode end
+    if (currentTool === 'hand') {
+      const handToolState = dependencies.toolManager.getHandToolState();
       
-      // Restore cursor if we're in hand tool mode
-      if (currentTool === 'hand') {
+      if (handToolState.mode === 'selecting') {
+        dependencies.interactionManager.finishSelectionRectangle();
+        dependencies.toolManager.clearHandToolState();
+      } else if (handToolState.mode === 'panning') {
+        dependencies.viewportManager.endPan();
+        dependencies.toolManager.clearHandToolState();
+        // Restore cursor
         dependencies.canvasManager.updateCanvasCursor('grab');
       }
+      return;
+    }
+
+    // Handle viewport panning end (for other tools using temporary hand mode)
+    if (dependencies.viewportManager.getViewportInfo().isPanning) {
+      dependencies.viewportManager.endPan();
       return;
     }
 
@@ -422,6 +501,34 @@ function handleMouseUp(event) {
     // Handle element rotation end
     if (dependencies.isRotating && currentTool === 'select') {
       dependencies.finishElementRotation();
+      return;
+    }
+
+    // Handle group dragging end
+    if (dependencies.isDraggingGroup && (currentTool === 'select' || (currentTool === 'hand' && dependencies.toolManager.getHandToolState().mode !== 'panning'))) {
+      console.log('ENDING GROUP DRAG for elements:', dependencies.groupInitialPositions.size, 'moved:', dependencies.elementHasMoved);
+
+      if (dependencies.elementHasMoved) {
+        // Send group move to the server
+        for (const [id, initialPos] of dependencies.groupInitialPositions) {
+          const element = dependencies.elementFactory.getElementById(id);
+          if (element) {
+            console.log('SENDING GROUP ELEMENT MOVE to server:', id, element.x, element.y);
+            dependencies.signalrClient.sendElementMove(
+              dependencies.signalrClient.getCurrentBoardId(),
+              id,
+              element.x,
+              element.y
+            );
+          }
+        }
+      }
+
+      // Reset group dragging state
+      dependencies.setDraggingGroup(false);
+      dependencies.setGroupInitialPositions(new Map());
+      dependencies.setElementHasMoved(false);
+      dependencies.setUndoStateSaved(false);
       return;
     }
 

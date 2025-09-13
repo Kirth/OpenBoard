@@ -606,10 +606,38 @@ function elementScreenAABB(el) {
 
 function drawUIElements() {
   try {
+    // Get both single and multi-selection
     const selId = dependencies.getSelectedElementId?.() ?? null;
-    if (selId && dependencies.elements && dependencies.drawResizeHandles) {
+    const selectedIds = dependencies.getSelectedElementIds?.() ?? new Set();
+    
+    if (selectedIds.size === 1) {
+      // Single selection: show full interaction handles
+      const elementId = Array.from(selectedIds)[0] || selId;
+      if (elementId && dependencies.elements && dependencies.drawResizeHandles) {
+        const el = dependencies.elements.get(elementId);
+        if (el) {
+          drawSingleSelectionHandles(el);
+        }
+      }
+    } else if (selectedIds.size > 1) {
+      // Multi-selection: show group bounding box
+      drawMultiSelectionIndicator(selectedIds);
+    } else if (selectedIds.size === 0 && selId && dependencies.elements && dependencies.drawResizeHandles) {
+      // Fallback to legacy single selection only if no multi-selection exists
       const el = dependencies.elements.get(selId);
       if (el) {
+        drawSingleSelectionHandles(el);
+      }
+    }
+
+    drawCollaborativeMultiSelections();
+  } catch (e) {
+    console.error('Failed to draw UI elements:', e);
+  }
+}
+
+function drawSingleSelectionHandles(el) {
+  try {
         // EXPERIMENTAL: Draw resize handles in world space using the same transform as elements
         ctx.save();
         applyViewportTransform();
@@ -746,12 +774,257 @@ function drawUIElements() {
         if (el.type === 'Line' && dependencies.drawLineEndpointHandles) {
           dependencies.drawLineEndpointHandles(el);
         }
+  } catch (e) {
+    console.error('Failed to draw single selection handles:', e);
+  }
+}
+
+function drawMultiSelectionIndicator(selectedIds) {
+  try {
+    if (!dependencies.elements || selectedIds.size === 0) return;
+    
+    const groupBounds = calculateGroupBoundingBox(selectedIds);
+    if (!groupBounds || groupBounds.width === 0 || groupBounds.height === 0) return;
+    
+    ctx.save();
+    applyViewportTransform();
+    
+    const { z: zoom } = snapshotState();
+    
+    // Draw group outline (different color/style from single selection)
+    ctx.strokeStyle = '#FF6B35'; // Orange for multi-select
+    ctx.lineWidth = 2 / zoom;
+    ctx.setLineDash([8 / zoom, 4 / zoom]);
+    ctx.strokeRect(groupBounds.x, groupBounds.y, groupBounds.width, groupBounds.height);
+    
+    // Draw individual element indicators
+    for (const id of selectedIds) {
+      const element = dependencies.elements.get(id);
+      if (element) {
+        drawElementOutline(element, '#FF6B35', 1 / zoom);
       }
     }
-
-    dependencies.drawCollaborativeSelections?.();
+    
+    // Reset line dash
+    ctx.setLineDash([]);
+    ctx.restore();
   } catch (e) {
-    console.error('Failed to draw UI elements:', e);
+    console.error('Failed to draw multi-selection indicator:', e);
+  }
+}
+
+function calculateGroupBoundingBox(elementIds) {
+  try {
+    if (!dependencies.elements || elementIds.size === 0) return null;
+    
+    let minX = Infinity, minY = Infinity;
+    let maxX = -Infinity, maxY = -Infinity;
+    
+    for (const id of elementIds) {
+      const element = dependencies.elements.get(id);
+      if (element) {
+        const bounds = getElementBounds(element);
+        if (bounds) {
+          minX = Math.min(minX, bounds.x);
+          minY = Math.min(minY, bounds.y);
+          maxX = Math.max(maxX, bounds.x + bounds.width);
+          maxY = Math.max(maxY, bounds.y + bounds.height);
+        }
+      }
+    }
+    
+    if (minX === Infinity) return null;
+    
+    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+  } catch (e) {
+    console.error('Failed to calculate group bounding box:', e);
+    return null;
+  }
+}
+
+function drawElementOutline(element, color, lineWidth) {
+  try {
+    if (!element) return;
+    
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lineWidth;
+    
+    // Handle rotation if needed
+    const rotation = element.data?.rotation || 0;
+    if (rotation !== 0) {
+      const centerX = element.x + element.width / 2;
+      const centerY = element.y + element.height / 2;
+      ctx.translate(centerX, centerY);
+      ctx.rotate((rotation * Math.PI) / 180);
+      ctx.translate(-centerX, -centerY);
+    }
+    
+    if (element.type === 'Line') {
+      // Draw line outline
+      ctx.beginPath();
+      ctx.moveTo(element.x, element.y);
+      ctx.lineTo(element.x + element.width, element.y + element.height);
+      ctx.stroke();
+    } else {
+      // Draw rectangle outline
+      ctx.strokeRect(element.x, element.y, element.width, element.height);
+    }
+    
+    ctx.restore();
+  } catch (e) {
+    console.error('Failed to draw element outline:', e);
+  }
+}
+
+function getElementBounds(element) {
+  try {
+    if (!element) return null;
+    
+    // For most elements, use their basic bounds
+    if (element.type === 'Line') {
+      // For lines, calculate proper bounding box
+      const minX = Math.min(element.x, element.x + element.width);
+      const maxX = Math.max(element.x, element.x + element.width);
+      const minY = Math.min(element.y, element.y + element.height);
+      const maxY = Math.max(element.y, element.y + element.height);
+      return { 
+        x: minX, 
+        y: minY, 
+        width: maxX - minX, 
+        height: maxY - minY 
+      };
+    }
+    
+    return {
+      x: element.x,
+      y: element.y,
+      width: element.width || 0,
+      height: element.height || 0
+    };
+  } catch (e) {
+    console.error('Failed to get element bounds:', e);
+    return null;
+  }
+}
+
+function drawCollaborativeMultiSelections() {
+  try {
+    // Access collaborative selections from SignalR client
+    const collaborativeSelections = dependencies.collaborativeSelections || new Map();
+    
+    if (collaborativeSelections.size === 0) return;
+    
+    ctx.save();
+    applyViewportTransform();
+    
+    const { z: zoom } = snapshotState();
+    
+    for (const [connectionId, selectionData] of collaborativeSelections) {
+      if (selectionData.elementIds && selectionData.elementIds.size > 0) {
+        if (selectionData.elementIds.size === 1) {
+          // Single element selection - draw simple outline
+          const elementId = Array.from(selectionData.elementIds)[0];
+          const element = dependencies.elements?.get(elementId);
+          if (element) {
+            drawCollaborativeElementOutline(element, selectionData.color, 1.5 / zoom);
+          }
+        } else if (selectionData.elementIds.size > 1) {
+          // Multi-element selection - draw group bounding box
+          const groupBounds = calculateGroupBoundingBox(selectionData.elementIds);
+          if (groupBounds && groupBounds.width > 0 && groupBounds.height > 0) {
+            // Draw group bounding box
+            ctx.strokeStyle = selectionData.color;
+            ctx.lineWidth = 1.5 / zoom;
+            ctx.setLineDash([6 / zoom, 3 / zoom]);
+            ctx.strokeRect(groupBounds.x, groupBounds.y, groupBounds.width, groupBounds.height);
+            
+            // Draw individual element outlines
+            for (const elementId of selectionData.elementIds) {
+              const element = dependencies.elements?.get(elementId);
+              if (element) {
+                drawCollaborativeElementOutline(element, selectionData.color, 1 / zoom);
+              }
+            }
+            
+            // Draw user name label
+            drawCollaborativeUserLabel(selectionData.userName, groupBounds.x, groupBounds.y - 20 / zoom, selectionData.color, zoom);
+          }
+        }
+      }
+    }
+    
+    ctx.setLineDash([]);
+    ctx.restore();
+  } catch (e) {
+    console.error('Failed to draw collaborative multi-selections:', e);
+  }
+}
+
+function drawCollaborativeElementOutline(element, color, lineWidth) {
+  try {
+    if (!element) return;
+    
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lineWidth;
+    ctx.globalAlpha = 0.7; // Make it slightly transparent to distinguish from local selections
+    
+    // Handle rotation if needed
+    const rotation = element.data?.rotation || 0;
+    if (rotation !== 0) {
+      const centerX = element.x + element.width / 2;
+      const centerY = element.y + element.height / 2;
+      ctx.translate(centerX, centerY);
+      ctx.rotate((rotation * Math.PI) / 180);
+      ctx.translate(-centerX, -centerY);
+    }
+    
+    if (element.type === 'Line') {
+      // Draw line outline
+      ctx.beginPath();
+      ctx.moveTo(element.x, element.y);
+      ctx.lineTo(element.x + element.width, element.y + element.height);
+      ctx.stroke();
+    } else {
+      // Draw rectangle outline
+      ctx.strokeRect(element.x, element.y, element.width, element.height);
+    }
+    
+    ctx.restore();
+  } catch (e) {
+    console.error('Failed to draw collaborative element outline:', e);
+  }
+}
+
+function drawCollaborativeUserLabel(userName, x, y, color, zoom) {
+  try {
+    if (!userName) return;
+    
+    const fontSize = 12 / zoom;
+    const padding = 4 / zoom;
+    
+    ctx.save();
+    ctx.font = `${fontSize}px Arial`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    
+    // Measure text
+    const textMetrics = ctx.measureText(userName);
+    const textWidth = textMetrics.width;
+    const textHeight = fontSize;
+    
+    // Draw background
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, textWidth + 2 * padding, textHeight + 2 * padding);
+    
+    // Draw text
+    ctx.fillStyle = 'white';
+    ctx.fillText(userName, x + padding, y + padding);
+    
+    ctx.restore();
+  } catch (e) {
+    console.error('Failed to draw collaborative user label:', e);
   }
 }
 

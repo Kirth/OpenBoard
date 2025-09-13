@@ -283,7 +283,7 @@ public class CollaborationHub : Hub
         }
     }
 
-    public async Task SelectElement(string boardId, string elementId)
+    public async Task UpdateSelection(string boardId, string[] elementIds)
     {
         try
         {
@@ -293,31 +293,42 @@ public class CollaborationHub : Hub
             var userSession = await _userSessionManager.GetSessionAsync(Context.ConnectionId);
             if (userSession != null)
             {
-                await Clients.OthersInGroup($"Board_{boardId}").SendAsync("ElementSelected",
-                    elementId, userSession.UserName, Context.ConnectionId);
+                await Clients.OthersInGroup($"Board_{boardId}").SendAsync("SelectionUpdated",
+                    elementIds, userSession.UserName, Context.ConnectionId);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error selecting element {ElementId} in board {BoardId}", elementId, boardId);
-            await Clients.Caller.SendAsync("Error", "Failed to select element");
+            _logger.LogError(ex, "Error updating selection in board {BoardId}", boardId);
+            await Clients.Caller.SendAsync("Error", "Failed to update selection");
         }
     }
 
-    public async Task DeselectElement(string boardId, string elementId)
+    public async Task ClearSelection(string boardId)
     {
         try
         {
             if (!await ValidateBoardAccess(boardId))
                 return;
 
-            await Clients.OthersInGroup($"Board_{boardId}").SendAsync("ElementDeselected", elementId, Context.ConnectionId);
+            await Clients.OthersInGroup($"Board_{boardId}").SendAsync("SelectionCleared", Context.ConnectionId);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error deselecting element {ElementId} in board {BoardId}", elementId, boardId);
-            await Clients.Caller.SendAsync("Error", "Failed to deselect element");
+            _logger.LogError(ex, "Error clearing selection in board {BoardId}", boardId);
+            await Clients.Caller.SendAsync("Error", "Failed to clear selection");
         }
+    }
+
+    // Legacy methods for backward compatibility
+    public async Task SelectElement(string boardId, string elementId)
+    {
+        await UpdateSelection(boardId, new[] { elementId });
+    }
+
+    public async Task DeselectElement(string boardId, string elementId)
+    {
+        await ClearSelection(boardId);
     }
 
     public async Task BringToFront(string boardId, string elementId)

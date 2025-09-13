@@ -91,6 +91,9 @@ function setupModuleDependencies() {
     get rotationElementStartAngle() { return interactionManager.getRotationElementStartAngle(); },
     get isSelectionDragging() { return interactionManager.getIsSelectionDragging(); },
     get longTouchTimer() { return interactionManager.getLongTouchTimer(); },
+    get isDraggingGroup() { return interactionManager.getIsDraggingGroup(); },
+    get groupInitialPositions() { return interactionManager.getGroupInitialPositions(); },
+    getDragStart: interactionManager.getDragStart,
     // Interaction state setters
     setDragging: interactionManager.setDragging,
     setDraggedElementId: interactionManager.setDraggedElementId,
@@ -110,6 +113,8 @@ function setupModuleDependencies() {
     setRotating: interactionManager.setRotating,
     setRotationStartAngle: interactionManager.setRotationStartAngle,
     setRotationElementStartAngle: interactionManager.setRotationElementStartAngle,
+    setDraggingGroup: interactionManager.setDraggingGroup,
+    setGroupInitialPositions: interactionManager.setGroupInitialPositions,
     // State variables
     get startX() { return startX; },
     get startY() { return startY; },

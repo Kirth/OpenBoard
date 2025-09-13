@@ -9,6 +9,7 @@ import * as signalrClient from './signalr-client.js';
 import * as viewportManager from './viewport-manager.js';
 import * as uiFeatures from './ui-features.js';
 import * as sparkleEffects from './sparkle-effects.js';
+import * as interactionManager from './interaction-manager.js';
 
 // Initialize all modules and set up dependencies
 export async function initializeApplication() {
@@ -52,6 +53,7 @@ export function setupDependencies() {
   canvasManager.setDependencies({
     elements: elementFactory.elements,
     getSelectedElementId: elementFactory.getSelectedElementId,
+    getSelectedElementIds: interactionManager.getSelectedElementIds,
     getElementAtPoint: elementFactory.getElementAtPoint,
     highlightElement: elementFactory.highlightElement,
     clearSelection: elementFactory.clearSelection,
@@ -59,6 +61,7 @@ export function setupDependencies() {
     drawLineEndpointHandles: elementFactory.drawLineEndpointHandles,
     drawCollaborativeSelections: elementFactory.drawCollaborativeSelections,
     cursors: signalrClient.cursors,
+    collaborativeSelections: signalrClient.collaborativeSelections,
     editorManager: elementFactory.editorManager,
     minimapCtx: null, // Will be set by viewport manager
     getViewportX: viewportManager.getViewportX,
