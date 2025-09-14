@@ -709,8 +709,8 @@ function handleCanvasRightClick(event) {
 
     console.log('Right-click at:', worldPos.x, worldPos.y);
 
-    // Check if we clicked on an element
-    const element = dependencies.elementFactory.getElementAtPoint(worldPos.x, worldPos.y);
+    // Check if we clicked on an element (include locked elements for right-click context menu)
+    const element = dependencies.elementFactory.getElementAtPoint(worldPos.x, worldPos.y, true);
     console.log('Right-click detected element:', element ? element.type : 'none', element);
 
     if (element) {

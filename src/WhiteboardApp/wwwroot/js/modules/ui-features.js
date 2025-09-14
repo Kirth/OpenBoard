@@ -569,11 +569,11 @@ function createGeneralContextMenu() {
 
   return `
         <div class="context-menu-section">
-            <button class="context-menu-item" onclick="pasteElementHere()">
-                📋 Paste
+            <button class="context-menu-item" onclick="undoAction()">
+                ↶ Undo
             </button>
-            <button class="context-menu-item" onclick="toggleDarkMode()">
-                ${themeIcon} ${themeName}
+            <button class="context-menu-item" onclick="redoAction()">
+                ↷ Redo
             </button>
         </div>
         <div class="context-menu-section">
@@ -592,11 +592,8 @@ function createGeneralContextMenu() {
             </div>
         </div>
         <div class="context-menu-section">
-            <button class="context-menu-item" onclick="undoAction()">
-                ↶ Undo
-            </button>
-            <button class="context-menu-item" onclick="redoAction()">
-                ↷ Redo
+            <button class="context-menu-item" onclick="pasteElementHere()">
+                📋 Paste
             </button>
         </div>
     ` + getContextMenuStyles();

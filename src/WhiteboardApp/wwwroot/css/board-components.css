@@ -447,14 +447,22 @@
 .context-menu {
     position: fixed;
     background: var(--bg-primary);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    box-shadow: 0 8px 24px var(--shadow-heavy);
-    padding: 4px 0;
-    min-width: 180px;
+    border-radius: 12px;
+    box-shadow: 
+        0 4px 6px -1px rgba(0, 0, 0, 0.1),
+        0 20px 25px -5px rgba(0, 0, 0, 0.1),
+        0 10px 10px -5px rgba(0, 0, 0, 0.04),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    padding: 6px 0;
+    min-width: 200px;
     z-index: 10000;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
     font-size: 14px;
+    font-weight: 400;
+    line-height: 1.5;
     transition: background 0.3s ease, border-color 0.3s ease;
 }
 
@@ -462,62 +470,119 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 8px 16px;
+    padding: 10px 16px;
+    margin: 0 6px;
     cursor: pointer;
-    transition: background-color 0.2s ease;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
+    border-radius: 8px;
+    color: var(--text-primary);
+    user-select: none;
 }
 
 .context-menu-item:hover {
-    background-color: var(--bg-secondary);
+    background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
+    color: white;
+    transform: translateX(2px);
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+
+.context-menu-item:active {
+    transform: translateX(1px) scale(0.98);
+    transition: all 0.1s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .context-item-content {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
+    flex: 1;
 }
 
 .context-icon {
     font-size: 16px;
-    width: 16px;
-    text-align: center;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    background: rgba(59, 130, 246, 0.1);
+    color: var(--accent-primary);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.context-menu-item:hover .context-icon {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    transform: scale(1.1);
 }
 
 .context-hotkey {
-    font-size: 12px;
-    color: #666;
-    margin-left: auto;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: var(--bg-secondary);
+    padding: 2px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    font-family: 'SF Mono', 'Monaco', 'Cascadia Code', 'Roboto Mono', monospace;
+}
+
+.context-menu-item:hover .context-hotkey {
+    background: rgba(255, 255, 255, 0.2);
+    color: rgba(255, 255, 255, 0.9);
+    border-color: rgba(255, 255, 255, 0.3);
 }
 
 .context-menu-divider {
     height: 1px;
-    background: #e0e0e0;
-    margin: 4px 0;
+    background: linear-gradient(90deg, transparent 0%, var(--border-color) 20%, var(--border-color) 80%, transparent 100%);
+    margin: 8px 12px;
+    opacity: 0.8;
 }
 
 .context-menu-section {
     display: block;
+    position: relative;
+}
+
+.context-menu-section:not(:last-child) {
+    margin-bottom: 4px;
 }
 
 .has-submenu::after {
-    content: '▶';
+    content: '›';
     margin-left: auto;
-    font-size: 10px;
-    color: #666;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-muted);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    transform: translateX(0);
+}
+
+.context-menu-item:hover.has-submenu::after {
+    color: rgba(255, 255, 255, 0.8);
+    transform: translateX(2px);
 }
 
 .submenu {
     position: absolute;
-    left: 100%;
-    top: 0;
-    background: white;
-    border: 1px solid #e0e0e0;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    padding: 4px 0;
+    left: calc(100% - 8px);
+    top: -6px;
+    background: var(--bg-primary);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: 
+        0 4px 6px -1px rgba(0, 0, 0, 0.1),
+        0 20px 25px -5px rgba(0, 0, 0, 0.1),
+        0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    padding: 6px 0;
     display: none;
-    min-width: 120px;
+    min-width: 140px;
 }
 
 .context-menu-item:hover .submenu {
@@ -527,30 +592,55 @@
 .color-submenu {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 4px;
-    padding: 8px;
-    min-width: 140px;
+    gap: 6px;
+    padding: 12px;
+    min-width: 160px;
+    background: var(--bg-primary);
 }
 
 .color-option {
-    width: 24px;
-    height: 24px;
-    border-radius: 4px;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
     cursor: pointer;
-    border: 2px solid transparent;
-    transition: border-color 0.2s ease;
+    border: 2px solid var(--border-color);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .color-option:hover {
-    border-color: #3b82f6;
+    border-color: var(--accent-primary);
+    transform: scale(1.1);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    z-index: 1;
+}
+
+.color-option:active {
+    transform: scale(1.05);
+    transition: all 0.1s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .delete-item {
-    color: #dc3545;
+    color: var(--error);
 }
 
 .delete-item:hover {
-    background-color: #f8d7da;
+    background: linear-gradient(135deg, var(--error) 0%, #dc2626 100%);
+    color: white;
+    transform: translateX(2px);
+    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+}
+
+.delete-item:hover .context-icon {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+.delete-item:hover .context-hotkey {
+    background: rgba(255, 255, 255, 0.2);
+    color: rgba(255, 255, 255, 0.9);
+    border-color: rgba(255, 255, 255, 0.3);
 }
 
 /* Minimap Styles */
@@ -702,14 +792,40 @@
     }
     
     .context-menu {
-        min-width: 200px;
+        min-width: 220px;
         font-size: 16px;
+        border-radius: 16px;
+        padding: 8px 0;
     }
     
     .context-menu-item {
-        padding: 12px 16px;
-        min-height: 44px;
+        padding: 14px 20px;
+        margin: 0 8px;
+        min-height: 48px;
         font-size: 16px;
+        border-radius: 12px;
+    }
+    
+    .context-icon {
+        width: 24px;
+        height: 24px;
+        font-size: 18px;
+    }
+    
+    .context-hotkey {
+        font-size: 12px;
+        padding: 4px 10px;
+    }
+    
+    .color-option {
+        width: 32px;
+        height: 32px;
+    }
+    
+    .color-submenu {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        padding: 16px;
     }
 }
 
