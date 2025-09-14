@@ -335,6 +335,20 @@ function handleDeleteKey() {
     }
 }
 
+// Handle arrow key movement (nudging) for selected elements
+function handleArrowKeyMovement(deltaX, deltaY) {
+    try {
+        // Use the global moveSelectedElements function from element-factory
+        if (typeof window !== 'undefined' && window.moveSelectedElements) {
+            window.moveSelectedElements(deltaX, deltaY);
+        } else {
+            console.warn('moveSelectedElements function not available');
+        }
+    } catch (error) {
+        console.error('Error handling arrow key movement:', error);
+    }
+}
+
 // Set up keyboard event handlers
 export function setupKeyboardHandlers() {
     try {
@@ -479,6 +493,24 @@ export function handleKeyDown(event) {
                 case '7':
                     event.preventDefault();
                     setCurrentTool('stickynote');
+                    break;
+                
+                // Arrow key movement (nudging)
+                case 'ArrowUp':
+                    event.preventDefault();
+                    handleArrowKeyMovement(0, event.shiftKey ? -25 : -1);
+                    break;
+                case 'ArrowDown':
+                    event.preventDefault();
+                    handleArrowKeyMovement(0, event.shiftKey ? 25 : 1);
+                    break;
+                case 'ArrowLeft':
+                    event.preventDefault();
+                    handleArrowKeyMovement(event.shiftKey ? -25 : -1, 0);
+                    break;
+                case 'ArrowRight':
+                    event.preventDefault();
+                    handleArrowKeyMovement(event.shiftKey ? 25 : 1, 0);
                     break;
             }
         }

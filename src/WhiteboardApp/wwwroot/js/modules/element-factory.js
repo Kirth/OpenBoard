@@ -1111,6 +1111,52 @@ export function updateElementPositionLocal(id, newX, newY) {
   }
 }
 
+// Move selected elements by specified offset (for arrow key nudging)
+export function moveSelectedElements(deltaX, deltaY) {
+  // Get selected element IDs from interaction manager
+  let selectedIds = new Set();
+  
+  // Try to get selected IDs from the global function if available
+  if (typeof window !== 'undefined' && window.getSelectedElementIds) {
+    selectedIds = window.getSelectedElementIds();
+  }
+  
+  if (selectedIds.size === 0) {
+    console.log('No elements selected for movement');
+    return;
+  }
+  
+  console.log(`Moving ${selectedIds.size} selected elements by (${deltaX}, ${deltaY})`);
+  
+  // Create undo state before moving elements
+  if (dependencies.saveUndoState) {
+    dependencies.saveUndoState();
+  }
+  
+  // Move each selected element
+  for (const elementId of selectedIds) {
+    const element = elements.get(elementId);
+    if (!element) continue;
+    
+    // Check if element is locked
+    if (isElementLocked(element)) {
+      if (dependencies.showNotification) {
+        dependencies.showNotification('Cannot move locked element', 'warning');
+      }
+      continue;
+    }
+    
+    // Calculate new position
+    const newX = element.x + deltaX;
+    const newY = element.y + deltaY;
+    
+    // Update element position (this includes snap-to-grid and server sync)
+    updateElementPosition(elementId, newX, newY);
+  }
+  
+  console.log(`Successfully moved ${selectedIds.size} elements`);
+}
+
 export function updateElementStyle(elementId, styleProperty, styleValue) {
   console.log('updateElementStyle called:', elementId, styleProperty, styleValue);
 
@@ -2428,6 +2474,7 @@ if (typeof window !== 'undefined') {
   window.hideElementSelection = hideElementSelection;
   window.drawCollaborativeSelections = drawCollaborativeSelections;
   window.updateElementPosition = updateElementPosition;
+  window.moveSelectedElements = moveSelectedElements;
   window.updateElementStyle = updateElementStyle;
   window.deleteSelectedElement = deleteSelectedElement;
   window.deleteMultipleElements = deleteMultipleElements;
