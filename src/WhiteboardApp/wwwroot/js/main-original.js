@@ -1499,7 +1499,7 @@ function showContextMenu(x, y, element = null) {
             border-radius: 4px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.2);
             z-index: 10000;
-            min-width: 180px;
+            min-width: 190px;
             font-family: Arial, sans-serif;
             font-size: 14px;
         `;

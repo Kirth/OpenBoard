@@ -481,15 +481,9 @@
 }
 
 .context-menu-item:hover {
-    background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
     color: white;
     transform: translateX(2px);
     box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
-}
-
-.context-menu-item:active {
-    transform: translateX(1px) scale(0.98);
-    transition: all 0.1s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .context-item-content {

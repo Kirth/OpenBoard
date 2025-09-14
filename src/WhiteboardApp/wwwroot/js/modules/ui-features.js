@@ -182,7 +182,7 @@ export function showContextMenu(x, y, element = null) {
     // Create context menu element
     contextMenuElement = document.createElement('div');
     contextMenuElement.className = 'context-menu';
-    
+
     // Initial styling with visibility hidden to measure dimensions
     contextMenuElement.style.cssText = `
             position: fixed;
@@ -209,17 +209,17 @@ export function showContextMenu(x, y, element = null) {
 
     // Append to DOM to measure dimensions
     document.body.appendChild(contextMenuElement);
-    
+
     // Get menu dimensions and viewport size
     const menuRect = contextMenuElement.getBoundingClientRect();
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
     const margin = 10; // Minimum margin from screen edges
-    
+
     // Calculate adjusted position
     let adjustedX = x;
     let adjustedY = y;
-    
+
     // Check horizontal overflow
     if (x + menuRect.width > viewportWidth - margin) {
       // Position menu to the left of cursor
@@ -229,7 +229,7 @@ export function showContextMenu(x, y, element = null) {
         adjustedX = margin;
       }
     }
-    
+
     // Check vertical overflow
     if (y + menuRect.height > viewportHeight - margin) {
       // Position menu above cursor
@@ -239,12 +239,12 @@ export function showContextMenu(x, y, element = null) {
         adjustedY = margin;
       }
     }
-    
+
     // Apply final positioning and make visible
     contextMenuElement.style.left = `${adjustedX}px`;
     contextMenuElement.style.top = `${adjustedY}px`;
     contextMenuElement.style.visibility = 'visible';
-    
+
     currentContextMenu = element;
 
     // Add click listener to hide menu when clicking outside
@@ -530,7 +530,7 @@ function createElementContextMenu(element) {
 
     console.log('Final group options HTML length:', groupOptions.length);
     console.log('Final group options HTML:', groupOptions);
-    
+
     if (groupOptions) {
       console.log('✅ ADDING group section to menu HTML');
       const groupSection = `<div class="context-menu-section">${groupOptions}</div>`;
@@ -551,7 +551,7 @@ function createElementContextMenu(element) {
 
   console.log('Final complete menu HTML length:', menuHTML.length);
   console.log('Final complete menu HTML:', menuHTML);
-  
+
   return menuHTML + getContextMenuStyles();
 }
 
@@ -599,6 +599,7 @@ function createGeneralContextMenu() {
     ` + getContextMenuStyles();
 }
 
+// TODO WTF IS THIS ??? 
 function getContextMenuStyles() {
   return `
     <style>
@@ -636,7 +637,7 @@ function getContextMenuStyles() {
         
         .context-menu-item {
             display: block;
-            width: 100%;
+            width: 94%;
             padding: 8px 12px;
             border: none;
             background: none;
