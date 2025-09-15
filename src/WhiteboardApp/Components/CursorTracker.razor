@@ -61,7 +61,7 @@
     {
         if (HubConnection != null)
         {
-            HubConnection.On<string, double, double>("CursorUpdated", OnCursorUpdated);
+            HubConnection.On<string, double, double, string>("CursorUpdated", OnCursorUpdated);
             HubConnection.On<object>("UserJoined", OnUserJoined);
             HubConnection.On<object>("UserLeft", OnUserLeft);
             HubConnection.On<List<object>>("ActiveUsersUpdated", OnActiveUsersUpdated);
@@ -129,26 +129,32 @@
         }
     }
 
-    private async Task OnCursorUpdated(string connectionId, double x, double y)
+    private async Task OnCursorUpdated(string connectionId, double x, double y, string userName)
     {
         if (activeCursors.ContainsKey(connectionId))
         {
             activeCursors[connectionId].X = x;
             activeCursors[connectionId].Y = y;
+            // Update username if provided
+            if (!string.IsNullOrEmpty(userName))
+            {
+                activeCursors[connectionId].UserName = userName;
+            }
         }
         else
         {
+            // Create new cursor with provided username or fallback to user list
             var user = activeUsers.FirstOrDefault(u => u.ConnectionId == connectionId);
-            if (user != null)
+            var displayName = userName ?? user?.UserName ?? "Anonymous";
+            var color = user?.Color ?? userColors[activeCursors.Count % userColors.Length];
+            
+            activeCursors[connectionId] = new CursorInfo
             {
-                activeCursors[connectionId] = new CursorInfo
-                {
-                    X = x,
-                    Y = y,
-                    UserName = user.UserName,
-                    Color = user.Color
-                };
-            }
+                X = x,
+                Y = y,
+                UserName = displayName,
+                Color = color
+            };
         }
         await InvokeAsync(StateHasChanged);
     }

@@ -8,6 +8,9 @@ let currentBoardId = null;
 // Cursor tracking
 export let cursors = new Map();
 
+// User sessions tracking (stores userName for each connectionId)
+let userSessions = new Map();
+
 // Collaborative selections tracking
 export let collaborativeSelections = new Map();
 
@@ -77,7 +80,7 @@ export async function initializeSignalR(boardId) {
 
         // Join board group
         if (boardId) {
-            await signalRConnection.invoke("JoinBoard", boardId, "Anonymous User");
+            await signalRConnection.invoke("JoinBoard", boardId);
             console.log(`Joined board: ${boardId}`);
             
             // Load existing board elements
@@ -168,9 +171,9 @@ function setupEventHandlers() {
     });
 
     // Cursor updated handler
-    signalRConnection.on("CursorUpdated", (connectionId, x, y) => {
+    signalRConnection.on("CursorUpdated", (connectionId, x, y, userName) => {
         try {
-            updateCursor(connectionId, x, y);
+            updateCursor(connectionId, x, y, userName);
         } catch (error) {
             console.error('Error handling CursorUpdated:', error);
         }
@@ -1329,7 +1332,7 @@ export async function sendSendGroupToBack(groupId) {
 }
 
 // Cursor management
-export function updateCursor(connectionId, x, y) {
+export function updateCursor(connectionId, x, y, userName) {
     try {
         if (!connectionId) return;
 
@@ -1343,11 +1346,21 @@ export function updateCursor(connectionId, x, y) {
             worldY = worldPos.y;
         }
 
+        // Use provided username or fallback to stored session or connection ID
+        let displayName = userName || 
+                         (userSessions && userSessions.has(connectionId) ? userSessions.get(connectionId).userName : null) ||
+                         `User ${connectionId.substring(0, 8)}`;
+        
+        // Store or update user session with the username
+        if (userName && userSessions) {
+            userSessions.set(connectionId, { userName: userName });
+        }
+        
         const cursor = {
             x: worldX,
             y: worldY,
             connectionId: connectionId,
-            userName: `User ${connectionId.substring(0, 8)}`,
+            userName: displayName,
             color: getColorForConnection(connectionId),
             lastUpdate: Date.now()
         };

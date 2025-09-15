@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.SignalR;
 using WhiteboardApp.Models;
 using WhiteboardApp.Services;
 using System.Text.Json;
+using System.Security.Claims;
 
 namespace WhiteboardApp.Hubs;
 
@@ -28,10 +29,35 @@ public class CollaborationHub : Hub
         _logger = logger;
     }
 
-    public async Task JoinBoard(string boardId, string userName = "")
+    /// <summary>
+    /// Derives display name from claims for authenticated users or generates anonymous name
+    /// </summary>
+    private static string GetDisplayName(ClaimsPrincipal? user, string connectionId)
+    {
+        if (user?.Identity?.IsAuthenticated == true)
+        {
+            // Extract username from claims (preferred order)
+            return user.FindFirst("preferred_username")?.Value
+                   ?? user.FindFirst("name")?.Value
+                   ?? user.Identity.Name
+                   ?? user.FindFirst(ClaimTypes.Email)?.Value
+                   ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                   ?? user.FindFirst("sub")?.Value
+                   ?? "Unknown User";
+        }
+        
+        // Generate deterministic anonymous name using last 4 chars of connection ID
+        return $"Guest-{connectionId[^4..]}";
+    }
+
+    public async Task JoinBoard(string boardId)
     {
         try
         {
+            _logger.LogInformation("JoinBoard called with boardId: {BoardId}", boardId);
+            _logger.LogInformation("Context.User.Identity.IsAuthenticated: {IsAuthenticated}", Context.User?.Identity?.IsAuthenticated);
+            _logger.LogInformation("Context.User.Identity.Name: '{Name}'", Context.User?.Identity?.Name);
+            
             if (!Guid.TryParse(boardId, out var boardGuid))
             {
                 await Clients.Caller.SendAsync("Error", "Invalid board ID format");
@@ -46,16 +72,19 @@ public class CollaborationHub : Hub
                 return;
             }
 
+            // Get display name from server-side logic (never trust client)
+            var displayName = GetDisplayName(Context.User, Context.ConnectionId);
+            _logger.LogInformation("User '{DisplayName}' joining board {BoardId} (Authenticated: {IsAuthenticated})", 
+                displayName, boardId, Context.User?.Identity?.IsAuthenticated);
+
             // Check authentication status and board access
             User? user = null;
-            string displayName;
             bool hasWriteAccess = false;
 
             if (Context.User?.Identity?.IsAuthenticated == true)
             {
                 // Authenticated user
                 user = await _userService.GetOrCreateUserAsync(Context.User);
-                displayName = !string.IsNullOrEmpty(userName) ? userName : user.DisplayName;
                 
                 // Check if authenticated user has access to this board
                 var role = await _userService.GetUserBoardRoleAsync(user.Id, boardGuid);
@@ -76,7 +105,6 @@ public class CollaborationHub : Hub
                     return;
                 }
                 
-                displayName = !string.IsNullOrEmpty(userName) ? userName : "Anonymous";
                 hasWriteAccess = (board.AccessLevel == BoardAccessLevel.Public || 
                                  board.AccessLevel == BoardAccessLevel.LinkSharing);
             }
@@ -113,11 +141,11 @@ public class CollaborationHub : Hub
                 isOwner = user?.Id == board.OwnerId
             });
 
-            _logger.LogInformation("User {UserName} joined board {BoardId}", userName, boardId);
+            _logger.LogInformation("User {DisplayName} joined board {BoardId}", displayName, boardId);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error joining board {BoardId} for user {UserName}", boardId, userName);
+            _logger.LogError(ex, "Error joining board {BoardId}", boardId);
             await Clients.Caller.SendAsync("Error", "Failed to join board");
         }
     }
@@ -260,7 +288,11 @@ public class CollaborationHub : Hub
         try
         {
             await _userSessionManager.UpdateCursorPositionAsync(Context.ConnectionId, x, y);
-            await Clients.OthersInGroup($"Board_{boardId}").SendAsync("CursorUpdated", Context.ConnectionId, x, y);
+            
+            // Get display name from server-side logic (never trust client)
+            var userName = GetDisplayName(Context.User, Context.ConnectionId);
+            
+            await Clients.OthersInGroup($"Board_{boardId}").SendAsync("CursorUpdated", Context.ConnectionId, x, y, userName);
         }
         catch (Exception ex)
         {
@@ -330,6 +362,7 @@ public class CollaborationHub : Hub
         await UpdateElementData(boardId, elementId, updatedData, ElementType.Text, "TextElementUpdated");
     }
 
+    [Authorize]
     public async Task ClearBoard(string boardId)
     {
         try
@@ -413,6 +446,7 @@ public class CollaborationHub : Hub
         });
     }
 
+    [Authorize]
     public async Task DeleteElement(string boardId, string elementId)
     {
         try
@@ -683,6 +717,7 @@ public class CollaborationHub : Hub
         }
     }
 
+    [Authorize]
     public async Task DeleteGroup(string boardId, string groupId)
     {
         try
