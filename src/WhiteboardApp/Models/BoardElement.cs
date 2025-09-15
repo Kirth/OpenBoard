@@ -22,8 +22,23 @@ public class BoardElement
     public double? Width { get; set; }
     public double? Height { get; set; }
     public int ZIndex { get; set; } = 0;
+    [Obsolete("Use CreatedByUserId instead. Maintained for backward compatibility.")]
     public string? CreatedBy { get; set; }
+    
+    /// <summary>
+    /// User who created this element
+    /// </summary>
+    public Guid CreatedByUserId { get; set; }
+    public virtual User CreatedByUser { get; set; } = null!;
+    
+    /// <summary>
+    /// User who last modified this element
+    /// </summary>
+    public Guid? ModifiedByUserId { get; set; }
+    public virtual User? ModifiedByUser { get; set; }
+    
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime ModifiedAt { get; set; } = DateTime.UtcNow;
     public JsonDocument? Data { get; set; }
     
     // Group properties
@@ -31,5 +46,5 @@ public class BoardElement
     public int? GroupOrder { get; set; }
     
     // Navigation property
-    public Board? Board { get; set; }
+    public virtual Board Board { get; set; } = null!;
 }

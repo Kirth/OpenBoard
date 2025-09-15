@@ -16,29 +16,64 @@ public class BoardService
     public async Task<Board?> GetBoardAsync(Guid id)
     {
         return await _context.Boards
+            .Include(b => b.Owner)
             .Include(b => b.Elements)
+            .Include(b => b.Collaborators)
+                .ThenInclude(c => c.User)
             .FirstOrDefaultAsync(b => b.Id == id);
     }
 
-    public async Task<Board> CreateBoardAsync(string name)
+    public async Task<Board?> GetBoardWithAccessCheckAsync(Guid id, User user, BoardRole minimumRole = BoardRole.Viewer)
     {
-        var board = new Board { Name = name };
+        var board = await GetBoardAsync(id);
+        if (board == null) return null;
+
+        // Check if user has access
+        var role = GetUserBoardRole(board, user.Id);
+        if (role == null || role < minimumRole)
+            return null;
+
+        return board;
+    }
+
+    public async Task<Board> CreateBoardAsync(string name, User owner, BoardAccessLevel accessLevel = BoardAccessLevel.Private)
+    {
+        var board = new Board 
+        { 
+            Name = name,
+            OwnerId = owner.Id,
+            AccessLevel = accessLevel
+        };
         _context.Boards.Add(board);
         await _context.SaveChangesAsync();
         return board;
     }
 
-    public async Task<Board> CreateBoardAsync(string name, bool isPublic, string? adminPin = null)
+    [Obsolete("Use CreateBoardAsync(string, User) instead")]
+    public async Task<Board> CreateBoardAsync(string name)
+    {
+        throw new InvalidOperationException("Board creation requires an authenticated user. Use CreateBoardAsync(string, User) instead.");
+    }
+
+    public async Task<Board> CreateBoardAsync(string name, User owner, bool isPublic, string? adminPin = null)
     {
         var board = new Board 
         { 
             Name = name,
-            IsPublic = isPublic,
+            OwnerId = owner.Id,
+            IsPublic = isPublic, // Legacy field for backward compatibility
+            AccessLevel = isPublic ? BoardAccessLevel.Public : BoardAccessLevel.Private,
             AdminPin = string.IsNullOrWhiteSpace(adminPin) ? null : adminPin
         };
         _context.Boards.Add(board);
         await _context.SaveChangesAsync();
         return board;
+    }
+
+    [Obsolete("Use CreateBoardAsync(string, User, bool, string?) instead")]
+    public async Task<Board> CreateBoardAsync(string name, bool isPublic, string? adminPin = null)
+    {
+        throw new InvalidOperationException("Board creation requires an authenticated user. Use CreateBoardAsync(string, User, bool, string?) instead.");
     }
 
     public async Task<List<BoardElement>> GetBoardElementsAsync(Guid boardId)
@@ -53,8 +88,32 @@ public class BoardService
     public async Task<List<Board>> GetPublicBoardsAsync()
     {
         return await _context.Boards
+            .Include(b => b.Owner)
             .Include(b => b.Elements)
-            .Where(b => b.IsPublic)
+            .Where(b => b.AccessLevel == BoardAccessLevel.Public)
+            .OrderByDescending(b => b.UpdatedAt)
+            .ToListAsync();
+    }
+
+    public async Task<List<Board>> GetUserAccessibleBoardsAsync(User user)
+    {
+        return await _context.Boards
+            .Include(b => b.Owner)
+            .Include(b => b.Collaborators)
+                .ThenInclude(c => c.User)
+            .Where(b => 
+                b.OwnerId == user.Id || // User is owner
+                b.Collaborators.Any(c => c.UserId == user.Id) || // User is collaborator
+                b.AccessLevel == BoardAccessLevel.Public) // Public board
+            .OrderByDescending(b => b.UpdatedAt)
+            .ToListAsync();
+    }
+
+    public async Task<List<Board>> GetUserOwnedBoardsAsync(User user)
+    {
+        return await _context.Boards
+            .Include(b => b.Elements)
+            .Where(b => b.OwnerId == user.Id)
             .OrderByDescending(b => b.UpdatedAt)
             .ToListAsync();
     }
@@ -84,12 +143,19 @@ public class BoardService
         };
     }
 
-    public async Task<Board> DuplicateBoardAsync(Guid sourceBoardId, string newBoardName)
+    public async Task<Board> DuplicateBoardAsync(Guid sourceBoardId, string newBoardName, User newOwner)
     {
         var sourceBoard = await GetBoardAsync(sourceBoardId);
         if (sourceBoard == null)
         {
             throw new ArgumentException($"Source board with ID {sourceBoardId} not found.");
+        }
+
+        // Check if user has access to source board
+        var role = GetUserBoardRole(sourceBoard, newOwner.Id);
+        if (role == null || role < BoardRole.Viewer)
+        {
+            throw new UnauthorizedAccessException("Access denied to source board.");
         }
 
         // Create new board with same settings as source
@@ -99,7 +165,9 @@ public class BoardService
             Name = newBoardName,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
-            IsPublic = sourceBoard.IsPublic,
+            OwnerId = newOwner.Id,
+            IsPublic = sourceBoard.IsPublic, // Legacy field
+            AccessLevel = sourceBoard.AccessLevel,
             AdminPin = sourceBoard.AdminPin
         };
 
@@ -119,8 +187,11 @@ public class BoardService
                 Width = element.Width,
                 Height = element.Height,
                 ZIndex = element.ZIndex,
-                CreatedBy = element.CreatedBy,
+                CreatedBy = element.CreatedBy, // Legacy field
+                CreatedByUserId = newOwner.Id, // New owner becomes creator of duplicated elements
+                ModifiedByUserId = newOwner.Id,
                 CreatedAt = DateTime.UtcNow,
+                ModifiedAt = DateTime.UtcNow,
                 Data = element.Data != null ? 
                     System.Text.Json.JsonDocument.Parse(element.Data.RootElement.GetRawText()) : 
                     null
@@ -131,6 +202,33 @@ public class BoardService
         }
 
         return newBoard;
+    }
+
+    [Obsolete("Use DuplicateBoardAsync(Guid, string, User) instead")]
+    public async Task<Board> DuplicateBoardAsync(Guid sourceBoardId, string newBoardName)
+    {
+        throw new InvalidOperationException("Board duplication requires an authenticated user. Use DuplicateBoardAsync(Guid, string, User) instead.");
+    }
+
+    // Helper method to determine user's role on a board
+    private static BoardRole? GetUserBoardRole(Board board, Guid userId)
+    {
+        // Check if user is the owner
+        if (board.OwnerId == userId)
+            return BoardRole.Owner;
+
+        // Check if user is a collaborator
+        var collaboration = board.Collaborators?.FirstOrDefault(c => c.UserId == userId);
+        if (collaboration != null)
+            return collaboration.Role;
+
+        // Check board access level for non-collaborators
+        return board.AccessLevel switch
+        {
+            BoardAccessLevel.Public or BoardAccessLevel.LinkSharing => BoardRole.Collaborator,
+            BoardAccessLevel.Private => null,
+            _ => null
+        };
     }
 }
 

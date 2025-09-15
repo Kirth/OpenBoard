@@ -1,15 +1,24 @@
 @page "/"
 @using WhiteboardApp.Services
 @using WhiteboardApp.Models
+@using Microsoft.AspNetCore.Components.Authorization
 @inject BoardService BoardService
+@inject IUserService UserService
 @inject NavigationManager Navigation
 
 <PageTitle>OpenBoard</PageTitle>
 
 <div class="home-container">
     <header class="header">
-        <h1>OpenBoard</h1>
-        <p>Real-time collaborative whiteboard</p>
+        <div class="header-content">
+            <div class="header-left">
+                <h1>OpenBoard</h1>
+                <p>Real-time collaborative whiteboard</p>
+            </div>
+            <div class="header-right">
+                <UserMenu />
+            </div>
+        </div>
     </header>
     
     <main class="main">
@@ -28,18 +37,36 @@
             </div>
         </section>
 
+        <AuthorizeView>
+            <Authorized>
+                <section class="boards-section">
+                    <h2>My Boards</h2>
+                    <p class="section-description">Boards you own and collaborate on</p>
+                    <!-- TODO: Add user's owned and collaborative boards here -->
+                    <div class="empty-state">
+                        <p>You haven't created any boards yet. <button class="link-btn" @onclick="ShowCreateModal">Create your first board</button></p>
+                    </div>
+                </section>
+            </Authorized>
+        </AuthorizeView>
+
         @if (publicBoards != null && publicBoards.Count > 0)
         {
             <section class="boards-section">
                 <h2>Public Boards</h2>
+                <p class="section-description">Community boards anyone can join</p>
                 <div class="boards-list">
                     @foreach (var board in publicBoards)
                     {
                         <div class="board-item" @onclick="@(() => JoinSpecificBoard(board.Id))">
-                            <h3>@board.Name</h3>
+                            <div class="board-header">
+                                <h3>@board.Name</h3>
+                                <span class="board-visibility-badge public">Public</span>
+                            </div>
                             <div class="board-info">
-                                <span>@GetStickyCount(board)</span>
-                                <span>@FormatDate(board.UpdatedAt)</span>
+                                <span><i class="fas fa-sticky-note"></i> @GetStickyCount(board)</span>
+                                <span><i class="fas fa-clock"></i> @FormatDate(board.UpdatedAt)</span>
+                                <span><i class="fas fa-user"></i> @(board.Owner?.DisplayName ?? "Unknown")</span>
                             </div>
                         </div>
                     }
@@ -63,16 +90,38 @@
             
             <div class="form-group">
                 <label>Visibility</label>
-                <div class="radio-group">
-                    <label>
-                        <input type="radio" name="visibility" @onchange="@(() => isPublicBoard = false)" checked="@(!isPublicBoard)" />
-                        Unlisted
-                    </label>
-                    <label>
-                        <input type="radio" name="visibility" @onchange="@(() => isPublicBoard = true)" checked="@isPublicBoard" />
-                        Public
-                    </label>
-                </div>
+                <AuthorizeView>
+                    <Authorized>
+                        <div class="radio-group">
+                            <label>
+                                <input type="radio" name="visibility" @onchange="@(() => isPublicBoard = false)" checked="@(!isPublicBoard)" />
+                                Private <small class="text-muted">(Only you and invited collaborators)</small>
+                            </label>
+                            <label>
+                                <input type="radio" name="visibility" @onchange="@(() => isPublicBoard = true)" checked="@isPublicBoard" />
+                                Public <small class="text-muted">(Listed publicly, anyone can view)</small>
+                            </label>
+                        </div>
+                    </Authorized>
+                    <NotAuthorized>
+                        <div class="radio-group">
+                            <label>
+                                <input type="radio" name="visibility" @onchange="@(() => isPublicBoard = false)" checked="@(!isPublicBoard)" />
+                                Unlisted <small class="text-muted">(Not listed publicly but shareable)</small>
+                            </label>
+                            <label>
+                                <input type="radio" name="visibility" @onchange="@(() => isPublicBoard = true)" checked="@isPublicBoard" />
+                                Public <small class="text-muted">(Listed publicly, anyone can view)</small>
+                            </label>
+                        </div>
+                        <div class="auth-notice">
+                            <small class="text-info">
+                                <i class="fas fa-info-circle"></i>
+                                <a href="/Account/Login" class="link">Sign in</a> to create private boards and manage collaborators
+                            </small>
+                        </div>
+                    </NotAuthorized>
+                </AuthorizeView>
             </div>
             
             <div class="form-group">
@@ -102,12 +151,43 @@
         publicBoards = await BoardService.GetPublicBoardsAsync();
     }
 
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
     private async Task CreateNewBoard()
     {
         if (string.IsNullOrWhiteSpace(newBoardTitle))
             return;
 
-        var board = await BoardService.CreateBoardAsync(newBoardTitle.Trim(), isPublicBoard, 
+        User user;
+        
+        // Check if user is authenticated
+        if (AuthenticationStateTask != null)
+        {
+            var authState = await AuthenticationStateTask;
+            if (authState.User.Identity?.IsAuthenticated == true)
+            {
+                try 
+                {
+                    user = await UserService.GetOrCreateUserAsync(authState.User);
+                }
+                catch
+                {
+                    // Fallback to anonymous user if there's an issue
+                    user = await UserService.GetAnonymousUserAsync();
+                }
+            }
+            else
+            {
+                user = await UserService.GetAnonymousUserAsync();
+            }
+        }
+        else
+        {
+            user = await UserService.GetAnonymousUserAsync();
+        }
+
+        var board = await BoardService.CreateBoardAsync(newBoardTitle.Trim(), user, isPublicBoard, 
             string.IsNullOrWhiteSpace(adminPin) ? null : adminPin.Trim());
         
         HideCreateModal();
@@ -196,23 +276,29 @@
     }
 
     .header {
-        text-align: center;
-        padding: 60px 20px 40px;
-        background: white;
-        border-bottom: 1px solid #e9ecef;
+        background: #343a40;
+        color: white;
+        padding: 1rem;
     }
 
-    .header h1 {
-        font-size: 2.5rem;
-        font-weight: 600;
-        color: #212529;
-        margin: 0 0 8px 0;
+    .header-content {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        max-width: 1200px;
+        margin: 0 auto;
     }
 
-    .header p {
-        color: #6c757d;
+    .header-left h1 {
         margin: 0;
-        font-size: 1.1rem;
+        font-size: 1.75rem;
+        font-weight: 600;
+    }
+
+    .header-left p {
+        margin: 0.25rem 0 0 0;
+        color: rgba(255, 255, 255, 0.8);
+        font-size: 0.9rem;
     }
 
     .main {
@@ -299,8 +385,45 @@
     .boards-section h2 {
         font-size: 1.25rem;
         font-weight: 600;
-        margin: 0 0 20px 0;
+        margin: 0 0 8px 0;
         color: #212529;
+    }
+
+    .section-description {
+        color: #6c757d;
+        font-size: 0.9rem;
+        margin: 0 0 20px 0;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 40px 20px;
+        color: #6c757d;
+    }
+
+    .board-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 8px;
+    }
+
+    .board-visibility-badge {
+        font-size: 0.75rem;
+        padding: 2px 6px;
+        border-radius: 12px;
+        font-weight: 500;
+        text-transform: uppercase;
+    }
+
+    .board-visibility-badge.public {
+        background: #d1ecf1;
+        color: #0c5460;
+    }
+
+    .board-visibility-badge.private {
+        background: #f8d7da;
+        color: #721c24;
     }
 
     .boards-list {
@@ -331,9 +454,21 @@
 
     .board-info {
         display: flex;
-        justify-content: space-between;
+        gap: 16px;
         font-size: 0.875rem;
         color: #6c757d;
+        flex-wrap: wrap;
+    }
+
+    .board-info span {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .board-info i {
+        width: 12px;
+        opacity: 0.7;
     }
 
     .error-message {
@@ -344,6 +479,33 @@
         background: #f8d7da;
         border: 1px solid #f5c2c7;
         border-radius: 6px;
+    }
+
+    .auth-notice {
+        margin-top: 8px;
+        padding: 8px 12px;
+        background: #d1ecf1;
+        border: 1px solid #bee5eb;
+        border-radius: 4px;
+    }
+
+    .auth-notice .link {
+        color: #0c5460;
+        text-decoration: none;
+        font-weight: 500;
+    }
+
+    .auth-notice .link:hover {
+        text-decoration: underline;
+    }
+
+    .text-muted {
+        color: #6c757d !important;
+        font-size: 0.875rem;
+    }
+
+    .text-info {
+        color: #0c5460 !important;
     }
 
     /* Modal */

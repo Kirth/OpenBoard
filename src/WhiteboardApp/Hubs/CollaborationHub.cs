@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using WhiteboardApp.Models;
 using WhiteboardApp.Services;
@@ -10,21 +11,24 @@ public class CollaborationHub : Hub
     private readonly ElementService _elementService;
     private readonly BoardService _boardService;
     private readonly IUserSessionManager _userSessionManager;
+    private readonly IUserService _userService;
     private readonly ILogger<CollaborationHub> _logger;
 
     public CollaborationHub(
         ElementService elementService,
         BoardService boardService,
         IUserSessionManager userSessionManager,
+        IUserService userService,
         ILogger<CollaborationHub> logger)
     {
         _elementService = elementService;
         _boardService = boardService;
         _userSessionManager = userSessionManager;
+        _userService = userService;
         _logger = logger;
     }
 
-    public async Task JoinBoard(string boardId, string userName)
+    public async Task JoinBoard(string boardId, string userName = "")
     {
         try
         {
@@ -34,7 +38,7 @@ public class CollaborationHub : Hub
                 return;
             }
 
-            // Verify board exists
+            // Verify board exists first
             var board = await _boardService.GetBoardAsync(boardGuid);
             if (board == null)
             {
@@ -42,10 +46,45 @@ public class CollaborationHub : Hub
                 return;
             }
 
+            // Check authentication status and board access
+            User? user = null;
+            string displayName;
+            bool hasWriteAccess = false;
+
+            if (Context.User?.Identity?.IsAuthenticated == true)
+            {
+                // Authenticated user
+                user = await _userService.GetOrCreateUserAsync(Context.User);
+                displayName = !string.IsNullOrEmpty(userName) ? userName : user.DisplayName;
+                
+                // Check if authenticated user has access to this board
+                var role = await _userService.GetUserBoardRoleAsync(user.Id, boardGuid);
+                hasWriteAccess = role >= BoardRole.Collaborator;
+                
+                if (role == null && board.AccessLevel == BoardAccessLevel.Private)
+                {
+                    await Clients.Caller.SendAsync("Error", "Access denied to this private board");
+                    return;
+                }
+            }
+            else
+            {
+                // Anonymous user - only allowed for public boards
+                if (board.AccessLevel == BoardAccessLevel.Private)
+                {
+                    await Clients.Caller.SendAsync("Error", "Authentication required for private boards");
+                    return;
+                }
+                
+                displayName = !string.IsNullOrEmpty(userName) ? userName : "Anonymous";
+                hasWriteAccess = (board.AccessLevel == BoardAccessLevel.Public || 
+                                 board.AccessLevel == BoardAccessLevel.LinkSharing);
+            }
+
             await Groups.AddToGroupAsync(Context.ConnectionId, $"Board_{boardId}");
 
             // Create user session
-            var userSession = await _userSessionManager.CreateSessionAsync(Context.ConnectionId, boardGuid, userName);
+            var userSession = await _userSessionManager.CreateSessionAsync(Context.ConnectionId, boardGuid, displayName);
 
             // Get all active users for this board
             var activeUsers = await _userSessionManager.GetBoardSessionsAsync(boardGuid);
@@ -62,8 +101,17 @@ public class CollaborationHub : Hub
 
             // Notify others that user joined and send current user list to new user
             await Clients.Group($"Board_{boardId}").SendAsync("UserJoined",
-                new { connectionId = Context.ConnectionId, userName = userName });
+                new { connectionId = Context.ConnectionId, userName = displayName });
             await Clients.Caller.SendAsync("ActiveUsersUpdated", activeUserList);
+            
+            // Send board permissions to the client
+            await Clients.Caller.SendAsync("BoardPermissions", new 
+            { 
+                canEdit = hasWriteAccess,
+                isAuthenticated = user != null,
+                accessLevel = board.AccessLevel.ToString(),
+                isOwner = user?.Id == board.OwnerId
+            });
 
             _logger.LogInformation("User {UserName} joined board {BoardId}", userName, boardId);
         }
@@ -114,7 +162,13 @@ public class CollaborationHub : Hub
                 X = 0,
                 Y = 0,
                 Data = jsonData,
-                CreatedBy = Context.UserIdentifier ?? "Anonymous"
+                CreatedBy = Context.UserIdentifier ?? "Anonymous", // Legacy field
+                CreatedByUserId = Context.User?.Identity?.IsAuthenticated == true 
+                    ? (await _userService.GetOrCreateUserAsync(Context.User!)).Id
+                    : (await _userService.GetAnonymousUserAsync()).Id,
+                ModifiedByUserId = Context.User?.Identity?.IsAuthenticated == true 
+                    ? (await _userService.GetOrCreateUserAsync(Context.User!)).Id
+                    : (await _userService.GetAnonymousUserAsync()).Id
             };
 
             var savedElement = await _elementService.AddElementAsync(element);
@@ -180,7 +234,13 @@ public class CollaborationHub : Hub
                 Width = width,
                 Height = height,
                 Data = JsonDocument.Parse(JsonSerializer.Serialize(dataDict)),
-                CreatedBy = Context.UserIdentifier ?? "Anonymous"
+                CreatedBy = Context.UserIdentifier ?? "Anonymous", // Legacy field
+                CreatedByUserId = Context.User?.Identity?.IsAuthenticated == true 
+                    ? (await _userService.GetOrCreateUserAsync(Context.User!)).Id
+                    : (await _userService.GetAnonymousUserAsync()).Id,
+                ModifiedByUserId = Context.User?.Identity?.IsAuthenticated == true 
+                    ? (await _userService.GetOrCreateUserAsync(Context.User!)).Id
+                    : (await _userService.GetAnonymousUserAsync()).Id
             };
 
             var savedElement = await _elementService.AddElementAsync(element);
@@ -228,6 +288,10 @@ public class CollaborationHub : Hub
 
             element.X = newX;
             element.Y = newY;
+            element.ModifiedByUserId = Context.User?.Identity?.IsAuthenticated == true 
+                ? (await _userService.GetOrCreateUserAsync(Context.User!)).Id
+                : (await _userService.GetAnonymousUserAsync()).Id;
+            element.ModifiedAt = DateTime.UtcNow;
 
             // For lines, also update endpoint coordinates in the data
             if (element.Type == ElementType.Line && element.Data != null)
@@ -723,7 +787,7 @@ public class CollaborationHub : Hub
     }
 
     // Helper methods
-    private async Task<bool> ValidateBoardAccess(string boardId)
+    private async Task<bool> ValidateBoardAccess(string boardId, bool requireWriteAccess = true)
     {
         if (!Guid.TryParse(boardId, out var boardGuid))
         {
@@ -731,13 +795,72 @@ public class CollaborationHub : Hub
             return false;
         }
 
+        // First check if user has session in the board (joined via SignalR)
         if (!await _userSessionManager.IsUserInBoardAsync(Context.ConnectionId, boardGuid))
         {
             await Clients.Caller.SendAsync("Error", "User not joined to this board");
             return false;
         }
 
+        if (!requireWriteAccess)
+        {
+            return true; // Just need to be in the board
+        }
+
+        // Get board to check access level
+        var board = await _boardService.GetBoardAsync(boardGuid);
+        if (board == null)
+        {
+            await Clients.Caller.SendAsync("Error", "Board not found");
+            return false;
+        }
+
+        if (Context.User?.Identity?.IsAuthenticated == true)
+        {
+            // Authenticated user - check their specific permissions
+            var user = await _userService.GetOrCreateUserAsync(Context.User);
+            var role = await _userService.GetUserBoardRoleAsync(user.Id, boardGuid);
+            
+            if (role == null && board.AccessLevel == BoardAccessLevel.Private)
+            {
+                await Clients.Caller.SendAsync("Error", "Access denied to this private board");
+                return false;
+            }
+            
+            if (role < BoardRole.Collaborator && board.AccessLevel == BoardAccessLevel.Private)
+            {
+                await Clients.Caller.SendAsync("Error", "Write access denied to this board");
+                return false;
+            }
+        }
+        else
+        {
+            // Anonymous user - check if board allows anonymous editing
+            if (board.AccessLevel == BoardAccessLevel.Private)
+            {
+                await Clients.Caller.SendAsync("Error", "Authentication required for this board");
+                return false;
+            }
+            // Public and LinkSharing boards allow anonymous editing
+        }
+
         return true;
+    }
+
+    private async Task<(User? user, string displayName)> GetCurrentUserInfoAsync()
+    {
+        if (Context.User?.Identity?.IsAuthenticated == true)
+        {
+            var user = await _userService.GetOrCreateUserAsync(Context.User);
+            return (user, user.DisplayName);
+        }
+        else
+        {
+            // Anonymous user - get display name from session if available
+            var session = await _userSessionManager.GetSessionAsync(Context.ConnectionId);
+            var displayName = session?.UserName ?? "Anonymous";
+            return (null, displayName);
+        }
     }
 
     private async Task UpdateElementData(string boardId, string elementId, object updatedData, ElementType expectedType, string eventName)
@@ -762,6 +885,10 @@ public class CollaborationHub : Hub
                 }
 
                 element.Data = JsonDocument.Parse(JsonSerializer.Serialize(existingDataObj));
+                element.ModifiedByUserId = Context.User?.Identity?.IsAuthenticated == true 
+                ? (await _userService.GetOrCreateUserAsync(Context.User!)).Id
+                : (await _userService.GetAnonymousUserAsync()).Id;
+                element.ModifiedAt = DateTime.UtcNow;
                 await _elementService.UpdateElementAsync(element);
 
                 // Send back the merged data to all clients
@@ -828,7 +955,9 @@ public class CollaborationHub : Hub
             height = savedElement.Height,
             zIndex = savedElement.ZIndex,
             data = JsonSerializer.Deserialize<object>(savedElement.Data?.RootElement.GetRawText() ?? "{}"),
-            createdBy = savedElement.CreatedBy,
+            createdBy = savedElement.CreatedBy, // Legacy field
+            createdByUserId = savedElement.CreatedByUserId,
+            modifiedByUserId = savedElement.ModifiedByUserId,
             tempId = tempId
         };
     }

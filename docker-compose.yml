@@ -1,6 +1,19 @@
-version: "3.8"
-
 services:
+  # Dex OIDC Provider for authentication
+  dex:
+    image: dexidp/dex:v2.37.0
+    container_name: whiteboard-dex
+    ports:
+      - "5556:5556"
+    volumes:
+      - ./dex-config.yaml:/etc/dex/config.yaml:ro
+    environment:
+      - DEX_TEST_USER_PASSWORD=password123
+    restart: unless-stopped
+    command: ["/usr/local/bin/dex", "serve", "/etc/dex/config.yaml"]
+    networks:
+      - whiteboard-network
+
   postgres:
     image: postgres:15
     environment:
@@ -17,6 +30,8 @@ services:
       interval: 1s
       timeout: 5s
       retries: 50
+    networks:
+      - whiteboard-network
 
   app:
     build:
@@ -26,14 +41,21 @@ services:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:80
       - ConnectionStrings__DefaultConnection=Host=postgres;Database=whiteboard;Username=wbb_user;Password=wbb_password
+      - Authentication__Oidc__Authority=http://dex:5556
+      - Authentication__Oidc__ClientId=whiteboard-app-dev
+      - Authentication__Oidc__ClientSecret=dev-client-secret
     ports:
       - "8080:80"
     depends_on:
       postgres:
         condition: service_healthy
+      dex:
+        condition: service_started
     volumes:
       - ./src:/app/src
       - ./WhiteboardApp.sln:/app/WhiteboardApp.sln
+    networks:
+      - whiteboard-network
 
   # Development service for running dotnet commands
   dotnet-dev:
@@ -46,6 +68,12 @@ services:
     profiles:
       - dev
     command: sleep infinity
+    networks:
+      - whiteboard-network
+
+networks:
+  whiteboard-network:
+    driver: bridge
 
 volumes:
   postgres_data:
