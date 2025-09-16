@@ -1,4 +1,4 @@
-<div id="contextMenu" class="context-menu" style="display: none;">
+<div id="contextMenu" class="context-menu hidden">
     <div class="context-menu-item" onclick="undoAction()">
         <div class="context-item-content">
             <span class="context-icon">↶</span>
@@ -30,48 +30,36 @@
     <div class="context-menu-divider"></div>
     
     <!-- Style options for shapes -->
-    <div id="styleOptions" class="context-menu-section" style="display: none;">
+    <div id="styleOptions" class="context-menu-section hidden">
         <div id="fillColorMenu" class="context-menu-item has-submenu">
             <div class="context-item-content">
                 <span class="context-icon">🎨</span>
                 Fill Color
             </div>
             <div class="submenu color-submenu">
-                <div class="color-option" onclick="updateShapeStyle('fillColor', 'transparent')" 
-                     style="background: linear-gradient(45deg, #ff0000 25%, transparent 25%, transparent 75%, #ff0000 75%); background-size: 8px 8px;" 
+                <div class="color-option color-transparent" onclick="updateShapeStyle('fillColor', 'transparent')" 
                      title="Transparent"></div>
-                <div class="color-option" onclick="updateShapeStyle('fillColor', '#ffffff')" 
-                     style="background: #ffffff; border: 1px solid #ccc;" 
+                <div class="color-option color-white" onclick="updateShapeStyle('fillColor', '#ffffff')" 
                      title="White"></div>
-                <div class="color-option" onclick="updateShapeStyle('fillColor', '#000000')" 
-                     style="background: #000000;" 
+                <div class="color-option color-black" onclick="updateShapeStyle('fillColor', '#000000')" 
                      title="Black"></div>
-                <div class="color-option" onclick="updateShapeStyle('fillColor', '#ff0000')" 
-                     style="background: #ff0000;" 
+                <div class="color-option color-red" onclick="updateShapeStyle('fillColor', '#ff0000')" 
                      title="Red"></div>
-                <div class="color-option" onclick="updateShapeStyle('fillColor', '#00ff00')" 
-                     style="background: #00ff00;" 
+                <div class="color-option color-green" onclick="updateShapeStyle('fillColor', '#00ff00')" 
                      title="Green"></div>
-                <div class="color-option" onclick="updateShapeStyle('fillColor', '#0000ff')" 
-                     style="background: #0000ff;" 
+                <div class="color-option color-blue" onclick="updateShapeStyle('fillColor', '#0000ff')" 
                      title="Blue"></div>
-                <div class="color-option" onclick="updateShapeStyle('fillColor', '#ffff00')" 
-                     style="background: #ffff00;" 
+                <div class="color-option color-yellow" onclick="updateShapeStyle('fillColor', '#ffff00')" 
                      title="Yellow"></div>
-                <div class="color-option" onclick="updateShapeStyle('fillColor', '#ff00ff')" 
-                     style="background: #ff00ff;" 
+                <div class="color-option color-magenta" onclick="updateShapeStyle('fillColor', '#ff00ff')" 
                      title="Magenta"></div>
-                <div class="color-option" onclick="updateShapeStyle('fillColor', '#00ffff')" 
-                     style="background: #00ffff;" 
+                <div class="color-option color-cyan" onclick="updateShapeStyle('fillColor', '#00ffff')" 
                      title="Cyan"></div>
-                <div class="color-option" onclick="updateShapeStyle('fillColor', '#ffa500')" 
-                     style="background: #ffa500;" 
+                <div class="color-option color-orange" onclick="updateShapeStyle('fillColor', '#ffa500')" 
                      title="Orange"></div>
-                <div class="color-option" onclick="updateShapeStyle('fillColor', '#800080')" 
-                     style="background: #800080;" 
+                <div class="color-option color-purple" onclick="updateShapeStyle('fillColor', '#800080')" 
                      title="Purple"></div>
-                <div class="color-option" onclick="updateShapeStyle('fillColor', '#ffc0cb')" 
-                     style="background: #ffc0cb;" 
+                <div class="color-option color-pink" onclick="updateShapeStyle('fillColor', '#ffc0cb')" 
                      title="Pink"></div>
             </div>
         </div>
@@ -82,38 +70,27 @@
                 Stroke Color
             </div>
             <div class="submenu color-submenu">
-                <div class="color-option" onclick="updateShapeStyle('strokeColor', '#000000')" 
-                     style="background: #000000;" 
+                <div class="color-option color-black" onclick="updateShapeStyle('strokeColor', '#000000')" 
                      title="Black"></div>
-                <div class="color-option" onclick="updateShapeStyle('strokeColor', '#ffffff')" 
-                     style="background: #ffffff; border: 1px solid #ccc;" 
+                <div class="color-option color-white" onclick="updateShapeStyle('strokeColor', '#ffffff')" 
                      title="White"></div>
-                <div class="color-option" onclick="updateShapeStyle('strokeColor', '#ff0000')" 
-                     style="background: #ff0000;" 
+                <div class="color-option color-red" onclick="updateShapeStyle('strokeColor', '#ff0000')" 
                      title="Red"></div>
-                <div class="color-option" onclick="updateShapeStyle('strokeColor', '#00ff00')" 
-                     style="background: #00ff00;" 
+                <div class="color-option color-green" onclick="updateShapeStyle('strokeColor', '#00ff00')" 
                      title="Green"></div>
-                <div class="color-option" onclick="updateShapeStyle('strokeColor', '#0000ff')" 
-                     style="background: #0000ff;" 
+                <div class="color-option color-blue" onclick="updateShapeStyle('strokeColor', '#0000ff')" 
                      title="Blue"></div>
-                <div class="color-option" onclick="updateShapeStyle('strokeColor', '#ffff00')" 
-                     style="background: #ffff00;" 
+                <div class="color-option color-yellow" onclick="updateShapeStyle('strokeColor', '#ffff00')" 
                      title="Yellow"></div>
-                <div class="color-option" onclick="updateShapeStyle('strokeColor', '#ff00ff')" 
-                     style="background: #ff00ff;" 
+                <div class="color-option color-magenta" onclick="updateShapeStyle('strokeColor', '#ff00ff')" 
                      title="Magenta"></div>
-                <div class="color-option" onclick="updateShapeStyle('strokeColor', '#00ffff')" 
-                     style="background: #00ffff;" 
+                <div class="color-option color-cyan" onclick="updateShapeStyle('strokeColor', '#00ffff')" 
                      title="Cyan"></div>
-                <div class="color-option" onclick="updateShapeStyle('strokeColor', '#ffa500')" 
-                     style="background: #ffa500;" 
+                <div class="color-option color-orange" onclick="updateShapeStyle('strokeColor', '#ffa500')" 
                      title="Orange"></div>
-                <div class="color-option" onclick="updateShapeStyle('strokeColor', '#800080')" 
-                     style="background: #800080;" 
+                <div class="color-option color-purple" onclick="updateShapeStyle('strokeColor', '#800080')" 
                      title="Purple"></div>
-                <div class="color-option" onclick="updateShapeStyle('strokeColor', '#ffc0cb')" 
-                     style="background: #ffc0cb;" 
+                <div class="color-option color-pink" onclick="updateShapeStyle('strokeColor', '#ffc0cb')" 
                      title="Pink"></div>
             </div>
         </div>
@@ -136,27 +113,27 @@
     <div class="context-menu-divider"></div>
     
     <!-- Group operations -->
-    <div id="groupSelected" class="context-menu-item" onclick="groupSelected()" style="display: none;">
+    <div id="groupSelected" class="context-menu-item hidden" onclick="groupSelected()">
         <div class="context-item-content">
             <span class="context-icon">🔗</span>
             Group Selected
         </div>
         <span class="context-hotkey">Ctrl+G</span>
     </div>
-    <div id="ungroupSelected" class="context-menu-item" onclick="ungroupSelected()" style="display: none;">
+    <div id="ungroupSelected" class="context-menu-item hidden" onclick="ungroupSelected()">
         <div class="context-item-content">
             <span class="context-icon">🔓</span>
             Ungroup
         </div>
         <span class="context-hotkey">Ctrl+Shift+G</span>
     </div>
-    <div id="selectGroup" class="context-menu-item" onclick="selectGroup()" style="display: none;">
+    <div id="selectGroup" class="context-menu-item hidden" onclick="selectGroup()">
         <div class="context-item-content">
             <span class="context-icon">🎯</span>
             Select Group
         </div>
     </div>
-    <div id="groupDivider" class="context-menu-divider" style="display: none;"></div>
+    <div id="groupDivider" class="context-menu-divider hidden"></div>
     
     <div class="context-menu-item" onclick="duplicateSelected()">
         <div class="context-item-content">

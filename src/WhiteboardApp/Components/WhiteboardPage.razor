@@ -25,12 +25,12 @@
         <header class="access-denied-header">
             <div class="access-denied-header-content">
                 <h1 class="brand-logo">
-                    <i class="fas fa-draw-polygon" style="margin-right: 12px;"></i>
+                    <i class="fas fa-draw-polygon icon-lg"></i>
                     OpenBoard
                 </h1>
                 <nav class="header-nav">
                     <button class="nav-link" @onclick="NavigateToHome">
-                        <i class="fas fa-home" style="margin-right: 6px;"></i>
+                        <i class="fas fa-home icon-sm"></i>
                         Home
                     </button>
                 </nav>
@@ -64,11 +64,11 @@
                     </p>
                     <div class="access-denied-actions">
                         <button class="btn btn-primary" @onclick="NavigateToLogin">
-                            <i class="fas fa-sign-in-alt" style="margin-right: 8px;"></i>
+                            <i class="fas fa-sign-in-alt icon-md"></i>
                             Sign In
                         </button>
                         <button class="btn btn-secondary" @onclick="NavigateToHome">
-                            <i class="fas fa-home" style="margin-right: 8px;"></i>
+                            <i class="fas fa-home icon-md"></i>
                             Go Home
                         </button>
                     </div>
@@ -110,7 +110,7 @@ else
             <div id="minimap-viewport" class="minimap-viewport"></div>
         </div>
         
-        <input type="file" id="image-upload" accept="image/*" style="display: none;" />
+        <input type="file" id="image-upload" accept="image/*" class="hidden" />
     </div>
 }
 
