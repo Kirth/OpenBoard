@@ -9,6 +9,7 @@
 @using System.Security.Claims
 @inject BoardService BoardService
 @inject ElementService ElementService
+@inject IUserService UserService
 @inject NavigationManager Navigation
 @inject IJSRuntime JSRuntime
 @inject AuthenticationStateProvider AuthenticationStateProvider
@@ -18,39 +19,81 @@
 
 <link href="css/board-components.css" rel="stylesheet" />
 
-<div class="board-container">
-    <!-- Status Bar Component -->
-    <BoardStatusBar 
-        BoardName="@boardName"
-        BoardId="@BoardId"
-        IsConnected="@signalRConnected"
-        OnClearBoard="ClearBoard"
-        OnDuplicateBoard="DuplicateBoard" />
-    
-    <!-- Canvas Component -->
-    <BoardCanvas 
-        BoardId="@BoardId"
-        CurrentUserName="@currentUserName"
-        OnCanvasReady="OnCanvasReady" />
-    
-    <!-- Toolbar Component -->
-    <BoardToolbar 
-        CurrentTool="@currentTool"
-        SelectedShapeType="@selectedShapeType"
-        OnToolSelected="SetTool"
-        OnShapeTypeSelected="OnShapeTypeSelected" />
-    
-    <!-- Context Menu Component -->
-    <BoardContextMenu />
-    
-    <!-- Minimap -->
-    <div class="minimap-container">
-        <canvas id="minimap-canvas" width="200" height="150"></canvas>
-        <div id="minimap-viewport" class="minimap-viewport"></div>
+@if (hasAccessError)
+{
+    <div class="access-denied-container">
+        <div class="access-denied-content">
+            <div class="access-denied-icon">
+                <i class="fas fa-user-shield"></i>
+            </div>
+            <h2>🚫 Oops! Private Territory</h2>
+            <p>
+                @if (accessErrorMessage.Contains("private"))
+                {
+                    <span>This board is like a secret clubhouse 🏠<br/>You'll need to sign in to join the fun! ✨</span>
+                }
+                else if (accessErrorMessage.Contains("permission"))
+                {
+                    <span>This board is invitation-only 🎫<br/>Looks like you need special access! 🔑</span>
+                }
+                else if (accessErrorMessage.Contains("Invalid"))
+                {
+                    <span>Hmm, this board ID seems a bit wonky 🤔<br/>Double-check that link! 🔍</span>
+                }
+                else
+                {
+                    <span>Something went sideways while loading this board 🎪<br/>Maybe try refreshing? 🔄</span>
+                }
+            </p>
+            <div class="access-denied-actions">
+                <button class="btn btn-primary" @onclick="NavigateToLogin">
+                    <i class="fas fa-sign-in-alt" style="margin-right: 8px;"></i>
+                    Sign In
+                </button>
+                <button class="btn btn-secondary" @onclick="NavigateToHome">
+                    <i class="fas fa-home" style="margin-right: 8px;"></i>
+                    Go Home
+                </button>
+            </div>
+        </div>
     </div>
-    
-    <input type="file" id="image-upload" accept="image/*" style="display: none;" />
-</div>
+}
+else
+{
+    <div class="board-container">
+        <!-- Status Bar Component -->
+        <BoardStatusBar 
+            BoardName="@boardName"
+            BoardId="@BoardId"
+            IsConnected="@signalRConnected"
+            OnClearBoard="ClearBoard"
+            OnDuplicateBoard="DuplicateBoard" />
+        
+        <!-- Canvas Component -->
+        <BoardCanvas 
+            BoardId="@BoardId"
+            CurrentUserName="@currentUserName"
+            OnCanvasReady="OnCanvasReady" />
+        
+        <!-- Toolbar Component -->
+        <BoardToolbar 
+            CurrentTool="@currentTool"
+            SelectedShapeType="@selectedShapeType"
+            OnToolSelected="SetTool"
+            OnShapeTypeSelected="OnShapeTypeSelected" />
+        
+        <!-- Context Menu Component -->
+        <BoardContextMenu />
+        
+        <!-- Minimap -->
+        <div class="minimap-container">
+            <canvas id="minimap-canvas" width="200" height="150"></canvas>
+            <div id="minimap-viewport" class="minimap-viewport"></div>
+        </div>
+        
+        <input type="file" id="image-upload" accept="image/*" style="display: none;" />
+    </div>
+}
 
 @code {
     [Parameter] public string BoardId { get; set; } = "";
@@ -60,6 +103,8 @@
     private string boardName = "Loading...";
     private bool signalRConnected = false;
     private string currentUserName = "Anonymous";
+    private bool hasAccessError = false;
+    private string accessErrorMessage = "";
     
     // Shape tool state
     private string selectedShapeType = "rectangle";
@@ -90,16 +135,71 @@
     {
         try
         {
+            hasAccessError = false;
+            accessErrorMessage = "";
+            
             if (Guid.TryParse(BoardId, out var boardGuid))
             {
-                var board = await BoardService.GetBoardAsync(boardGuid);
-                boardName = board?.Name ?? "Unknown Board";
+                // Get current user and check board access
+                var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+                User? currentUser = null;
+                
+                if (authState.User.Identity?.IsAuthenticated == true)
+                {
+                    try
+                    {
+                        currentUser = await UserService.GetOrCreateUserAsync(authState.User);
+                    }
+                    catch
+                    {
+                        // Fall back to anonymous access if user service fails
+                        currentUser = null;
+                    }
+                }
+                
+                Models.Board? board = null;
+                
+                if (currentUser != null)
+                {
+                    // Authenticated user - use access check
+                    board = await BoardService.GetBoardWithAccessCheckAsync(boardGuid, currentUser, BoardRole.Viewer);
+                }
+                else
+                {
+                    // Anonymous user - check if board allows anonymous access
+                    var boardInfo = await BoardService.GetBoardAsync(boardGuid);
+                    if (boardInfo != null && (boardInfo.AccessLevel == BoardAccessLevel.Public || boardInfo.AccessLevel == BoardAccessLevel.LinkSharing))
+                    {
+                        board = boardInfo;
+                    }
+                    else if (boardInfo != null && boardInfo.AccessLevel == BoardAccessLevel.Private)
+                    {
+                        hasAccessError = true;
+                        accessErrorMessage = "This board is private. Please sign in to access it.";
+                        boardName = "Access Denied";
+                        StateHasChanged();
+                        return;
+                    }
+                }
+                
+                if (board != null)
+                {
+                    boardName = board.Name;
+                }
+                else
+                {
+                    hasAccessError = true;
+                    accessErrorMessage = "You don't have permission to access this board.";
+                    boardName = "Access Denied";
+                }
                 
                 // Trigger a re-render to update the page title
                 StateHasChanged();
             }
             else
             {
+                hasAccessError = true;
+                accessErrorMessage = "Invalid board ID format.";
                 boardName = "Invalid Board ID";
                 StateHasChanged();
             }
@@ -107,6 +207,8 @@
         catch (Exception ex)
         {
             Console.WriteLine($"Error loading board info: {ex.Message}");
+            hasAccessError = true;
+            accessErrorMessage = "An error occurred while loading the board.";
             boardName = "Error Loading Board";
             StateHasChanged();
         }
@@ -472,5 +574,15 @@
         {
             Console.WriteLine($"Error during WhiteboardPage disposal: {ex.Message}");
         }
+    }
+
+    private void NavigateToLogin()
+    {
+        Navigation.NavigateTo("/Account/Login");
+    }
+
+    private void NavigateToHome()
+    {
+        Navigation.NavigateTo("/");
     }
 }

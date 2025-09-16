@@ -42,10 +42,41 @@
                 <section class="boards-section">
                     <h2>My Boards</h2>
                     <p class="section-description">Boards you own and collaborate on</p>
-                    <!-- TODO: Add user's owned and collaborative boards here -->
-                    <div class="empty-state">
-                        <p>You haven't created any boards yet. <button class="link-btn" @onclick="ShowCreateModal">Create your first board</button></p>
-                    </div>
+                    
+                    @if (userBoards != null && userBoards.Count > 0)
+                    {
+                        <div class="boards-list">
+                            @foreach (var board in userBoards)
+                            {
+                                <div class="board-item" @onclick="@(() => JoinSpecificBoard(board.Id))">
+                                    <div class="board-header">
+                                        <h3>@board.Name</h3>
+                                        <span class="board-visibility-badge @(board.AccessLevel == BoardAccessLevel.Public ? "public" : "private")">
+                                            @(board.AccessLevel == BoardAccessLevel.Public ? "Public" : 
+                                              board.AccessLevel == BoardAccessLevel.LinkSharing ? "Link Sharing" : "Private")
+                                        </span>
+                                    </div>
+                                    <div class="board-info">
+                                        <span><i class="fas fa-sticky-note"></i> @GetStickyCount(board)</span>
+                                        <span><i class="fas fa-clock"></i> @FormatDate(board.UpdatedAt)</span>
+                                        <span><i class="fas fa-crown"></i> Owner</span>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else if (userBoards != null)
+                    {
+                        <div class="empty-state">
+                            <p>You haven't created any boards yet. <button class="link-btn" @onclick="ShowCreateModal">Create your first board</button></p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="empty-state">
+                            <p>Loading your boards...</p>
+                        </div>
+                    }
                 </section>
             </Authorized>
         </AuthorizeView>
@@ -145,10 +176,30 @@
     private bool showCreateModal = false;
     private string errorMessage = "";
     private List<WhiteboardApp.Models.Board>? publicBoards;
+    private List<WhiteboardApp.Models.Board>? userBoards;
 
     protected override async Task OnInitializedAsync()
     {
         publicBoards = await BoardService.GetPublicBoardsAsync();
+        
+        // Load user's boards if authenticated
+        if (AuthenticationStateTask != null)
+        {
+            var authState = await AuthenticationStateTask;
+            if (authState.User.Identity?.IsAuthenticated == true)
+            {
+                try 
+                {
+                    var user = await UserService.GetOrCreateUserAsync(authState.User);
+                    userBoards = await BoardService.GetUserOwnedBoardsAsync(user);
+                }
+                catch
+                {
+                    // If there's an issue getting user boards, just leave userBoards as null
+                    userBoards = null;
+                }
+            }
+        }
     }
 
     [CascadingParameter]
@@ -189,6 +240,12 @@
 
         var board = await BoardService.CreateBoardAsync(newBoardTitle.Trim(), user, isPublicBoard, 
             string.IsNullOrWhiteSpace(adminPin) ? null : adminPin.Trim());
+        
+        // Refresh user boards list if user is authenticated
+        if (user.SubjectId != "anonymous-user")
+        {
+            userBoards = await BoardService.GetUserOwnedBoardsAsync(user);
+        }
         
         HideCreateModal();
         Navigation.NavigateTo($"/board/{board.Id}");
