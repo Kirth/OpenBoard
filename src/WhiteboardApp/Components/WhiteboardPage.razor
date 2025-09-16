@@ -21,41 +21,60 @@
 
 @if (hasAccessError)
 {
-    <div class="access-denied-container">
-        <div class="access-denied-content">
-            <div class="access-denied-icon">
-                <i class="fas fa-user-shield"></i>
+    <div class="access-denied-page">
+        <header class="access-denied-header">
+            <div class="access-denied-header-content">
+                <h1 class="brand-logo">
+                    <i class="fas fa-draw-polygon" style="margin-right: 12px;"></i>
+                    OpenBoard
+                </h1>
+                <nav class="header-nav">
+                    <button class="nav-link" @onclick="NavigateToHome">
+                        <i class="fas fa-home" style="margin-right: 6px;"></i>
+                        Home
+                    </button>
+                </nav>
             </div>
-            <h2>🚫 Oops! Private Territory</h2>
-            <p>
-                @if (accessErrorMessage.Contains("private"))
-                {
-                    <span>This board is like a secret clubhouse 🏠<br/>You'll need to sign in to join the fun! ✨</span>
-                }
-                else if (accessErrorMessage.Contains("permission"))
-                {
-                    <span>This board is invitation-only 🎫<br/>Looks like you need special access! 🔑</span>
-                }
-                else if (accessErrorMessage.Contains("Invalid"))
-                {
-                    <span>Hmm, this board ID seems a bit wonky 🤔<br/>Double-check that link! 🔍</span>
-                }
-                else
-                {
-                    <span>Something went sideways while loading this board 🎪<br/>Maybe try refreshing? 🔄</span>
-                }
-            </p>
-            <div class="access-denied-actions">
-                <button class="btn btn-primary" @onclick="NavigateToLogin">
-                    <i class="fas fa-sign-in-alt" style="margin-right: 8px;"></i>
-                    Sign In
-                </button>
-                <button class="btn btn-secondary" @onclick="NavigateToHome">
-                    <i class="fas fa-home" style="margin-right: 8px;"></i>
-                    Go Home
-                </button>
+        </header>
+        
+        <main class="access-denied-main">
+            <div class="access-denied-container">
+                <div class="access-denied-content">
+                    <div class="access-denied-icon">
+                        <i class="fas fa-user-shield"></i>
+                    </div>
+                    <h2>Access Required</h2>
+                    <p>
+                        @if (accessErrorMessage.Contains("private"))
+                        {
+                            <span>This board is private and requires authentication.<br/>Please sign in to continue.</span>
+                        }
+                        else if (accessErrorMessage.Contains("permission"))
+                        {
+                            <span>You don't have permission to access this board.<br/>Contact the board owner for access.</span>
+                        }
+                        else if (accessErrorMessage.Contains("Invalid"))
+                        {
+                            <span>The board ID appears to be invalid.<br/>Please check the URL and try again.</span>
+                        }
+                        else
+                        {
+                            <span>We encountered an issue loading this board.<br/>Please try again or contact support if the problem persists.</span>
+                        }
+                    </p>
+                    <div class="access-denied-actions">
+                        <button class="btn btn-primary" @onclick="NavigateToLogin">
+                            <i class="fas fa-sign-in-alt" style="margin-right: 8px;"></i>
+                            Sign In
+                        </button>
+                        <button class="btn btn-secondary" @onclick="NavigateToHome">
+                            <i class="fas fa-home" style="margin-right: 8px;"></i>
+                            Go Home
+                        </button>
+                    </div>
+                </div>
             </div>
-        </div>
+        </main>
     </div>
 }
 else
