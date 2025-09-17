@@ -61,6 +61,18 @@
     max-width: 150px;
 }
 
+.dropdown-indicator {
+    display: flex;
+    align-items: center;
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 12px;
+    transition: transform 0.2s ease;
+}
+
+.user-info:hover .dropdown-indicator {
+    color: rgba(255, 255, 255, 1);
+}
+
 .user-dropdown {
     position: absolute;
     top: 100%;
@@ -122,6 +134,10 @@
 
 @media (max-width: 768px) {
     .user-details {
+        display: none;
+    }
+    
+    .dropdown-indicator {
         display: none;
     }
     

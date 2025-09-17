@@ -15,19 +15,24 @@
         <!-- Compact Join/Create Header -->
         <div class="home-header">
             <div class="home-header-content">
-                <div class="join-create-compact">
-                    <div class="join-board-compact">
-                        <input type="text" placeholder="Enter Board ID to join..." @bind="boardId" @oninput="ClearError" />
-                        <button @onclick="JoinBoard" disabled="@string.IsNullOrWhiteSpace(boardId)" class="join-btn-compact">
-                            <i class="fas fa-sign-in-alt"></i>
-                            Join
+                <div class="header-with-mascot">
+                    <div class="mascot-section">
+                        <img src="img/pencil-frog-small.png" alt="OpenBoard Mascot" class="mascot-image" />
+                    </div>
+                    <div class="join-create-compact">
+                        <div class="join-board-compact">
+                            <input type="text" placeholder="Enter Board ID to join..." @bind="boardId" @oninput="ClearError" />
+                            <button @onclick="JoinBoard" disabled="@string.IsNullOrWhiteSpace(boardId)" class="join-btn-compact">
+                                <i class="fas fa-sign-in-alt"></i>
+                                Join
+                            </button>
+                        </div>
+                        <div class="divider-compact">or</div>
+                        <button class="create-btn-compact" @onclick="ShowCreateModal">
+                            <i class="fas fa-plus"></i>
+                            Create Board
                         </button>
                     </div>
-                    <div class="divider-compact">or</div>
-                    <button class="create-btn-compact" @onclick="ShowCreateModal">
-                        <i class="fas fa-plus"></i>
-                        Create Board
-                    </button>
                 </div>
                 @if (!string.IsNullOrEmpty(errorMessage))
                 {
@@ -464,6 +469,23 @@
     padding: var(--space-lg) var(--space-xl);
 }
 
+.header-with-mascot {
+    display: flex;
+    align-items: center;
+    gap: var(--space-lg);
+}
+
+.mascot-section {
+    flex-shrink: 0;
+}
+
+.mascot-image {
+    width: 48px;
+    height: 48px;
+    object-fit: contain;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+}
+
 .join-create-compact {
     display: flex;
     align-items: center;
@@ -722,10 +744,17 @@
         padding: var(--space-md);
     }
     
+    .header-with-mascot {
+        flex-direction: column;
+        gap: var(--space-md);
+        align-items: center;
+    }
+    
     .join-create-compact {
         flex-direction: column;
         gap: var(--space-md);
         align-items: stretch;
+        width: 100%;
     }
     
     .join-board-compact {

@@ -6,7 +6,7 @@
 <div class="user-menu">
     <AuthorizeView>
         <Authorized>
-            <div class="user-info">
+            <div class="user-info" @onclick="ShowUserMenu">
                 <span class="user-avatar">
                     @if (!string.IsNullOrEmpty(context.User.FindFirst("name")?.Value))
                     {
@@ -27,10 +27,8 @@
                         @(context.User.FindFirst("email")?.Value ?? "")
                     </span>
                 </div>
-                <div class="user-actions">
-                    <button class="btn btn-outline-secondary btn-sm" @onclick="ShowUserMenu">
-                        <i class="fas fa-chevron-down"></i>
-                    </button>
+                <div class="dropdown-indicator">
+                    <i class="fas fa-chevron-down"></i>
                 </div>
             </div>
             
