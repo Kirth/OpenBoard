@@ -2,7 +2,7 @@
 
 <!-- ES6 Module Imports -->
 <script type="module">
-    import { initializeApplication, setBlazorReference, initializeSignalRConnection, setCurrentTool, clearCanvasFromBlazor } from '/js/main.js';
+    import { initializeApplication, setBlazorReference, initializeSignalRConnection, setCurrentTool, clearCanvasFromBlazor, disconnectFromBoard } from '/js/main.js';
     
     // Make functions available globally for Blazor interop
     window.initializeApplication = initializeApplication;
@@ -10,6 +10,7 @@
     window.initializeSignalRConnection = initializeSignalRConnection;
     window.setCurrentTool = setCurrentTool;
     window.clearCanvasFromBlazor = clearCanvasFromBlazor;
+    window.disconnectFromBoard = disconnectFromBoard;
 </script>
 
 <div class="page">

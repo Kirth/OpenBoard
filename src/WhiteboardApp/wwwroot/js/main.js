@@ -17,6 +17,30 @@ import * as uiFeatures from './modules/ui-features.js';
 import * as blazorIntegration from './modules/blazor-integration.js';
 import groupManager from './modules/group-manager.js';
 
+// Immediately expose critical functions that Blazor might call before full initialization
+if (typeof window !== 'undefined') {
+  // Expose placeholder functions first to prevent "undefined" errors
+  window.setBlazorReference = (dotNetRef) => {
+    console.log('setBlazorReference called before initialization, storing for later...');
+    window._pendingBlazorRef = dotNetRef;
+  };
+  
+  window.disconnectFromBoard = async () => {
+    console.log('disconnectFromBoard called before initialization, ignoring...');
+    return Promise.resolve();
+  };
+  
+  window.addMouseMoveListener = (dotNetRef) => {
+    console.log('addMouseMoveListener called before initialization, storing for later...');
+    window._pendingMouseMoveRef = dotNetRef;
+  };
+  
+  window.initializeApplication = () => {
+    console.log('initializeApplication called directly...');
+    return initializeApplication();
+  };
+}
+
 // Global state variables for coordination (minimal set)
 export let pendingImagePosition = null;
 export let shouldSwitchToSelectAfterEditing = false;
@@ -45,6 +69,20 @@ export async function initializeApplication() {
 
     // Setup global exposure for Blazor integration
     blazorIntegration.setupGlobalExposure();
+
+    // Handle any pending Blazor reference that was set before initialization
+    if (typeof window !== 'undefined' && window._pendingBlazorRef) {
+      console.log('Setting pending Blazor reference after initialization...');
+      window.setBlazorReference(window._pendingBlazorRef);
+      delete window._pendingBlazorRef;
+    }
+
+    // Handle any pending mouse move listener that was set before initialization
+    if (typeof window !== 'undefined' && window._pendingMouseMoveRef) {
+      console.log('Setting pending mouse move listener after initialization...');
+      window.addMouseMoveListener(window._pendingMouseMoveRef);
+      delete window._pendingMouseMoveRef;
+    }
 
     console.log('OpenBoard application initialized successfully');
     return true;
@@ -227,6 +265,10 @@ export async function initializeSignalRConnection(boardId) {
 
 export function clearCanvasFromBlazor() {
   return blazorIntegration.clearCanvasFromBlazor();
+}
+
+export async function disconnectFromBoard() {
+  return await blazorIntegration.disconnectFromBoard();
 }
 
 export function setCurrentTool(tool) {

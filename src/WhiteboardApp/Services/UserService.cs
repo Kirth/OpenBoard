@@ -10,11 +10,15 @@ public interface IUserService
     Task<User> GetOrCreateUserAsync(ClaimsPrincipal principal);
     Task<User?> GetUserByIdAsync(Guid userId);
     Task<User?> GetUserBySubjectIdAsync(string subjectId);
+    Task<User?> GetUserByDisplayNameAsync(string displayName);
+    Task<User?> GetUserByEmailAsync(string email);
     Task<User> UpdateUserAsync(User user);
     Task UpdateLastLoginAsync(Guid userId);
     Task<bool> HasBoardAccessAsync(Guid userId, Guid boardId, BoardRole minimumRole = BoardRole.Viewer);
     Task<BoardRole?> GetUserBoardRoleAsync(Guid userId, Guid boardId);
     Task<User> GetAnonymousUserAsync();
+    Task<UserStatistics> GetUserStatisticsAsync(Guid userId);
+    Task<List<Board>> GetUserRecentBoardsAsync(Guid userId, int limit = 10);
 }
 
 public class UserService : IUserService
@@ -166,7 +170,7 @@ public class UserService : IUserService
         switch (board.AccessLevel)
         {
             case BoardAccessLevel.Public:
-            case BoardAccessLevel.LinkSharing:
+            case BoardAccessLevel.Unlisted:
                 return BoardRole.Collaborator; // Default role for public/link sharing
             case BoardAccessLevel.Private:
             default:
@@ -200,4 +204,87 @@ public class UserService : IUserService
 
         return anonymousUser;
     }
+
+    public async Task<User?> GetUserByDisplayNameAsync(string displayName)
+    {
+        return await _context.Users
+            .FirstOrDefaultAsync(u => u.DisplayName == displayName && u.IsActive);
+    }
+
+    public async Task<UserStatistics> GetUserStatisticsAsync(Guid userId)
+    {
+        var user = await _context.Users
+            .Include(u => u.OwnedBoards)
+            .Include(u => u.BoardCollaborations)
+            .Include(u => u.CreatedElements)
+            .FirstOrDefaultAsync(u => u.Id == userId && u.IsActive);
+
+        if (user == null)
+        {
+            return new UserStatistics();
+        }
+
+        var ownedBoardsCount = user.OwnedBoards?.Count ?? 0;
+        var collaborationsCount = user.BoardCollaborations?.Count ?? 0;
+        var elementsCreatedCount = user.CreatedElements?.Count ?? 0;
+
+        // Get recent activity (boards updated in last 30 days that user owns or collaborates on)
+        var thirtyDaysAgo = DateTime.UtcNow.AddDays(-30);
+        var recentOwnedBoards = user.OwnedBoards?.Where(b => b.UpdatedAt >= thirtyDaysAgo).Count() ?? 0;
+        var recentCollaborationBoards = user.BoardCollaborations?
+            .Where(bc => bc.Board.UpdatedAt >= thirtyDaysAgo).Count() ?? 0;
+
+        return new UserStatistics
+        {
+            OwnedBoardsCount = ownedBoardsCount,
+            CollaborationsCount = collaborationsCount,
+            ElementsCreatedCount = elementsCreatedCount,
+            RecentActivityCount = recentOwnedBoards + recentCollaborationBoards,
+            AccountAge = DateTime.UtcNow - user.CreatedAt,
+            LastLoginDaysAgo = (int)(DateTime.UtcNow - user.LastLoginAt).TotalDays
+        };
+    }
+
+    public async Task<List<Board>> GetUserRecentBoardsAsync(Guid userId, int limit = 10)
+    {
+        var user = await _context.Users
+            .Include(u => u.OwnedBoards)
+            .Include(u => u.BoardCollaborations)
+                .ThenInclude(bc => bc.Board)
+            .FirstOrDefaultAsync(u => u.Id == userId && u.IsActive);
+
+        if (user == null)
+        {
+            return new List<Board>();
+        }
+
+        // Combine owned boards and collaboration boards, sort by most recent activity
+        var ownedBoards = user.OwnedBoards?.AsEnumerable() ?? Enumerable.Empty<Board>();
+        var collaborationBoards = user.BoardCollaborations?.Select(bc => bc.Board) ?? Enumerable.Empty<Board>();
+
+        var allBoards = ownedBoards.Concat(collaborationBoards)
+            .Where(b => b != null)
+            .OrderByDescending(b => b.UpdatedAt)
+            .Take(limit)
+            .ToList();
+
+        return allBoards;
+    }
+
+    public async Task<User?> GetUserByEmailAsync(string email)
+    {
+        return await _context.Users
+            .FirstOrDefaultAsync(u => u.Email == email && u.IsActive);
+    }
+
+}
+
+public class UserStatistics
+{
+    public int OwnedBoardsCount { get; set; }
+    public int CollaborationsCount { get; set; }
+    public int ElementsCreatedCount { get; set; }
+    public int RecentActivityCount { get; set; }
+    public TimeSpan AccountAge { get; set; }
+    public int LastLoginDaysAgo { get; set; }
 }

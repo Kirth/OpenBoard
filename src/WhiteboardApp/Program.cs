@@ -15,6 +15,9 @@ builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
 builder.Services.AddControllers();
 
+// Add HttpClient for Blazor components
+builder.Services.AddHttpClient();
+
 // Add Blazor authentication support  
 builder.Services.AddScoped<AuthenticationStateProvider, ServerAuthenticationStateProvider>();
 

@@ -1,0 +1,27 @@
+@inject NavigationManager Navigation
+
+<link href="css/header.css" rel="stylesheet" />
+
+<header class="site-header">
+    <div class="site-header-content">
+        <div class="site-header-left">
+            <div class="site-branding" @onclick="NavigateToHome">
+                <h1 class="site-title">OpenBoard</h1>
+                <p class="site-description">@PageDescription</p>
+            </div>
+        </div>
+        <div class="site-header-right">
+            <UserMenu />
+        </div>
+    </div>
+</header>
+
+@code {
+    [Parameter] public string PageTitle { get; set; } = "OpenBoard";
+    [Parameter] public string PageDescription { get; set; } = "Real-time collaborative whiteboard";
+    
+    private void NavigateToHome()
+    {
+        Navigation.NavigateTo("/");
+    }
+}

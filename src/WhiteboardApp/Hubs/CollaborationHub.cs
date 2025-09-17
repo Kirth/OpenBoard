@@ -106,7 +106,7 @@ public class CollaborationHub : Hub
                 }
                 
                 hasWriteAccess = (board.AccessLevel == BoardAccessLevel.Public || 
-                                 board.AccessLevel == BoardAccessLevel.LinkSharing);
+                                 board.AccessLevel == BoardAccessLevel.Unlisted);
             }
 
             await Groups.AddToGroupAsync(Context.ConnectionId, $"Board_{boardId}");

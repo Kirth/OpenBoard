@@ -136,7 +136,8 @@ public class BoardService
             BoardName = board.Name,
             CreatedAt = board.CreatedAt,
             UpdatedAt = board.UpdatedAt,
-            IsPublic = board.IsPublic,
+            IsPublic = board.IsPublic, // Legacy field for backward compatibility
+            AccessLevel = board.AccessLevel, // New access level field
             HasAdminPin = !string.IsNullOrEmpty(board.AdminPin),
             TotalElements = board.Elements.Count,
             ElementsByType = elementsByType
@@ -225,10 +226,85 @@ public class BoardService
         // Check board access level for non-collaborators
         return board.AccessLevel switch
         {
-            BoardAccessLevel.Public or BoardAccessLevel.LinkSharing => BoardRole.Collaborator,
+            BoardAccessLevel.Public or BoardAccessLevel.Unlisted => BoardRole.Collaborator,
             BoardAccessLevel.Private => null,
             _ => null
         };
+    }
+
+    public async Task DeleteBoardAsync(Guid boardId)
+    {
+        var board = await _context.Boards
+            .Include(b => b.Elements)
+            .Include(b => b.Collaborators)
+            .FirstOrDefaultAsync(b => b.Id == boardId);
+
+        if (board == null)
+        {
+            throw new InvalidOperationException("Board not found");
+        }
+
+        // Remove all board elements
+        if (board.Elements != null && board.Elements.Any())
+        {
+            _context.BoardElements.RemoveRange(board.Elements);
+        }
+
+        // Remove all collaborators
+        if (board.Collaborators != null && board.Collaborators.Any())
+        {
+            _context.BoardCollaborators.RemoveRange(board.Collaborators);
+        }
+
+        // Remove the board
+        _context.Boards.Remove(board);
+
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task UpdateBoardAsync(Board board)
+    {
+        _context.Boards.Update(board);
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task AddCollaboratorAsync(Guid boardId, Guid userId, BoardRole role, Guid grantedByUserId)
+    {
+        var collaboration = new BoardCollaborator
+        {
+            BoardId = boardId,
+            UserId = userId,
+            Role = role,
+            GrantedAt = DateTime.UtcNow,
+            GrantedByUserId = grantedByUserId
+        };
+
+        _context.BoardCollaborators.Add(collaboration);
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task UpdateCollaboratorRoleAsync(Guid boardId, Guid userId, BoardRole role)
+    {
+        var collaboration = await _context.BoardCollaborators
+            .FirstOrDefaultAsync(c => c.BoardId == boardId && c.UserId == userId);
+
+        if (collaboration != null)
+        {
+            collaboration.Role = role;
+            await _context.SaveChangesAsync();
+        }
+    }
+
+    public async Task RemoveCollaboratorAsync(Guid boardId, Guid userId)
+    {
+        var collaboration = await _context.BoardCollaborators
+            .FirstOrDefaultAsync(c => c.BoardId == boardId && c.UserId == userId);
+
+        if (collaboration != null)
+        {
+            _context.BoardCollaborators.Remove(collaboration);
+            await _context.SaveChangesAsync();
+        }
     }
 }
 
@@ -238,7 +314,8 @@ public class BoardStats
     public string BoardName { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
-    public bool IsPublic { get; set; }
+    public bool IsPublic { get; set; } // Legacy field for backward compatibility
+    public BoardAccessLevel AccessLevel { get; set; } // New access level field
     public bool HasAdminPin { get; set; }
     public int TotalElements { get; set; }
     public Dictionary<string, int> ElementsByType { get; set; } = new();

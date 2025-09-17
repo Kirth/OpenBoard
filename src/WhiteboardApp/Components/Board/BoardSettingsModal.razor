@@ -1,0 +1,473 @@
+@using WhiteboardApp.Models
+@using WhiteboardApp.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@inject BoardService BoardService
+@inject IUserService UserService
+@inject IJSRuntime JSRuntime
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<!-- Board Settings Modal -->
+@if (IsVisible)
+{
+    <div class="modal" @onclick="CloseModal">
+        <div class="modal-content large" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Board Settings</h3>
+                <button class="modal-close" @onclick="CloseModal">&times;</button>
+            </div>
+            
+            <div class="modal-body">
+                @if (boardSettings != null)
+                {
+                    <div class="settings-section">
+                        <h4>General Settings</h4>
+                        
+                        <div class="form-group">
+                            <label>Board Name</label>
+                            <input type="text" @bind="boardSettings.Name" @bind:event="oninput" 
+                                   class="form-control" placeholder="Board Name" />
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Access Level</label>
+                            <div class="radio-group">
+                                <label class="radio-option">
+                                    <input type="radio" name="accessLevel" 
+                                           @onchange="@(() => boardSettings.AccessLevel = BoardAccessLevel.Private)" 
+                                           checked="@(boardSettings.AccessLevel == BoardAccessLevel.Private)" />
+                                    <div class="radio-content">
+                                        <strong>Private</strong>
+                                        <small>Only you and invited collaborators can access this board</small>
+                                    </div>
+                                </label>
+                                
+                                <label class="radio-option">
+                                    <input type="radio" name="accessLevel" 
+                                           @onchange="@(() => boardSettings.AccessLevel = BoardAccessLevel.Unlisted)" 
+                                           checked="@(boardSettings.AccessLevel == BoardAccessLevel.Unlisted)" />
+                                    <div class="radio-content">
+                                        <strong>Unlisted</strong>
+                                        <small>Anyone with the board ID can access, but it's not listed publicly</small>
+                                    </div>
+                                </label>
+                                
+                                <label class="radio-option">
+                                    <input type="radio" name="accessLevel" 
+                                           @onchange="@(() => boardSettings.AccessLevel = BoardAccessLevel.Public)" 
+                                           checked="@(boardSettings.AccessLevel == BoardAccessLevel.Public)" />
+                                    <div class="radio-content">
+                                        <strong>Public</strong>
+                                        <small>Listed publicly, anyone can view and collaborate</small>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-section">
+                        <h4>Board Information</h4>
+                        
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <span class="info-label">Board ID</span>
+                                <div class="info-value-container">
+                                    <span class="info-value">@BoardId</span>
+                                    <button class="copy-btn" @onclick="CopyBoardId" title="Copy Board ID">
+                                        <i class="fas fa-copy"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Created</span>
+                                <span class="info-value">@boardSettings.CreatedAt.ToString("MMM dd, yyyy")</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Last Modified</span>
+                                <span class="info-value">@boardSettings.UpdatedAt.ToString("MMM dd, yyyy")</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Collaborators</span>
+                                <span class="info-value">@boardSettings.CollaboratorsCount</span>
+                            </div>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="loading-state">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <span>Loading board settings...</span>
+                    </div>
+                }
+                
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div class="error-message">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        @errorMessage
+                    </div>
+                }
+                
+                @if (!string.IsNullOrEmpty(successMessage))
+                {
+                    <div class="success-message">
+                        <i class="fas fa-check-circle"></i>
+                        @successMessage
+                    </div>
+                }
+            </div>
+            
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CloseModal" disabled="@saving">Cancel</button>
+                <button class="btn btn-primary" @onclick="SaveSettings" disabled="@(saving || boardSettings == null)">
+                    @if (saving)
+                    {
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <span>Saving...</span>
+                    }
+                    else
+                    {
+                        <span>Save Changes</span>
+                    }
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+.modal-content.large {
+    max-width: 600px;
+}
+
+.settings-section {
+    margin-bottom: var(--space-xl);
+    padding-bottom: var(--space-lg);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.settings-section:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.settings-section h4 {
+    margin: 0 0 var(--space-lg) 0;
+    color: var(--text-primary);
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+}
+
+.radio-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+}
+
+.radio-option {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-md);
+    padding: var(--space-md);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.radio-option:hover {
+    border-color: var(--accent-primary);
+    background-color: var(--bg-secondary);
+}
+
+.radio-option input[type="radio"] {
+    margin: 0;
+    flex-shrink: 0;
+}
+
+.radio-content {
+    flex: 1;
+}
+
+.radio-content strong {
+    display: block;
+    color: var(--text-primary);
+    margin-bottom: var(--space-xs);
+}
+
+.radio-content small {
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.4;
+}
+
+.info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--space-lg);
+}
+
+.info-item {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+}
+
+.info-label {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    font-weight: var(--font-weight-medium);
+}
+
+.info-value-container {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+.info-value {
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+}
+
+.copy-btn {
+    padding: var(--space-xs);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
+}
+
+.copy-btn:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.loading-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-md);
+    padding: var(--space-xl);
+    color: var(--text-secondary);
+}
+
+.error-message, .success-message {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: var(--space-md);
+    border-radius: var(--radius-md);
+    margin-top: var(--space-md);
+}
+
+.error-message {
+    background: var(--danger-bg);
+    color: var(--danger-text);
+    border: 1px solid var(--danger-border);
+}
+
+.success-message {
+    background: var(--success-bg);
+    color: var(--success-text);
+    border: 1px solid var(--success-border);
+}
+
+@@media (max-width: 768px) {
+    .info-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .radio-option {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
+</style>
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public string BoardId { get; set; } = string.Empty;
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnSettingsSaved { get; set; }
+
+    private BoardSettingsDto? boardSettings;
+    private bool saving = false;
+    private string errorMessage = "";
+    private string successMessage = "";
+    private User? currentUser;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsVisible && !string.IsNullOrEmpty(BoardId) && boardSettings == null)
+        {
+            await LoadCurrentUser();
+            await LoadBoardSettings();
+        }
+    }
+
+    private async Task LoadCurrentUser()
+    {
+        try
+        {
+            var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            if (authState.User.Identity?.IsAuthenticated == true)
+            {
+                currentUser = await UserService.GetOrCreateUserAsync(authState.User);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading current user: {ex.Message}");
+            currentUser = null;
+        }
+    }
+
+    private async Task LoadBoardSettings()
+    {
+        try
+        {
+            errorMessage = "";
+            if (Guid.TryParse(BoardId, out var boardGuid))
+            {
+                // Use access check to ensure user has owner permission
+                var board = currentUser != null 
+                    ? await BoardService.GetBoardWithAccessCheckAsync(boardGuid, currentUser, BoardRole.Owner)
+                    : null;
+
+                if (board != null)
+                {
+                    boardSettings = new BoardSettingsDto
+                    {
+                        Id = board.Id,
+                        Name = board.Name,
+                        AccessLevel = board.AccessLevel,
+                        CreatedAt = board.CreatedAt,
+                        UpdatedAt = board.UpdatedAt,
+                        IsOwner = board.OwnerId == currentUser?.Id,
+                        CollaboratorsCount = board.Collaborators?.Count ?? 0
+                    };
+                }
+                else
+                {
+                    errorMessage = currentUser == null 
+                        ? "Authentication required to manage board settings"
+                        : "Board not found or you don't have owner permissions";
+                }
+            }
+            else
+            {
+                errorMessage = "Invalid board ID";
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading board settings: {ex.Message}");
+            errorMessage = "An error occurred while loading board settings";
+        }
+        
+        StateHasChanged();
+    }
+
+    private async Task SaveSettings()
+    {
+        if (boardSettings == null) return;
+        
+        try
+        {
+            saving = true;
+            errorMessage = "";
+            successMessage = "";
+            
+            if (Guid.TryParse(BoardId, out var boardGuid))
+            {
+                // Verify user has owner permissions before allowing updates
+                var board = currentUser != null 
+                    ? await BoardService.GetBoardWithAccessCheckAsync(boardGuid, currentUser, BoardRole.Owner)
+                    : null;
+
+                if (board != null)
+                {
+                    board.Name = boardSettings.Name;
+                    board.AccessLevel = boardSettings.AccessLevel;
+                    board.UpdatedAt = DateTime.UtcNow;
+                    
+                    await BoardService.UpdateBoardAsync(board);
+                    
+                    successMessage = "Board settings saved successfully!";
+                    await OnSettingsSaved.InvokeAsync();
+                    
+                    // Close modal after 1 second
+                    _ = Task.Delay(1000).ContinueWith(async t => 
+                    {
+                        await InvokeAsync(CloseModal);
+                    });
+                }
+                else
+                {
+                    errorMessage = currentUser == null 
+                        ? "Authentication required to save board settings"
+                        : "Board not found or you don't have owner permissions";
+                }
+            }
+            else
+            {
+                errorMessage = "Invalid board ID";
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving board settings: {ex.Message}");
+            errorMessage = "An error occurred while saving settings";
+        }
+        finally
+        {
+            saving = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task CopyBoardId()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", BoardId);
+            await JSRuntime.InvokeVoidAsync("showNotification", "Board ID copied to clipboard!", "success");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error copying board ID: {ex.Message}");
+        }
+    }
+
+    private async Task CloseModal()
+    {
+        boardSettings = null;
+        errorMessage = "";
+        successMessage = "";
+        saving = false;
+        currentUser = null;
+        await OnClose.InvokeAsync();
+    }
+
+    public class BoardSettingsDto
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public BoardAccessLevel AccessLevel { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public DateTime UpdatedAt { get; set; }
+        public bool IsOwner { get; set; }
+        public int CollaboratorsCount { get; set; }
+    }
+
+    public class UpdateBoardSettingsRequest
+    {
+        public string? Name { get; set; }
+        public BoardAccessLevel AccessLevel { get; set; }
+    }
+}

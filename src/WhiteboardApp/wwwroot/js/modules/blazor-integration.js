@@ -15,19 +15,37 @@ export function setBlazorReference(dotNetRef) {
     window.blazorReference = dotNetRef;
   }
 
-  dependencies.signalrClient.setBlazorReference(dotNetRef);
+  // Check if dependencies are available before using them
+  if (dependencies.signalrClient && typeof dependencies.signalrClient.setBlazorReference === 'function') {
+    dependencies.signalrClient.setBlazorReference(dotNetRef);
+  } else {
+    console.warn('SignalR client not available yet, storing Blazor reference for later');
+  }
 
   // Update dependencies that need Blazor reference
   const blazorRef = dotNetRef;
 
-  dependencies.toolManager.setDependencies({ blazorReference: blazorRef });
-  dependencies.elementFactory.setDependencies({ blazorReference: blazorRef });
-  dependencies.viewportManager.setDependencies({ blazorReference: blazorRef });
+  if (dependencies.toolManager && typeof dependencies.toolManager.setDependencies === 'function') {
+    dependencies.toolManager.setDependencies({ blazorReference: blazorRef });
+  }
+  
+  if (dependencies.elementFactory && typeof dependencies.elementFactory.setDependencies === 'function') {
+    dependencies.elementFactory.setDependencies({ blazorReference: blazorRef });
+  }
+  
+  if (dependencies.viewportManager && typeof dependencies.viewportManager.setDependencies === 'function') {
+    dependencies.viewportManager.setDependencies({ blazorReference: blazorRef });
+  }
 
   console.log('Blazor reference set across all modules');
 }
 
 export async function initializeSignalRConnection(boardId) {
+  if (!dependencies.signalrClient || typeof dependencies.signalrClient.initializeSignalR !== 'function') {
+    console.error('SignalR client not available for initialization');
+    return false;
+  }
+
   const result = await dependencies.signalrClient.initializeSignalR(boardId);
 
   // Update dependencies after SignalR connection is established
@@ -35,12 +53,14 @@ export async function initializeSignalRConnection(boardId) {
     console.log('SignalR connection established, updating dependencies...');
 
     // Update element factory dependencies with the actual connection
-    dependencies.elementFactory.setDependencies({
-      signalRConnection: dependencies.signalrClient.getConnection(),
-      currentBoardId: dependencies.signalrClient.getCurrentBoardId(),
-      updateStickyNoteContent: dependencies.signalrClient.updateStickyNoteContent,
-      updateTextElementContent: dependencies.signalrClient.updateTextElementContent
-    });
+    if (dependencies.elementFactory && typeof dependencies.elementFactory.setDependencies === 'function') {
+      dependencies.elementFactory.setDependencies({
+        signalRConnection: dependencies.signalrClient.getConnection(),
+        currentBoardId: dependencies.signalrClient.getCurrentBoardId(),
+        updateStickyNoteContent: dependencies.signalrClient.updateStickyNoteContent,
+        updateTextElementContent: dependencies.signalrClient.updateTextElementContent
+      });
+    }
 
     console.log('Dependencies updated with SignalR connection');
   }
@@ -49,12 +69,23 @@ export async function initializeSignalRConnection(boardId) {
 }
 
 export function clearCanvasFromBlazor() {
-  dependencies.elementFactory.elements.clear();
-  dependencies.elementFactory.clearSelection();
-  dependencies.canvasManager.redrawCanvas();
-  dependencies.viewportManager.updateMinimapImmediate();
+  if (dependencies.elementFactory && dependencies.elementFactory.elements) {
+    dependencies.elementFactory.elements.clear();
+  }
+  if (dependencies.elementFactory && typeof dependencies.elementFactory.clearSelection === 'function') {
+    dependencies.elementFactory.clearSelection();
+  }
+  if (dependencies.canvasManager && typeof dependencies.canvasManager.redrawCanvas === 'function') {
+    dependencies.canvasManager.redrawCanvas();
+  }
+  if (dependencies.viewportManager && typeof dependencies.viewportManager.updateMinimapImmediate === 'function') {
+    dependencies.viewportManager.updateMinimapImmediate();
+  }
 
-  if (dependencies.signalrClient.isConnected() && dependencies.signalrClient.getCurrentBoardId()) {
+  if (dependencies.signalrClient && 
+      typeof dependencies.signalrClient.isConnected === 'function' && 
+      dependencies.signalrClient.isConnected() && 
+      dependencies.signalrClient.getCurrentBoardId()) {
     dependencies.signalrClient.sendBoardCleared(dependencies.signalrClient.getCurrentBoardId());
   }
 }
@@ -65,25 +96,35 @@ export async function disconnectFromBoard() {
     console.log('Disconnecting from current board');
     
     // 1. Clear canvas elements and selection
-    dependencies.elementFactory.elements.clear();
-    dependencies.elementFactory.clearSelection();
+    if (dependencies.elementFactory && dependencies.elementFactory.elements) {
+      dependencies.elementFactory.elements.clear();
+    }
+    if (dependencies.elementFactory && typeof dependencies.elementFactory.clearSelection === 'function') {
+      dependencies.elementFactory.clearSelection();
+    }
     
     // 2. Clear collaborative cursors and selections
-    if (dependencies.signalrClient.cursors) {
+    if (dependencies.signalrClient && dependencies.signalrClient.cursors) {
       dependencies.signalrClient.cursors.clear();
     }
-    if (dependencies.signalrClient.collaborativeSelections) {
+    if (dependencies.signalrClient && dependencies.signalrClient.collaborativeSelections) {
       dependencies.signalrClient.collaborativeSelections.clear();
     }
     
     // 3. Clear canvas drawing
-    dependencies.canvasManager.clearCanvas();
+    if (dependencies.canvasManager && typeof dependencies.canvasManager.clearCanvas === 'function') {
+      dependencies.canvasManager.clearCanvas();
+    }
     
     // 4. Disconnect SignalR
-    await dependencies.signalrClient.disconnect();
+    if (dependencies.signalrClient && typeof dependencies.signalrClient.disconnect === 'function') {
+      await dependencies.signalrClient.disconnect();
+    }
     
     // 5. Update minimap after clearing
-    dependencies.viewportManager.updateMinimapImmediate();
+    if (dependencies.viewportManager && typeof dependencies.viewportManager.updateMinimapImmediate === 'function') {
+      dependencies.viewportManager.updateMinimapImmediate();
+    }
     
     console.log('Successfully disconnected from board');
   } catch (error) {
@@ -93,16 +134,28 @@ export async function disconnectFromBoard() {
 
 // Tool functions for Blazor
 export function setCurrentTool(tool) {
-  return dependencies.toolManager.setCurrentTool(tool);
+  if (dependencies.toolManager && typeof dependencies.toolManager.setCurrentTool === 'function') {
+    return dependencies.toolManager.setCurrentTool(tool);
+  }
+  console.warn('Tool manager not available, cannot set current tool');
+  return false;
 }
 
 export function updateCurrentTool(tool) {
-  return dependencies.toolManager.updateBlazorCurrentTool(tool);
+  if (dependencies.toolManager && typeof dependencies.toolManager.updateBlazorCurrentTool === 'function') {
+    return dependencies.toolManager.updateBlazorCurrentTool(tool);
+  }
+  console.warn('Tool manager not available, cannot update current tool');
+  return false;
 }
 
 // Main initialization for window/global access
 export function init() {
-  return dependencies.appCoordinator.initializeApplication();
+  if (dependencies.appCoordinator && typeof dependencies.appCoordinator.initializeApplication === 'function') {
+    return dependencies.appCoordinator.initializeApplication();
+  }
+  console.error('App coordinator not available for initialization');
+  return false;
 }
 
 // Setup global window exposure for Blazor interop
@@ -110,8 +163,17 @@ export function setupGlobalExposure() {
   if (typeof window === 'undefined') return;
 
   // Main functions
-  window.initializeApplication = dependencies.appCoordinator.initializeApplication;
-  window.initializeCanvas = () => dependencies.canvasManager.initializeCanvas();
+  window.initializeApplication = dependencies.appCoordinator?.initializeApplication || (() => {
+    console.error('App coordinator not available');
+    return false;
+  });
+  window.initializeCanvas = () => {
+    if (dependencies.canvasManager && typeof dependencies.canvasManager.initializeCanvas === 'function') {
+      return dependencies.canvasManager.initializeCanvas();
+    }
+    console.error('Canvas manager not available');
+    return false;
+  };
   window.initializeSignalR = initializeSignalRConnection;
   window.setBlazorReference = setBlazorReference;
   window.clearCanvasFromBlazor = clearCanvasFromBlazor;

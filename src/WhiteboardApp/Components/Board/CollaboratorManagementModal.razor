@@ -1,0 +1,634 @@
+@using WhiteboardApp.Models
+@using WhiteboardApp.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@inject BoardService BoardService
+@inject IUserService UserService
+@inject IJSRuntime JSRuntime
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<!-- Collaborator Management Modal -->
+@if (IsVisible)
+{
+    <div class="modal" @onclick="CloseModal">
+        <div class="modal-content large" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Manage Collaborators</h3>
+                <button class="modal-close" @onclick="CloseModal">&times;</button>
+            </div>
+            
+            <div class="modal-body">
+                <!-- Add Collaborator Section -->
+                <div class="collaborator-section">
+                    <h4>Add Collaborator</h4>
+                    <div class="add-collaborator-form">
+                        <div class="form-row">
+                            <div class="form-group flex-1">
+                                <input type="email" @bind="newCollaboratorEmail" @bind:event="oninput"
+                                       class="form-control" placeholder="Enter email address" />
+                            </div>
+                            <div class="form-group">
+                                <select @bind="newCollaboratorRole" class="form-control">
+                                    <option value="@BoardRole.Viewer">Viewer</option>
+                                    <option value="@BoardRole.Collaborator">Collaborator</option>
+                                </select>
+                            </div>
+                            <button class="btn btn-primary" @onclick="AddCollaborator" 
+                                    disabled="@(addingCollaborator || string.IsNullOrWhiteSpace(newCollaboratorEmail))">
+                                @if (addingCollaborator)
+                                {
+                                    <i class="fas fa-spinner fa-spin"></i>
+                                }
+                                else
+                                {
+                                    <i class="fas fa-plus"></i>
+                                    <span>Add</span>
+                                }
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Current Collaborators Section -->
+                <div class="collaborator-section">
+                    <h4>Current Collaborators</h4>
+                    
+                    @if (collaborators != null && collaborators.Any())
+                    {
+                        <div class="collaborators-list">
+                            @foreach (var collaborator in collaborators)
+                            {
+                                <div class="collaborator-item">
+                                    <div class="collaborator-info">
+                                        <div class="collaborator-avatar">
+                                            @GetInitials(collaborator.DisplayName ?? collaborator.Email ?? "?")
+                                        </div>
+                                        <div class="collaborator-details">
+                                            <div class="collaborator-name">
+                                                @(collaborator.DisplayName ?? collaborator.Username ?? "Unknown")
+                                                @if (collaborator.IsOwner)
+                                                {
+                                                    <span class="owner-badge">Owner</span>
+                                                }
+                                            </div>
+                                            <div class="collaborator-email">@collaborator.Email</div>
+                                            @if (collaborator.GrantedBy != null)
+                                            {
+                                                <div class="collaborator-meta">
+                                                    Added by @collaborator.GrantedBy on @collaborator.GrantedAt.ToString("MMM dd, yyyy")
+                                                </div>
+                                            }
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="collaborator-actions">
+                                        @if (!collaborator.IsOwner)
+                                        {
+                                            <select value="@collaborator.Role" @onchange="@((ChangeEventArgs e) => UpdateCollaboratorRole(collaborator.UserId, Enum.Parse<BoardRole>(e.Value!.ToString()!)))"
+                                                    class="role-select" disabled="@updatingRoles.Contains(collaborator.UserId)">
+                                                <option value="@BoardRole.Viewer">Viewer</option>
+                                                <option value="@BoardRole.Collaborator">Collaborator</option>
+                                            </select>
+                                            
+                                            <button class="btn btn-danger btn-sm" @onclick="@(() => RemoveCollaborator(collaborator.UserId))"
+                                                    disabled="@removingCollaborators.Contains(collaborator.UserId)"
+                                                    title="Remove collaborator">
+                                                @if (removingCollaborators.Contains(collaborator.UserId))
+                                                {
+                                                    <i class="fas fa-spinner fa-spin"></i>
+                                                }
+                                                else
+                                                {
+                                                    <i class="fas fa-trash"></i>
+                                                }
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <span class="role-display">Owner</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else if (loadingCollaborators)
+                    {
+                        <div class="loading-state">
+                            <i class="fas fa-spinner fa-spin"></i>
+                            <span>Loading collaborators...</span>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="empty-state">
+                            <i class="fas fa-users"></i>
+                            <span>No collaborators added yet</span>
+                        </div>
+                    }
+                </div>
+                
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div class="error-message">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        @errorMessage
+                    </div>
+                }
+                
+                @if (!string.IsNullOrEmpty(successMessage))
+                {
+                    <div class="success-message">
+                        <i class="fas fa-check-circle"></i>
+                        @successMessage
+                    </div>
+                }
+            </div>
+            
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CloseModal">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+.collaborator-section {
+    margin-bottom: var(--space-xl);
+    padding-bottom: var(--space-lg);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.collaborator-section:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.collaborator-section h4 {
+    margin: 0 0 var(--space-lg) 0;
+    color: var(--text-primary);
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+}
+
+.add-collaborator-form {
+    background: var(--bg-secondary);
+    padding: var(--space-lg);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+}
+
+.form-row {
+    display: flex;
+    gap: var(--space-md);
+    align-items: flex-end;
+}
+
+.flex-1 {
+    flex: 1;
+}
+
+.collaborators-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+}
+
+.collaborator-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-lg);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+}
+
+.collaborator-info {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    flex: 1;
+}
+
+.collaborator-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-full);
+    background: var(--primary);
+    color: var(--bg-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-bold);
+    flex-shrink: 0;
+}
+
+.collaborator-details {
+    flex: 1;
+    min-width: 0;
+}
+
+.collaborator-name {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--text-primary);
+    margin-bottom: var(--space-xs);
+}
+
+.owner-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--space-xs) var(--space-sm);
+    background: var(--primary);
+    color: var(--bg-primary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-bold);
+    border-radius: var(--radius-sm);
+    text-transform: uppercase;
+}
+
+.collaborator-email {
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    margin-bottom: var(--space-xs);
+    word-break: break-word;
+}
+
+.collaborator-meta {
+    color: var(--text-tertiary);
+    font-size: var(--font-size-xs);
+}
+
+.collaborator-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    flex-shrink: 0;
+}
+
+.role-select {
+    min-width: 120px;
+    padding: var(--space-sm);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+}
+
+.role-display {
+    padding: var(--space-sm) var(--space-md);
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    font-weight: var(--font-weight-medium);
+}
+
+.btn-sm {
+    padding: var(--space-sm);
+    font-size: var(--font-size-sm);
+    min-width: auto;
+}
+
+.loading-state, .empty-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-md);
+    padding: var(--space-xl);
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+}
+
+@@media (max-width: 768px) {
+    .form-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .collaborator-item {
+        flex-direction: column;
+        align-items: stretch;
+        gap: var(--space-lg);
+    }
+    
+    .collaborator-actions {
+        justify-content: space-between;
+    }
+}
+</style>
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public string BoardId { get; set; } = string.Empty;
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnCollaboratorsChanged { get; set; }
+
+    private List<CollaboratorDto>? collaborators;
+    private string newCollaboratorEmail = "";
+    private BoardRole newCollaboratorRole = BoardRole.Collaborator;
+    private bool loadingCollaborators = false;
+    private bool addingCollaborator = false;
+    private HashSet<Guid> updatingRoles = new();
+    private HashSet<Guid> removingCollaborators = new();
+    private string errorMessage = "";
+    private string successMessage = "";
+    private User? currentUser;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsVisible && !string.IsNullOrEmpty(BoardId) && collaborators == null)
+        {
+            await LoadCurrentUser();
+            await LoadCollaborators();
+        }
+    }
+
+    private async Task LoadCurrentUser()
+    {
+        try
+        {
+            var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            if (authState.User.Identity?.IsAuthenticated == true)
+            {
+                currentUser = await UserService.GetOrCreateUserAsync(authState.User);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading current user: {ex.Message}");
+            currentUser = null;
+        }
+    }
+
+    private async Task LoadCollaborators()
+    {
+        try
+        {
+            loadingCollaborators = true;
+            errorMessage = "";
+            
+            if (Guid.TryParse(BoardId, out var boardGuid))
+            {
+                // Use access check to ensure user has owner permission to manage collaborators
+                var board = currentUser != null 
+                    ? await BoardService.GetBoardWithAccessCheckAsync(boardGuid, currentUser, BoardRole.Owner)
+                    : null;
+
+                if (board != null)
+                {
+                    collaborators = new List<CollaboratorDto>();
+                    
+                    // Add owner first
+                    collaborators.Add(new CollaboratorDto
+                    {
+                        UserId = board.Owner.Id,
+                        DisplayName = board.Owner.DisplayName,
+                        Email = board.Owner.Email,
+                        Username = board.Owner.Username,
+                        Role = BoardRole.Owner,
+                        GrantedAt = board.CreatedAt,
+                        GrantedBy = null,
+                        IsOwner = true
+                    });
+                    
+                    // Add collaborators
+                    if (board.Collaborators != null)
+                    {
+                        foreach (var collaboration in board.Collaborators.Where(c => c.UserId != board.OwnerId))
+                        {
+                            collaborators.Add(new CollaboratorDto
+                            {
+                                UserId = collaboration.UserId,
+                                DisplayName = collaboration.User.DisplayName,
+                                Email = collaboration.User.Email,
+                                Username = collaboration.User.Username,
+                                Role = collaboration.Role,
+                                GrantedAt = collaboration.GrantedAt,
+                                GrantedBy = collaboration.GrantedByUser?.DisplayName,
+                                IsOwner = false
+                            });
+                        }
+                    }
+                }
+                else
+                {
+                    errorMessage = currentUser == null 
+                        ? "Authentication required to manage collaborators"
+                        : "Board not found or you don't have owner permissions";
+                }
+            }
+            else
+            {
+                errorMessage = "Invalid board ID";
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading collaborators: {ex.Message}");
+            errorMessage = "An error occurred while loading collaborators";
+        }
+        finally
+        {
+            loadingCollaborators = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task AddCollaborator()
+    {
+        if (string.IsNullOrWhiteSpace(newCollaboratorEmail))
+            return;
+
+        if (currentUser == null)
+        {
+            errorMessage = "Authentication required to add collaborators";
+            return;
+        }
+            
+        try
+        {
+            addingCollaborator = true;
+            errorMessage = "";
+            successMessage = "";
+            
+            if (Guid.TryParse(BoardId, out var boardGuid))
+            {
+                var targetUser = await UserService.GetUserByEmailAsync(newCollaboratorEmail.Trim());
+                if (targetUser == null)
+                {
+                    errorMessage = "User not found with that email address";
+                    return;
+                }
+                
+                // Check if user is already a collaborator
+                var existingCollaborator = collaborators?.FirstOrDefault(c => c.UserId == targetUser.Id);
+                if (existingCollaborator != null)
+                {
+                    errorMessage = "User is already a collaborator on this board";
+                    return;
+                }
+                
+                // Add collaborator (pass current user as the one granting access)
+                await BoardService.AddCollaboratorAsync(boardGuid, targetUser.Id, newCollaboratorRole, currentUser?.Id ?? Guid.Empty);
+                
+                successMessage = "Collaborator added successfully!";
+                newCollaboratorEmail = "";
+                newCollaboratorRole = BoardRole.Collaborator;
+                
+                // Reload collaborators list
+                await LoadCollaborators();
+                await OnCollaboratorsChanged.InvokeAsync();
+            }
+            else
+            {
+                errorMessage = "Invalid board ID";
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error adding collaborator: {ex.Message}");
+            errorMessage = "An error occurred while adding the collaborator";
+        }
+        finally
+        {
+            addingCollaborator = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task UpdateCollaboratorRole(Guid userId, BoardRole newRole)
+    {
+        try
+        {
+            updatingRoles.Add(userId);
+            errorMessage = "";
+            successMessage = "";
+            
+            if (Guid.TryParse(BoardId, out var boardGuid))
+            {
+                await BoardService.UpdateCollaboratorRoleAsync(boardGuid, userId, newRole);
+                
+                // Update local list
+                var collaborator = collaborators?.FirstOrDefault(c => c.UserId == userId);
+                if (collaborator != null)
+                {
+                    collaborator.Role = newRole;
+                }
+                
+                successMessage = "Collaborator role updated successfully!";
+                await OnCollaboratorsChanged.InvokeAsync();
+            }
+            else
+            {
+                errorMessage = "Invalid board ID";
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error updating collaborator role: {ex.Message}");
+            errorMessage = "An error occurred while updating the collaborator role";
+        }
+        finally
+        {
+            updatingRoles.Remove(userId);
+            StateHasChanged();
+        }
+    }
+
+    private async Task RemoveCollaborator(Guid userId)
+    {
+        try
+        {
+            removingCollaborators.Add(userId);
+            errorMessage = "";
+            successMessage = "";
+            
+            if (Guid.TryParse(BoardId, out var boardGuid))
+            {
+                await BoardService.RemoveCollaboratorAsync(boardGuid, userId);
+                
+                // Remove from local list
+                if (collaborators != null)
+                {
+                    collaborators.RemoveAll(c => c.UserId == userId);
+                }
+                
+                successMessage = "Collaborator removed successfully!";
+                await OnCollaboratorsChanged.InvokeAsync();
+            }
+            else
+            {
+                errorMessage = "Invalid board ID";
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error removing collaborator: {ex.Message}");
+            errorMessage = "An error occurred while removing the collaborator";
+        }
+        finally
+        {
+            removingCollaborators.Remove(userId);
+            StateHasChanged();
+        }
+    }
+
+    private string GetInitials(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return "?";
+        
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 2)
+        {
+            return $"{parts[0][0]}{parts[1][0]}".ToUpper();
+        }
+        else if (parts.Length == 1)
+        {
+            return parts[0].Length >= 2 ? parts[0].Substring(0, 2).ToUpper() : parts[0][0].ToString().ToUpper();
+        }
+        return "?";
+    }
+
+    private async Task CloseModal()
+    {
+        collaborators = null;
+        newCollaboratorEmail = "";
+        newCollaboratorRole = BoardRole.Collaborator;
+        errorMessage = "";
+        successMessage = "";
+        updatingRoles.Clear();
+        removingCollaborators.Clear();
+        currentUser = null;
+        await OnClose.InvokeAsync();
+    }
+
+    public class CollaboratorDto
+    {
+        public Guid UserId { get; set; }
+        public string? DisplayName { get; set; }
+        public string? Email { get; set; }
+        public string? Username { get; set; }
+        public BoardRole Role { get; set; }
+        public DateTime GrantedAt { get; set; }
+        public string? GrantedBy { get; set; }
+        public bool IsOwner { get; set; }
+    }
+
+    public class AddCollaboratorRequest
+    {
+        public string Email { get; set; } = string.Empty;
+        public BoardRole Role { get; set; } = BoardRole.Collaborator;
+    }
+
+    public class UpdateCollaboratorRoleRequest
+    {
+        public BoardRole Role { get; set; }
+    }
+}

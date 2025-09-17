@@ -707,7 +707,7 @@ function setupEventHandlers() {
         // Rejoin board if we have one
         if (currentBoardId) {
             try {
-                await signalRConnection.invoke("JoinBoard", currentBoardId, "Anonymous User");
+                await signalRConnection.invoke("JoinBoard", currentBoardId);
                 console.log("Rejoined board after reconnection");
                 
                 // Wait a moment for Blazor connection to stabilize before reloading elements
@@ -785,6 +785,9 @@ async function loadExistingElements(boardId) {
         let blazorRef = dependencies.blazorReference;
         if (!blazorRef && typeof window !== 'undefined' && window.blazorReference) {
             blazorRef = window.blazorReference;
+        }
+        if (!blazorRef && blazorReference) {
+            blazorRef = blazorReference;
         }
 
         if (!blazorRef) {

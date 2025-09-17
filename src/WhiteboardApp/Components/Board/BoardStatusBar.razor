@@ -1,5 +1,7 @@
 @using Microsoft.AspNetCore.SignalR.Client
 @using WhiteboardApp.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@using WhiteboardApp.Models
 
 <div class="status-bar">
     <div class="status-left">
@@ -21,6 +23,22 @@
                     </div>
                 </div>
                 
+                <!-- Board Management Section - Only for Board Owners -->
+                @if (currentUser != null && isOwner)
+                {
+                    <div class="board-menu-section">
+                        <div class="board-menu-section-title">Board Management</div>
+                        <div class="board-menu-item" @onclick="ShowBoardSettings">
+                            <span class="menu-icon">⚙️</span>
+                            Board Settings
+                        </div>
+                        <div class="board-menu-item" @onclick="ShowCollaboratorManagement">
+                            <span class="menu-icon">👥</span>
+                            Manage Collaborators
+                        </div>
+                    </div>
+                }
+                
                 <!-- Board Actions Section -->
                 <div class="board-menu-section">
                     <div class="board-menu-section-title">Board Actions</div>
@@ -28,10 +46,13 @@
                         <span class="menu-icon">📋</span>
                         Duplicate Board
                     </div>
-                    <div class="board-menu-item danger" @onclick="ShowClearConfirmation">
-                        <span class="menu-icon">🗑️</span>
-                        Clear Board
-                    </div>
+                    @if (currentUser != null && isOwner)
+                    {
+                        <div class="board-menu-item danger" @onclick="ShowClearConfirmation">
+                            <span class="menu-icon">🗑️</span>
+                            Clear Board
+                        </div>
+                    }
                 </div>
 
                 <!-- Export Section -->
@@ -92,7 +113,7 @@
                     </div>
                     <div class="info-row">
                         <span class="info-label">Visibility:</span>
-                        <span class="info-value">@(boardStats.IsPublic ? "Public" : "Unlisted")</span>
+                        <span class="info-value">@GetBoardAccessLevelDisplay(boardStats)</span>
                     </div>
                     @if (boardStats.HasAdminPin)
                     {
@@ -183,9 +204,23 @@
     </div>
 }
 
+<!-- Board Settings Modal -->
+<BoardSettingsModal IsVisible="@showBoardSettingsModal" 
+                   BoardId="@BoardId" 
+                   OnClose="HideBoardSettingsModal"
+                   OnSettingsSaved="OnBoardSettingsChanged" />
+
+<!-- Collaborator Management Modal -->
+<CollaboratorManagementModal IsVisible="@showCollaboratorModal" 
+                            BoardId="@BoardId" 
+                            OnClose="HideCollaboratorModal"
+                            OnCollaboratorsChanged="OnCollaboratorsChanged" />
+
 @inject IJSRuntime JSRuntime
 @inject BoardService BoardService
 @inject ExportService ExportService
+@inject IUserService UserService
+@inject AuthenticationStateProvider AuthenticationStateProvider
 
 @code {
     [Parameter] public string BoardName { get; set; } = string.Empty;
@@ -198,9 +233,13 @@
     private bool showBoardInfoModal = false;
     private bool showClearConfirmModal = false;
     private bool showDuplicateModal = false;
+    private bool showBoardSettingsModal = false;
+    private bool showCollaboratorModal = false;
     private BoardStats? boardStats = null;
     private string confirmationBoardName = string.Empty;
     private string newBoardName = string.Empty;
+    private User? currentUser = null;
+    private bool isOwner = false;
 
     private void ToggleBoardMenu()
     {
@@ -234,7 +273,16 @@
     private void ShowClearConfirmation()
     {
         showBoardMenu = false;
-        showClearConfirmModal = true;
+        
+        // Double-check permissions before showing clear confirmation
+        if (currentUser != null && isOwner)
+        {
+            showClearConfirmModal = true;
+        }
+        else
+        {
+            Console.WriteLine("Access denied: User is not the board owner");
+        }
     }
 
     private void HideClearConfirmModal()
@@ -354,9 +402,106 @@
         }
     }
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
-        // Close menu when clicking elsewhere
+        await LoadCurrentUserAndRole();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Reload user role when BoardId changes
+        if (!string.IsNullOrEmpty(BoardId))
+        {
+            await LoadCurrentUserAndRole();
+        }
+    }
+
+    private async Task LoadCurrentUserAndRole()
+    {
+        try
+        {
+            var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            if (authState.User.Identity?.IsAuthenticated == true)
+            {
+                currentUser = await UserService.GetOrCreateUserAsync(authState.User);
+                
+                // Check if user is owner of this board
+                if (Guid.TryParse(BoardId, out var boardGuid))
+                {
+                    var board = await BoardService.GetBoardAsync(boardGuid);
+                    isOwner = board != null && board.OwnerId == currentUser.Id;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading user role: {ex.Message}");
+            currentUser = null;
+            isOwner = false;
+        }
+    }
+
+    private void ShowBoardSettings()
+    {
+        showBoardMenu = false;
+        
+        // Double-check permissions before opening modal
+        if (currentUser != null && isOwner)
+        {
+            showBoardSettingsModal = true;
+        }
+        else
+        {
+            Console.WriteLine("Access denied: User is not the board owner");
+        }
+    }
+
+    private void HideBoardSettingsModal()
+    {
+        showBoardSettingsModal = false;
+    }
+
+    private async Task OnBoardSettingsChanged()
+    {
+        // Optionally refresh board data or notify parent component
+        // This could trigger a board name refresh in the parent component
         StateHasChanged();
+    }
+
+    private void ShowCollaboratorManagement()
+    {
+        showBoardMenu = false;
+        
+        // Double-check permissions before opening modal
+        if (currentUser != null && isOwner)
+        {
+            showCollaboratorModal = true;
+        }
+        else
+        {
+            Console.WriteLine("Access denied: User is not the board owner");
+        }
+    }
+
+    private void HideCollaboratorModal()
+    {
+        showCollaboratorModal = false;
+    }
+
+    private async Task OnCollaboratorsChanged()
+    {
+        // Optionally refresh board data or notify parent component
+        StateHasChanged();
+    }
+
+    private string GetBoardAccessLevelDisplay(BoardStats boardStats)
+    {
+        return boardStats.AccessLevel switch
+        {
+            BoardAccessLevel.Private => "Private",
+            BoardAccessLevel.Unlisted => "Unlisted", 
+            BoardAccessLevel.Public => "Public",
+            _ => "Unknown"
+        };
     }
 }

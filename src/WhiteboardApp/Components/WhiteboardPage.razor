@@ -19,7 +19,46 @@
 
 <link href="css/board-components.css" rel="stylesheet" />
 
-@if (hasAccessError)
+<style>
+.loading-page {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    background: var(--bg-primary, #ffffff);
+}
+
+.loading-container {
+    text-align: center;
+    color: var(--text-primary, #333);
+}
+
+.loading-spinner {
+    border: 3px solid var(--border-color, #f3f3f3);
+    border-top: 3px solid var(--accent-primary, #007bff);
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 16px;
+}
+
+@@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+</style>
+
+@if (isLoadingAccess)
+{
+    <div class="loading-page">
+        <div class="loading-container">
+            <div class="loading-spinner"></div>
+            <p>Loading board...</p>
+        </div>
+    </div>
+}
+else if (hasAccessError)
 {
     <div class="access-denied-page">
         <header class="access-denied-header">
@@ -122,6 +161,7 @@ else
     private string boardName = "Loading...";
     private bool signalRConnected = false;
     private string currentUserName = "Anonymous";
+    private bool isLoadingAccess = true; // Start in loading state
     private bool hasAccessError = false;
     private string accessErrorMessage = "";
     
@@ -130,14 +170,18 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadBoardInfo();
-        // Don't load user immediately - wait for OnAfterRenderAsync
+        // Don't do any access checking during prerender - just set loading state
+        isLoadingAccess = true;
+        hasAccessError = false;
+        boardName = "Loading...";
     }
 
     protected override async Task OnParametersSetAsync()
     {
-        // Reload board info when BoardId parameter changes
-        await LoadBoardInfo();
+        // Ensure we're in loading state when parameters change
+        isLoadingAccess = true;
+        hasAccessError = false;
+        boardName = "Loading...";
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -145,8 +189,16 @@ else
         if (firstRender)
         {
             await LoadCurrentUser(); // Load user after authentication is established
-            await InitializeCanvas();
-            await InitializeSignalR();
+            await LoadBoardInfo(); // Reload board info now that we have user context
+            
+            // Only initialize canvas and SignalR if we have access to the board
+            if (!hasAccessError)
+            {
+                // Wait a bit to ensure DOM is fully rendered
+                await Task.Delay(100);
+                await InitializeCanvas();
+                await InitializeSignalR();
+            }
         }
     }
 
@@ -154,6 +206,7 @@ else
     {
         try
         {
+            isLoadingAccess = true; // Set loading while checking access
             hasAccessError = false;
             accessErrorMessage = "";
             
@@ -169,8 +222,9 @@ else
                     {
                         currentUser = await UserService.GetOrCreateUserAsync(authState.User);
                     }
-                    catch
+                    catch (Exception ex)
                     {
+                        Console.WriteLine($"WhiteboardPage: Failed to load user: {ex.Message}");
                         // Fall back to anonymous access if user service fails
                         currentUser = null;
                     }
@@ -187,7 +241,7 @@ else
                 {
                     // Anonymous user - check if board allows anonymous access
                     var boardInfo = await BoardService.GetBoardAsync(boardGuid);
-                    if (boardInfo != null && (boardInfo.AccessLevel == BoardAccessLevel.Public || boardInfo.AccessLevel == BoardAccessLevel.LinkSharing))
+                    if (boardInfo != null && (boardInfo.AccessLevel == BoardAccessLevel.Public || boardInfo.AccessLevel == BoardAccessLevel.Unlisted))
                     {
                         board = boardInfo;
                     }
@@ -229,6 +283,11 @@ else
             hasAccessError = true;
             accessErrorMessage = "An error occurred while loading the board.";
             boardName = "Error Loading Board";
+            StateHasChanged();
+        }
+        finally
+        {
+            isLoadingAccess = false; // Always stop loading regardless of success/failure
             StateHasChanged();
         }
     }
@@ -301,19 +360,38 @@ else
 
     private async Task InitializeCanvas()
     {
-        try
+        int maxRetries = 3;
+        int delay = 200;
+        
+        for (int i = 0; i < maxRetries; i++)
         {
-            // Initialize the new modular system
-            await JSRuntime.InvokeVoidAsync("initializeApplication");
-            
-            // Set up reference for JavaScript to call back to Blazor
-            var dotNetRef = DotNetObjectReference.Create(this);
-            await JSRuntime.InvokeVoidAsync("setBlazorReference", dotNetRef);
+            try
+            {
+                Console.WriteLine($"Attempting canvas initialization (attempt {i + 1}/{maxRetries})");
+                
+                // Initialize the new modular system
+                await JSRuntime.InvokeVoidAsync("initializeApplication");
+                
+                // Set up reference for JavaScript to call back to Blazor
+                var dotNetRef = DotNetObjectReference.Create(this);
+                await JSRuntime.InvokeVoidAsync("setBlazorReference", dotNetRef);
+                
+                Console.WriteLine("Canvas initialization successful");
+                return; // Success, exit the retry loop
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Canvas initialization attempt {i + 1} failed: {ex.Message}");
+                
+                if (i < maxRetries - 1) // Don't delay on the last attempt
+                {
+                    await Task.Delay(delay);
+                    delay *= 2; // Exponential backoff
+                }
+            }
         }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Canvas initialization failed: {ex.Message}");
-        }
+        
+        Console.WriteLine("Canvas initialization failed after all retry attempts");
     }
 
     private async Task InitializeSignalR()
@@ -597,7 +675,7 @@ else
 
     private void NavigateToLogin()
     {
-        Navigation.NavigateTo("/Account/Login");
+        Navigation.NavigateTo("/Account/Login", forceLoad: true);
     }
 
     private void NavigateToHome()

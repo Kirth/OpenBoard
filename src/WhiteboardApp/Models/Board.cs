@@ -26,6 +26,6 @@ public class Board
 public enum BoardAccessLevel
 {
     Private = 1,        // Only owner and explicitly granted collaborators
-    LinkSharing = 2,    // Anyone with the link can join as collaborator
+    Unlisted = 2,       // Anyone with the board ID can access (not listed publicly)
     Public = 3          // Listed publicly, anyone can join as collaborator
 }

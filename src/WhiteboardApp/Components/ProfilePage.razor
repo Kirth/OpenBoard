@@ -1,0 +1,501 @@
+@page "/profile"
+@using WhiteboardApp.Services
+@using WhiteboardApp.Models
+@using Microsoft.AspNetCore.Components.Authorization
+@inject IUserService UserService
+@inject BoardService BoardService
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Profile - OpenBoard</PageTitle>
+
+<link href="css/components.css" rel="stylesheet" />
+
+<StandardPageLayout PageTitle="User Profile" PageDescription="Manage your account settings and preferences">
+    <div class="profile-container">
+        <AuthorizeView>
+            <Authorized>
+                @if (currentUser != null)
+                {
+                    <section class="join-section">
+                        <h2>Account Information</h2>
+                        
+                        <div class="profile-info">
+                            <div class="profile-avatar">
+                                @if (!string.IsNullOrEmpty(currentUser.DisplayName))
+                                {
+                                    @GetInitials(currentUser.DisplayName)
+                                }
+                                else
+                                {
+                                    <i class="fas fa-user"></i>
+                                }
+                            </div>
+                            
+                            <div class="profile-details">
+                                <div class="form-group">
+                                    <label>Email</label>
+                                    <input type="email" value="@currentUser.Email" readonly />
+                                    <small class="text-muted">Managed by your identity provider</small>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label>Display Name</label>
+                                    <input type="text" @bind="currentUser.DisplayName" @bind:event="oninput" />
+                                    <small class="text-muted">How your name appears to other users</small>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label>Theme Preference</label>
+                                    <select @bind="currentUser.Theme" @bind:event="onchange">
+                                        <option value="auto">Auto (Follow system)</option>
+                                        <option value="light">Light</option>
+                                        <option value="dark">Dark</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label>Time Zone</label>
+                                    <input type="text" @bind="currentUser.TimeZone" @bind:event="oninput" placeholder="e.g., America/New_York" />
+                                    <small class="text-muted">Used for displaying timestamps</small>
+                                </div>
+                                
+                                <div class="modal-actions">
+                                    <button class="primary" @onclick="SaveProfile" disabled="@saving">
+                                        @if (saving)
+                                        {
+                                            <span>Saving...</span>
+                                        }
+                                        else
+                                        {
+                                            <span>Save Changes</span>
+                                        }
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                    
+                    <section class="join-section">
+                        <h2>Account Statistics</h2>
+                        
+                        <div class="stats-grid">
+                            <div class="stat-item">
+                                <div class="stat-value">@ownedBoardsCount</div>
+                                <div class="stat-label">Boards Owned</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value">@collaborationCount</div>
+                                <div class="stat-label">Collaborations</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value">@FormatDate(currentUser.CreatedAt)</div>
+                                <div class="stat-label">Member Since</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value">@FormatDate(currentUser.LastLoginAt)</div>
+                                <div class="stat-label">Last Login</div>
+                            </div>
+                        </div>
+                        
+                        <div class="quick-actions">
+                            <button class="link-btn" @onclick="NavigateToMyBoards">
+                                <i class="fas fa-clipboard-list icon-sm"></i>
+                                View My Boards
+                            </button>
+                            <button class="link-btn" @onclick="NavigateToHome">
+                                <i class="fas fa-home icon-sm"></i>
+                                Go to Home
+                            </button>
+                        </div>
+                    </section>
+                }
+                else
+                {
+                    <section class="join-section">
+                        <div class="empty-state">
+                            <p>Loading profile information...</p>
+                        </div>
+                    </section>
+                }
+                
+                @if (!string.IsNullOrEmpty(successMessage))
+                {
+                    <div class="success-message">
+                        @successMessage
+                    </div>
+                }
+                
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div class="error-message">
+                        @errorMessage
+                    </div>
+                }
+            </Authorized>
+            <NotAuthorized>
+                <section class="join-section">
+                    <div class="empty-state">
+                        <h3>Sign In Required</h3>
+                        <p>Please sign in to view your profile.</p>
+                        <button class="link-btn" @onclick="NavigateToLogin">
+                            <i class="fas fa-sign-in-alt icon-sm"></i>
+                            Sign In
+                        </button>
+                    </div>
+                </section>
+            </NotAuthorized>
+        </AuthorizeView>
+    </div>
+</StandardPageLayout>
+
+<style>
+.join-section {
+    background: var(--bg-primary);
+    border-radius: var(--radius-lg);
+    padding: var(--space-2xl);
+    margin-bottom: var(--space-3xl);
+    border: 1px solid var(--border-color);
+}
+
+.join-section h2 {
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+    margin: 0 0 var(--space-xl) 0;
+    color: var(--text-primary);
+}
+
+.quick-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+}
+
+.link-btn {
+    background: none;
+    border: none;
+    color: var(--primary);
+    cursor: pointer;
+    text-decoration: underline;
+    font-size: inherit;
+}
+
+.link-btn:hover {
+    color: var(--primary-hover);
+}
+
+.empty-state {
+    text-align: center;
+    padding: var(--space-3xl) var(--space-xl);
+    color: var(--text-secondary);
+}
+
+.modal-actions {
+    display: flex;
+    gap: var(--space-md);
+    justify-content: flex-end;
+    margin-top: var(--space-xl);
+}
+
+.modal-actions button {
+    padding: var(--space-md) var(--space-xl);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    font-weight: var(--font-weight-medium);
+    cursor: pointer;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+.modal-actions button.primary {
+    background: var(--primary);
+    color: var(--bg-primary);
+    border-color: var(--primary);
+}
+
+.modal-actions button:hover:not(:disabled) {
+    background: var(--bg-secondary);
+}
+
+.modal-actions button.primary:hover:not(:disabled) {
+    background: var(--primary-hover);
+}
+
+.modal-actions button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.success-message {
+    background: var(--success-bg, #d4edda);
+    color: var(--success-text, #155724);
+    padding: var(--space-md);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--success-border, #c3e6cb);
+    margin: var(--space-lg) 0;
+}
+
+.error-message {
+    background: var(--error-bg, #f8d7da);
+    color: var(--error-text, #721c24);
+    padding: var(--space-md);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--error-border, #f5c6cb);
+    margin: var(--space-lg) 0;
+}
+
+.profile-info {
+    display: flex;
+    gap: var(--space-xl);
+    align-items: flex-start;
+    margin-bottom: var(--space-xl);
+}
+
+.profile-avatar {
+    width: 80px;
+    height: 80px;
+    border-radius: var(--radius-full);
+    background: var(--primary);
+    color: var(--bg-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-bold);
+    flex-shrink: 0;
+}
+
+.profile-details {
+    flex: 1;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: var(--space-xl);
+    margin-bottom: var(--space-xl);
+}
+
+.stat-item {
+    text-align: center;
+    padding: var(--space-lg);
+    background: var(--bg-secondary);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-color);
+}
+
+.stat-number {
+    display: block;
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--primary);
+    margin-bottom: var(--space-xs);
+}
+
+.stat-label {
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+}
+
+.form-group {
+    margin-bottom: var(--space-lg);
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: var(--space-xs);
+    font-weight: var(--font-weight-medium);
+    color: var(--text-primary);
+}
+
+.form-group input {
+    width: 100%;
+    padding: var(--space-md);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-base);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+.form-group input:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 0.2rem rgba(59, 130, 246, 0.25);
+}
+
+.form-group small {
+    display: block;
+    margin-top: var(--space-xs);
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+}
+
+.text-muted {
+    color: var(--text-secondary);
+}
+
+select {
+    width: 100%;
+    padding: var(--space-md);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-base);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+select:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 0.2rem rgba(59, 130, 246, 0.25);
+}
+
+input[readonly] {
+    background: var(--bg-secondary, #f8f9fa);
+    color: var(--text-secondary, #666);
+    cursor: not-allowed;
+}
+
+input[readonly]:focus {
+    border-color: var(--border-color);
+    box-shadow: none;
+}
+
+@@media (max-width: 768px) {
+    .profile-info {
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+    }
+    
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: var(--space-lg);
+    }
+}
+</style>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+    
+    private User? currentUser;
+    private int ownedBoardsCount = 0;
+    private int collaborationCount = 0;
+    private bool saving = false;
+    private string successMessage = "";
+    private string errorMessage = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUserProfile();
+    }
+
+    private async Task LoadUserProfile()
+    {
+        try
+        {
+            if (AuthenticationStateTask != null)
+            {
+                var authState = await AuthenticationStateTask;
+                if (authState.User.Identity?.IsAuthenticated == true)
+                {
+                    currentUser = await UserService.GetOrCreateUserAsync(authState.User);
+                    
+                    // Load statistics
+                    var ownedBoards = await BoardService.GetUserOwnedBoardsAsync(currentUser);
+                    ownedBoardsCount = ownedBoards?.Count ?? 0;
+                    
+                    collaborationCount = currentUser.BoardCollaborations?.Count ?? 0;
+                    
+                    StateHasChanged();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading user profile: {ex.Message}");
+            errorMessage = "Failed to load profile information.";
+        }
+    }
+
+    private async Task SaveProfile()
+    {
+        if (currentUser == null) return;
+        
+        try
+        {
+            saving = true;
+            successMessage = "";
+            errorMessage = "";
+            
+            // Update the user
+            await UserService.UpdateUserAsync(currentUser);
+            
+            // Apply theme change immediately
+            if (!string.IsNullOrEmpty(currentUser.Theme))
+            {
+                await JSRuntime.InvokeVoidAsync("setTheme", currentUser.Theme);
+            }
+            
+            successMessage = "Profile updated successfully!";
+            
+            // Clear success message after 3 seconds
+            _ = Task.Delay(3000).ContinueWith(t => 
+            {
+                successMessage = "";
+                InvokeAsync(StateHasChanged);
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving profile: {ex.Message}");
+            errorMessage = "Failed to save profile changes.";
+        }
+        finally
+        {
+            saving = false;
+            StateHasChanged();
+        }
+    }
+
+    private string GetInitials(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return "?";
+        
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 2)
+        {
+            return $"{parts[0][0]}{parts[1][0]}".ToUpper();
+        }
+        else if (parts.Length == 1)
+        {
+            return parts[0].Length >= 2 ? parts[0].Substring(0, 2).ToUpper() : parts[0][0].ToString().ToUpper();
+        }
+        return "?";
+    }
+
+    private string FormatDate(DateTime date)
+    {
+        return date.ToString("MMM d, yyyy");
+    }
+
+    private void NavigateToMyBoards()
+    {
+        Navigation.NavigateTo("/");
+    }
+
+    private void NavigateToHome()
+    {
+        Navigation.NavigateTo("/");
+    }
+
+    private void NavigateToLogin()
+    {
+        var returnUrl = Uri.EscapeDataString(Navigation.Uri);
+        Navigation.NavigateTo($"/Account/Login?returnUrl={returnUrl}", forceLoad: true);
+    }
+}

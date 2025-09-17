@@ -10,104 +10,167 @@
 
 <link href="css/home.css" rel="stylesheet" />
 
-<div class="home-container">
-    <header class="header">
-        <div class="header-content">
-            <div class="header-left">
-                <h1>OpenBoard</h1>
-                <p>Real-time collaborative whiteboard</p>
-            </div>
-            <div class="header-right">
-                <UserMenu />
+<StandardPageLayout PageTitle="OpenBoard" PageDescription="Real-time collaborative whiteboard">
+    <div class="home-content home-wide">
+        <!-- Compact Join/Create Header -->
+        <div class="home-header">
+            <div class="home-header-content">
+                <div class="join-create-compact">
+                    <div class="join-board-compact">
+                        <input type="text" placeholder="Enter Board ID to join..." @bind="boardId" @oninput="ClearError" />
+                        <button @onclick="JoinBoard" disabled="@string.IsNullOrWhiteSpace(boardId)" class="join-btn-compact">
+                            <i class="fas fa-sign-in-alt"></i>
+                            Join
+                        </button>
+                    </div>
+                    <div class="divider-compact">or</div>
+                    <button class="create-btn-compact" @onclick="ShowCreateModal">
+                        <i class="fas fa-plus"></i>
+                        Create Board
+                    </button>
+                </div>
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div class="error-message-compact">@errorMessage</div>
+                }
             </div>
         </div>
-    </header>
-    
-    <main class="main">
-        <section class="join-section">
-            <h2>Join Board</h2>
-            <div class="input-group">
-                <input type="text" placeholder="Board ID" @bind="boardId" @oninput="ClearError" />
-                <button @onclick="JoinBoard" disabled="@string.IsNullOrWhiteSpace(boardId)">Join</button>
-            </div>
-            @if (!string.IsNullOrEmpty(errorMessage))
-            {
-                <div class="error-message">@errorMessage</div>
-            }
-            <div class="quick-actions">
-                <button class="link-btn" @onclick="ShowCreateModal">Create new board</button>
-            </div>
-        </section>
 
-        <AuthorizeView>
-            <Authorized>
-                <section class="boards-section">
-                    <h2>My Boards</h2>
-                    <p class="section-description">Boards you own and collaborate on</p>
-                    
-                    @if (userBoards != null && userBoards.Count > 0)
-                    {
-                        <div class="boards-list">
-                            @foreach (var board in userBoards)
-                            {
-                                <div class="board-item" @onclick="@(() => JoinSpecificBoard(board.Id))">
-                                    <div class="board-header">
-                                        <h3>@board.Name</h3>
-                                        <span class="board-visibility-badge @(board.AccessLevel == BoardAccessLevel.Public ? "public" : "private")">
-                                            @(board.AccessLevel == BoardAccessLevel.Public ? "Public" : 
-                                              board.AccessLevel == BoardAccessLevel.LinkSharing ? "Link Sharing" : "Private")
-                                        </span>
-                                    </div>
-                                    <div class="board-info">
-                                        <span><i class="fas fa-sticky-note"></i> @GetStickyCount(board)</span>
-                                        <span><i class="fas fa-clock"></i> @FormatDate(board.UpdatedAt)</span>
-                                        <span><i class="fas fa-crown"></i> Owner</span>
-                                    </div>
-                                </div>
-                            }
-                        </div>
-                    }
-                    else if (userBoards != null)
-                    {
+        <!-- Two Column Layout for Boards -->
+        <div class="boards-grid">
+            <!-- My Boards Column -->
+            <AuthorizeView>
+                <Authorized>
+                    <section class="boards-column">
+                        <h2>My Boards</h2>
+                        <p class="section-description">Boards you own and collaborate on</p>
+                        
+                        @if (userBoards != null && userBoards.Count > 0 || collaborationBoards != null && collaborationBoards.Count > 0)
+                        {
+                            <div class="boards-list">
+                                <!-- Owned Boards -->
+                                @if (userBoards != null && userBoards.Count > 0)
+                                {
+                                    @foreach (var board in userBoards)
+                                    {
+                                        <div class="board-item" @onclick="@(() => JoinSpecificBoard(board.Id))">
+                                            <div class="board-header">
+                                                <h3>@board.Name</h3>
+                                                <div class="board-badges">
+                                                    <span class="board-visibility-badge @(board.AccessLevel == BoardAccessLevel.Public ? "public" : "private")">
+                                                        @(board.AccessLevel == BoardAccessLevel.Public ? "Public" : 
+                                                          board.AccessLevel == BoardAccessLevel.Unlisted ? "Unlisted" : "Private")
+                                                    </span>
+                                                    <span class="board-role-badge owner">Owner</span>
+                                                </div>
+                                            </div>
+                                            <div class="board-info">
+                                                <span><i class="fas fa-sticky-note"></i> @GetElementCount(board)</span>
+                                                <span><i class="fas fa-users"></i> @GetCollaboratorCount(board)</span>
+                                                <span><i class="fas fa-clock"></i> @FormatDate(board.UpdatedAt)</span>
+                                            </div>
+                                        </div>
+                                    }
+                                }
+                                
+                                <!-- Collaboration Boards -->
+                                @if (collaborationBoards != null && collaborationBoards.Count > 0)
+                                {
+                                    @foreach (var collaboration in collaborationBoards)
+                                    {
+                                        <div class="board-item" @onclick="@(() => JoinSpecificBoard(collaboration.Board.Id))">
+                                            <div class="board-header">
+                                                <h3>@collaboration.Board.Name</h3>
+                                                <div class="board-badges">
+                                                    <span class="board-visibility-badge @(collaboration.Board.AccessLevel == BoardAccessLevel.Public ? "public" : "private")">
+                                                        @(collaboration.Board.AccessLevel == BoardAccessLevel.Public ? "Public" : 
+                                                          collaboration.Board.AccessLevel == BoardAccessLevel.Unlisted ? "Unlisted" : "Private")
+                                                    </span>
+                                                    <span class="board-role-badge @collaboration.Role.ToString().ToLower()">@collaboration.Role</span>
+                                                </div>
+                                            </div>
+                                            <div class="board-info">
+                                                <span><i class="fas fa-sticky-note"></i> @GetElementCount(collaboration.Board)</span>
+                                                <span><i class="fas fa-user"></i> Owner: @(collaboration.Board.Owner?.DisplayName ?? "Unknown")</span>
+                                                <span><i class="fas fa-clock"></i> @FormatDate(collaboration.Board.UpdatedAt)</span>
+                                            </div>
+                                        </div>
+                                    }
+                                }
+                            </div>
+                        }
+                        else if (userBoards != null && collaborationBoards != null)
+                        {
+                            <div class="empty-state">
+                                <p>You haven't created or joined any boards yet.</p>
+                                <button class="link-btn" @onclick="ShowCreateModal">Create your first board</button>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="empty-state">
+                                <p>Loading your boards...</p>
+                            </div>
+                        }
+                    </section>
+                </Authorized>
+                <NotAuthorized>
+                    <section class="boards-column">
+                        <h2>My Boards</h2>
+                        <p class="section-description">Sign in to see your boards</p>
                         <div class="empty-state">
-                            <p>You haven't created any boards yet. <button class="link-btn" @onclick="ShowCreateModal">Create your first board</button></p>
+                            <p>Please sign in to view your boards and collaborations.</p>
+                            <button class="link-btn" @onclick="NavigateToLogin">
+                                <i class="fas fa-sign-in-alt"></i>
+                                Sign In
+                            </button>
                         </div>
-                    }
-                    else
-                    {
-                        <div class="empty-state">
-                            <p>Loading your boards...</p>
-                        </div>
-                    }
-                </section>
-            </Authorized>
-        </AuthorizeView>
+                    </section>
+                </NotAuthorized>
+            </AuthorizeView>
 
-        @if (publicBoards != null && publicBoards.Count > 0)
-        {
-            <section class="boards-section">
+            <!-- Public Boards Column -->
+            <section class="boards-column">
                 <h2>Public Boards</h2>
                 <p class="section-description">Community boards anyone can join</p>
-                <div class="boards-list">
-                    @foreach (var board in publicBoards)
-                    {
-                        <div class="board-item" @onclick="@(() => JoinSpecificBoard(board.Id))">
-                            <div class="board-header">
-                                <h3>@board.Name</h3>
-                                <span class="board-visibility-badge public">Public</span>
+                
+                @if (publicBoards != null && publicBoards.Count > 0)
+                {
+                    <div class="boards-list">
+                        @foreach (var board in publicBoards)
+                        {
+                            <div class="board-item" @onclick="@(() => JoinSpecificBoard(board.Id))">
+                                <div class="board-header">
+                                    <h3>@board.Name</h3>
+                                    <div class="board-badges">
+                                        <span class="board-visibility-badge public">Public</span>
+                                    </div>
+                                </div>
+                                <div class="board-info">
+                                    <span><i class="fas fa-sticky-note"></i> @GetStickyCount(board)</span>
+                                    <span><i class="fas fa-clock"></i> @FormatDate(board.UpdatedAt)</span>
+                                    <span><i class="fas fa-user"></i> @(board.Owner?.DisplayName ?? "Unknown")</span>
+                                </div>
                             </div>
-                            <div class="board-info">
-                                <span><i class="fas fa-sticky-note"></i> @GetStickyCount(board)</span>
-                                <span><i class="fas fa-clock"></i> @FormatDate(board.UpdatedAt)</span>
-                                <span><i class="fas fa-user"></i> @(board.Owner?.DisplayName ?? "Unknown")</span>
-                            </div>
-                        </div>
-                    }
-                </div>
+                        }
+                    </div>
+                }
+                else if (publicBoards != null)
+                {
+                    <div class="empty-state">
+                        <p>No public boards available right now.</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="empty-state">
+                        <p>Loading public boards...</p>
+                    </div>
+                }
             </section>
-        }
-    </main>
-</div>
+        </div>
+    </div>
+</StandardPageLayout>
 
 <!-- Create Board Modal -->
 @if (showCreateModal)
@@ -126,26 +189,70 @@
                 <AuthorizeView>
                     <Authorized>
                         <div class="radio-group">
-                            <label>
-                                <input type="radio" name="visibility" @onchange="@(() => isPublicBoard = false)" checked="@(!isPublicBoard)" />
-                                Private <small class="text-muted">(Only you and invited collaborators)</small>
-                            </label>
-                            <label>
-                                <input type="radio" name="visibility" @onchange="@(() => isPublicBoard = true)" checked="@isPublicBoard" />
-                                Public <small class="text-muted">(Listed publicly, anyone can view)</small>
-                            </label>
+                            <div class="radio-option @(selectedAccessLevel == BoardAccessLevel.Private ? "selected" : "")">
+                                <label>
+                                    <input type="radio" name="visibility" @onchange="@(() => selectedAccessLevel = BoardAccessLevel.Private)" checked="@(selectedAccessLevel == BoardAccessLevel.Private)" />
+                                    <div class="radio-content">
+                                        <div class="radio-header">
+                                            <i class="fas fa-lock radio-icon"></i>
+                                            <span class="radio-title">Private</span>
+                                        </div>
+                                        <small class="radio-description">Only you and invited collaborators can access</small>
+                                    </div>
+                                </label>
+                            </div>
+                            <div class="radio-option @(selectedAccessLevel == BoardAccessLevel.Unlisted ? "selected" : "")">
+                                <label>
+                                    <input type="radio" name="visibility" @onchange="@(() => selectedAccessLevel = BoardAccessLevel.Unlisted)" checked="@(selectedAccessLevel == BoardAccessLevel.Unlisted)" />
+                                    <div class="radio-content">
+                                        <div class="radio-header">
+                                            <i class="fas fa-link radio-icon"></i>
+                                            <span class="radio-title">Unlisted</span>
+                                        </div>
+                                        <small class="radio-description">Anyone with board ID can access, not listed publicly</small>
+                                    </div>
+                                </label>
+                            </div>
+                            <div class="radio-option @(selectedAccessLevel == BoardAccessLevel.Public ? "selected" : "")">
+                                <label>
+                                    <input type="radio" name="visibility" @onchange="@(() => selectedAccessLevel = BoardAccessLevel.Public)" checked="@(selectedAccessLevel == BoardAccessLevel.Public)" />
+                                    <div class="radio-content">
+                                        <div class="radio-header">
+                                            <i class="fas fa-globe radio-icon"></i>
+                                            <span class="radio-title">Public</span>
+                                        </div>
+                                        <small class="radio-description">Listed publicly, anyone can view</small>
+                                    </div>
+                                </label>
+                            </div>
                         </div>
                     </Authorized>
                     <NotAuthorized>
                         <div class="radio-group">
-                            <label>
-                                <input type="radio" name="visibility" @onchange="@(() => isPublicBoard = false)" checked="@(!isPublicBoard)" />
-                                Unlisted <small class="text-muted">(Not listed publicly but shareable)</small>
-                            </label>
-                            <label>
-                                <input type="radio" name="visibility" @onchange="@(() => isPublicBoard = true)" checked="@isPublicBoard" />
-                                Public <small class="text-muted">(Listed publicly, anyone can view)</small>
-                            </label>
+                            <div class="radio-option @(selectedAccessLevel == BoardAccessLevel.Unlisted ? "selected" : "")">
+                                <label>
+                                    <input type="radio" name="visibility" @onchange="@(() => selectedAccessLevel = BoardAccessLevel.Unlisted)" checked="@(selectedAccessLevel == BoardAccessLevel.Unlisted)" />
+                                    <div class="radio-content">
+                                        <div class="radio-header">
+                                            <i class="fas fa-link radio-icon"></i>
+                                            <span class="radio-title">Unlisted</span>
+                                        </div>
+                                        <small class="radio-description">Anyone with board ID can access, not listed publicly</small>
+                                    </div>
+                                </label>
+                            </div>
+                            <div class="radio-option @(selectedAccessLevel == BoardAccessLevel.Public ? "selected" : "")">
+                                <label>
+                                    <input type="radio" name="visibility" @onchange="@(() => selectedAccessLevel = BoardAccessLevel.Public)" checked="@(selectedAccessLevel == BoardAccessLevel.Public)" />
+                                    <div class="radio-content">
+                                        <div class="radio-header">
+                                            <i class="fas fa-globe radio-icon"></i>
+                                            <span class="radio-title">Public</span>
+                                        </div>
+                                        <small class="radio-description">Listed publicly, anyone can view</small>
+                                    </div>
+                                </label>
+                            </div>
                         </div>
                         <div class="auth-notice">
                             <small class="text-info">
@@ -157,11 +264,6 @@
                 </AuthorizeView>
             </div>
             
-            <div class="form-group">
-                <label>Admin PIN (optional)</label>
-                <input type="password" @bind="adminPin" placeholder="Leave empty for none" />
-            </div>
-            
             <div class="modal-actions">
                 <button @onclick="HideCreateModal">Cancel</button>
                 <button @onclick="CreateNewBoard" disabled="@string.IsNullOrWhiteSpace(newBoardTitle)" class="primary">Create</button>
@@ -171,14 +273,18 @@
 }
 
 @code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+    
     private string boardId = "";
     private string newBoardTitle = "";
-    private bool isPublicBoard = false;
-    private string adminPin = "";
+    private BoardAccessLevel selectedAccessLevel = BoardAccessLevel.Private;
     private bool showCreateModal = false;
     private string errorMessage = "";
     private List<WhiteboardApp.Models.Board>? publicBoards;
     private List<WhiteboardApp.Models.Board>? userBoards;
+    private List<BoardCollaborator>? collaborationBoards;
+    private User? currentUser;
 
     protected override async Task OnInitializedAsync()
     {
@@ -192,20 +298,19 @@
             {
                 try 
                 {
-                    var user = await UserService.GetOrCreateUserAsync(authState.User);
-                    userBoards = await BoardService.GetUserOwnedBoardsAsync(user);
+                    currentUser = await UserService.GetOrCreateUserAsync(authState.User);
+                    userBoards = await BoardService.GetUserOwnedBoardsAsync(currentUser);
+                    collaborationBoards = currentUser.BoardCollaborations?.ToList() ?? new List<BoardCollaborator>();
                 }
                 catch
                 {
-                    // If there's an issue getting user boards, just leave userBoards as null
+                    // If there's an issue getting user boards, just leave them as null
                     userBoards = null;
+                    collaborationBoards = null;
                 }
             }
         }
     }
-
-    [CascadingParameter]
-    private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
 
     private async Task CreateNewBoard()
     {
@@ -240,22 +345,18 @@
             user = await UserService.GetAnonymousUserAsync();
         }
 
-        var board = await BoardService.CreateBoardAsync(newBoardTitle.Trim(), user, isPublicBoard, 
-            string.IsNullOrWhiteSpace(adminPin) ? null : adminPin.Trim());
+        var board = await BoardService.CreateBoardAsync(newBoardTitle.Trim(), user, selectedAccessLevel);
         
         // Refresh user boards list if user is authenticated
         if (user.SubjectId != "anonymous-user")
         {
             userBoards = await BoardService.GetUserOwnedBoardsAsync(user);
+            currentUser = user;
+            collaborationBoards = currentUser.BoardCollaborations?.ToList() ?? new List<BoardCollaborator>();
         }
         
         HideCreateModal();
         Navigation.NavigateTo($"/board/{board.Id}");
-    }
-
-    private void JoinDefaultBoard()
-    {
-        Navigation.NavigateTo("/board/11111111-1111-1111-1111-111111111111");
     }
 
     private async Task JoinBoard()
@@ -291,14 +392,15 @@
     private void ShowCreateModal()
     {
         newBoardTitle = "";
-        isPublicBoard = false;
-        adminPin = "";
+        selectedAccessLevel = BoardAccessLevel.Private;
         showCreateModal = true;
     }
 
     private void HideCreateModal()
     {
         showCreateModal = false;
+        newBoardTitle = "";
+        selectedAccessLevel = BoardAccessLevel.Private;
     }
 
     private string FormatDate(DateTime date)
@@ -321,4 +423,482 @@
         var count = board.Elements?.Count ?? 0;
         return count == 1 ? "1 item" : $"{count} items";
     }
+
+    private string GetElementCount(WhiteboardApp.Models.Board board)
+    {
+        var count = board.Elements?.Count ?? 0;
+        return count == 1 ? "1 item" : $"{count} items";
+    }
+
+    private string GetCollaboratorCount(WhiteboardApp.Models.Board board)
+    {
+        var count = board.Collaborators?.Count ?? 0;
+        return count == 1 ? "1 collaborator" : $"{count} collaborators";
+    }
+
+    private void NavigateToLogin()
+    {
+        var returnUrl = Uri.EscapeDataString(Navigation.Uri);
+        Navigation.NavigateTo($"/Account/Login?returnUrl={returnUrl}", forceLoad: true);
+    }
 }
+
+<style>
+/* Home page specific width overrides */
+.home-wide {
+    max-width: 1600px !important;
+    width: 100%;
+    margin: 0 auto;
+}
+
+/* Compact Header Styling */
+.home-header {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-3xl);
+    box-shadow: 0 2px 4px var(--shadow-light);
+}
+
+.home-header-content {
+    padding: var(--space-lg) var(--space-xl);
+}
+
+.join-create-compact {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-lg);
+    flex-wrap: wrap;
+}
+
+.join-board-compact {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+.join-board-compact input {
+    width: 280px;
+    height: 36px;
+    padding: 0 var(--space-md);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-sm);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    transition: border-color 0.2s ease;
+}
+
+.join-board-compact input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+.join-btn-compact {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    height: 36px;
+    padding: 0 var(--space-lg);
+    background: var(--primary);
+    color: var(--bg-primary);
+    border: none;
+    border-radius: var(--radius-md);
+    font-weight: var(--font-weight-medium);
+    cursor: pointer;
+    transition: background 0.2s ease;
+    font-size: var(--font-size-sm);
+    white-space: nowrap;
+}
+
+.join-btn-compact:hover:not(:disabled) {
+    background: var(--primary-hover);
+}
+
+.join-btn-compact:disabled {
+    background: var(--bg-tertiary);
+    color: var(--text-muted);
+    cursor: not-allowed;
+}
+
+.join-btn-compact i {
+    font-size: 12px;
+}
+
+.divider-compact {
+    color: var(--text-secondary);
+    font-weight: var(--font-weight-medium);
+    font-size: var(--font-size-sm);
+    padding: 0 var(--space-sm);
+}
+
+.create-btn-compact {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    height: 36px;
+    padding: 0 var(--space-lg);
+    background: var(--accent-secondary);
+    color: var(--bg-primary);
+    border: none;
+    border-radius: var(--radius-md);
+    font-weight: var(--font-weight-medium);
+    cursor: pointer;
+    transition: background 0.2s ease;
+    font-size: var(--font-size-sm);
+    white-space: nowrap;
+}
+
+.create-btn-compact:hover {
+    background: var(--accent-secondary);
+    filter: brightness(0.9);
+}
+
+.create-btn-compact i {
+    font-size: 12px;
+}
+
+.error-message-compact {
+    margin-top: var(--space-md);
+    padding: var(--space-sm) var(--space-md);
+    background: var(--error-bg);
+    color: var(--error);
+    border: 1px solid var(--error-border);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-sm);
+    text-align: center;
+}
+
+/* Two Column Grid Layout */
+.boards-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-2xl);
+    margin-top: var(--space-3xl);
+    min-height: 400px;
+}
+
+.boards-column {
+    background: var(--bg-primary);
+    border-radius: var(--radius-lg);
+    padding: var(--space-2xl);
+    border: 1px solid var(--border-color);
+    transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+.boards-column h2 {
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+    margin: 0 0 var(--space-sm) 0;
+    color: var(--text-primary);
+}
+
+.section-description {
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    margin: 0 0 var(--space-xl) 0;
+}
+
+/* Board item styling */
+.boards-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+}
+
+.board-item {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: var(--space-lg);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.board-item:hover {
+    border-color: var(--border-color-hover);
+    box-shadow: 0 2px 8px var(--shadow-light);
+    transform: translateY(-1px);
+}
+
+.board-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: var(--space-md);
+    gap: var(--space-md);
+}
+
+.board-header h3 {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-medium);
+    margin: 0;
+    color: var(--text-primary);
+    transition: color 0.2s ease;
+    flex: 1;
+    min-width: 0;
+}
+
+.board-header h3:hover {
+    color: var(--primary);
+}
+
+.board-badges {
+    display: flex;
+    gap: var(--space-sm);
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.board-visibility-badge, .board-role-badge {
+    font-size: var(--font-size-xs);
+    padding: 2px var(--space-sm);
+    border-radius: var(--radius-xl);
+    font-weight: var(--font-weight-medium);
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.board-visibility-badge.public {
+    background: var(--success-bg);
+    color: var(--success);
+}
+
+.board-visibility-badge.private {
+    background: var(--error-bg);
+    color: var(--error);
+}
+
+.board-role-badge.owner {
+    background: var(--warning-bg);
+    color: var(--warning);
+}
+
+.board-role-badge.collaborator {
+    background: var(--success-bg);
+    color: var(--success);
+}
+
+.board-info {
+    display: flex;
+    gap: var(--space-lg);
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    flex-wrap: wrap;
+}
+
+.board-info span {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+}
+
+.board-info i {
+    font-size: 12px;
+    opacity: 0.7;
+}
+
+/* Mobile responsiveness */
+@@media (max-width: 1200px) {
+    .home-wide {
+        max-width: 1200px !important;
+        padding: 0 var(--space-xl);
+    }
+    
+    .boards-grid {
+        gap: var(--space-xl);
+    }
+}
+
+@@media (max-width: 768px) {
+    .home-wide {
+        max-width: 100% !important;
+        padding: 0 var(--space-md);
+    }
+    
+    .home-header-content {
+        padding: var(--space-md);
+    }
+    
+    .join-create-compact {
+        flex-direction: column;
+        gap: var(--space-md);
+        align-items: stretch;
+    }
+    
+    .join-board-compact {
+        flex-direction: column;
+        gap: var(--space-sm);
+        align-items: stretch;
+    }
+    
+    .join-board-compact input {
+        width: 100%;
+    }
+    
+    .join-btn-compact,
+    .create-btn-compact {
+        width: 100%;
+        justify-content: center;
+        height: 40px;
+    }
+    
+    .divider-compact {
+        text-align: center;
+        padding: var(--space-xs) 0;
+    }
+    
+    .boards-grid {
+        grid-template-columns: 1fr;
+        gap: var(--space-xl);
+    }
+    
+    .boards-column {
+        padding: var(--space-xl);
+    }
+    
+    .board-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--space-sm);
+    }
+    
+    .board-badges {
+        align-self: flex-start;
+    }
+    
+    .board-info {
+        gap: var(--space-md);
+    }
+}
+
+@@media (max-width: 480px) {
+    .home-header-content {
+        padding: var(--space-sm);
+    }
+    
+    .join-board-compact input {
+        font-size: var(--font-size-base);
+        height: 40px;
+    }
+}
+
+.radio-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.radio-option {
+    border: 2px solid var(--border-color, #e0e4e7);
+    border-radius: 12px;
+    padding: 16px;
+    transition: all 0.2s ease;
+    background: var(--bg-secondary, #fafbfc);
+    cursor: pointer;
+}
+
+.radio-option:hover {
+    border-color: var(--accent-primary, #007bff);
+    background: var(--bg-primary, #ffffff);
+    box-shadow: 0 2px 8px rgba(0, 123, 255, 0.1);
+    transform: translateY(-1px);
+}
+
+.radio-option.selected {
+    border-color: var(--accent-primary, #007bff);
+    background: var(--bg-primary, #ffffff);
+    box-shadow: 0 4px 12px rgba(0, 123, 255, 0.15);
+    transform: translateY(-2px);
+}
+
+.radio-option.selected .radio-icon {
+    color: var(--accent-primary, #007bff);
+}
+
+.radio-option.selected .radio-title {
+    color: var(--accent-primary, #007bff);
+}
+
+.radio-option label {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    cursor: pointer;
+    margin-bottom: 0;
+    width: 100%;
+}
+
+.radio-option input[type="radio"] {
+    margin: 0;
+    flex-shrink: 0;
+    margin-top: 2px;
+    width: 18px;
+    height: 18px;
+    accent-color: var(--accent-primary, #007bff);
+}
+
+.radio-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.radio-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.radio-icon {
+    font-size: 16px;
+    color: var(--text-secondary, #666);
+    transition: color 0.2s ease;
+    width: 16px;
+    text-align: center;
+}
+
+.radio-title {
+    font-weight: 600;
+    color: var(--text-primary, #333);
+    font-size: 0.95em;
+    transition: color 0.2s ease;
+}
+
+.radio-description {
+    color: var(--text-secondary, #666);
+    font-size: 0.85em;
+    line-height: 1.4;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    max-width: 100%;
+    margin: 0;
+}
+
+/* Enhance the auth notice */
+.auth-notice {
+    margin-top: 16px;
+    padding: 12px;
+    background: var(--info-bg, #e3f2fd);
+    border-radius: 8px;
+    border-left: 4px solid var(--info-color, #2196f3);
+}
+
+.auth-notice small {
+    color: var(--info-text, #1565c0);
+    font-size: 0.875em;
+}
+
+.auth-notice .link {
+    color: var(--info-color, #2196f3);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.auth-notice .link:hover {
+    text-decoration: underline;
+}
+</style>

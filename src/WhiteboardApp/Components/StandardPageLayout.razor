@@ -1,0 +1,35 @@
+@inherits ComponentBase
+
+<div class="standard-page-container">
+    <SharedHeader PageTitle="@PageTitle" PageDescription="@PageDescription" />
+    
+    <main class="standard-page-main">
+        @ChildContent
+    </main>
+</div>
+
+@code {
+    [Parameter] public RenderFragment ChildContent { get; set; } = default!;
+    [Parameter] public string PageTitle { get; set; } = "OpenBoard";
+    [Parameter] public string PageDescription { get; set; } = "Real-time collaborative whiteboard";
+}
+
+<style>
+.standard-page-container {
+    min-height: 100vh;
+    background: var(--bg-secondary);
+    font-family: var(--font-family-system);
+}
+
+.standard-page-main {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: var(--space-3xl) var(--space-xl);
+}
+
+@@media (max-width: 768px) {
+    .standard-page-main {
+        padding: var(--space-2xl) var(--space-md);
+    }
+}
+</style>

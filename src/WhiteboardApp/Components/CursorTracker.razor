@@ -1,5 +1,6 @@
 @using Microsoft.AspNetCore.SignalR.Client
 @inject IJSRuntime JSRuntime
+@inject NavigationManager Navigation
 @implements IAsyncDisposable
 
 <div class="cursor-tracker">
@@ -11,7 +12,9 @@
                     <path d="M3 3L17 9L9 11L7 17L3 3Z" fill="@cursor.Value.Color" stroke="white" stroke-width="1"/>
                 </svg>
             </div>
-            <div class="cursor-label" style="background-color: @cursor.Value.Color; color: white; padding: 2px 6px; border-radius: 4px; font-size: 12px; margin-left: 15px; margin-top: -5px;">
+            <div class="cursor-label clickable-user" style="background-color: @cursor.Value.Color; color: white; padding: 2px 6px; border-radius: 4px; font-size: 12px; margin-left: 15px; margin-top: -5px; cursor: pointer; pointer-events: auto;" 
+                 @onclick="@(() => NavigateToUserProfile(cursor.Value.UserName))" 
+                 title="View @cursor.Value.UserName's profile">
                 @cursor.Value.UserName
             </div>
         </div>
@@ -19,7 +22,9 @@
 
     @foreach (var user in activeUsers)
     {
-        <div class="user-indicator" style="position: fixed; top: 10px; right: @(10 + user.Index * 50)px; background-color: @user.Color; color: white; padding: 4px 8px; border-radius: 12px; font-size: 12px; z-index: 1001;">
+        <div class="user-indicator clickable-user" style="position: fixed; top: 10px; right: @(10 + user.Index * 50)px; background-color: @user.Color; color: white; padding: 4px 8px; border-radius: 12px; font-size: 12px; z-index: 1001; cursor: pointer;" 
+             @onclick="@(() => NavigateToUserProfile(user.UserName))"
+             title="View @user.UserName's profile">
             @user.UserName
         </div>
     }
@@ -246,6 +251,24 @@
         catch (Exception ex)
         {
             Console.WriteLine($"Error processing active users: {ex.Message}");
+        }
+    }
+
+    private void NavigateToUserProfile(string userName)
+    {
+        // For now, navigate to a generic profile page since we don't have user-specific profiles yet
+        // In a real implementation, you might want to navigate to /profile/{userId} or /users/{username}
+        
+        // If it's the current user, go to their own profile
+        if (userName == CurrentUserName)
+        {
+            Navigation.NavigateTo("/profile");
+        }
+        else
+        {
+            // For other users, we could navigate to a user search or public profile page
+            // For now, just show an alert or navigate to profile page with a query parameter
+            Navigation.NavigateTo($"/profile?user={Uri.EscapeDataString(userName)}");
         }
     }
 

@@ -4,42 +4,9 @@
     box-sizing: border-box;
 }
 
-.home-container {
-    min-height: 100vh;
-    background: var(--bg-secondary);
-    font-family: var(--font-family-system);
-}
-
-.header {
-    background: var(--text-primary);
-    color: var(--bg-primary);
-    padding: 1rem;
-}
-
-.header-content {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    max-width: 1200px;
-    margin: 0 auto;
-}
-
-.header-left h1 {
-    margin: 0;
-    font-size: 1.75rem;
-    font-weight: 600;
-}
-
-.header-left p {
-    margin: 0.25rem 0 0 0;
-    color: rgba(255, 255, 255, 0.8);
-    font-size: 0.9rem;
-}
-
-.main {
+.home-content {
     max-width: 600px;
     margin: 0 auto;
-    padding: var(--space-3xl) var(--space-xl);
 }
 
 .join-section {
