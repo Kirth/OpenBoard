@@ -10,172 +10,246 @@
 
 <link href="css/home.css" rel="stylesheet" />
 
-<StandardPageLayout PageTitle="OpenBoard" PageDescription="Real-time collaborative whiteboard">
-    <div class="home-content home-wide">
-        <!-- Compact Join/Create Header -->
-        <div class="home-header">
-            <div class="home-header-content">
-                <div class="header-with-mascot">
-                    <div class="mascot-section">
-                        <img src="img/pencil-frog-small.png" alt="OpenBoard Mascot" class="mascot-image" />
-                    </div>
-                    <div class="join-create-compact">
-                        <div class="join-board-compact">
-                            <input type="text" placeholder="Enter Board ID to join..." @bind="boardId" @oninput="ClearError" />
-                            <button @onclick="JoinBoard" disabled="@string.IsNullOrWhiteSpace(boardId)" class="join-btn-compact">
-                                <i class="fas fa-sign-in-alt"></i>
-                                Join
-                            </button>
-                        </div>
-                        <div class="divider-compact">or</div>
-                        <button class="create-btn-compact" @onclick="ShowCreateModal">
-                            <i class="fas fa-plus"></i>
-                            Create Board
+<!-- Custom Header Integration -->
+<div class="integrated-header">
+    <div class="integrated-header-content">
+        <!-- Top Header Row -->
+        <div class="header-top-row">
+            <div class="site-branding">
+                <h1 class="site-title">OpenBoard</h1>
+                <p class="site-tagline">Real-time collaborative whiteboard</p>
+            </div>
+            <UserMenu />
+        </div>
+        
+        <!-- Hero Action Row -->
+        <div class="hero-action-row">
+            <div class="hero-left">
+                <div class="search-join-area">
+                    <div class="search-input-container">
+                        <img src="img/pencil-frog-small.png" alt="Search" class="search-icon" />
+                        <input type="text" placeholder="Enter Board ID to join..." @bind="boardId" @oninput="ClearError" class="hero-search-input" />
+                        <button @onclick="JoinBoard" disabled="@string.IsNullOrWhiteSpace(boardId)" class="join-btn-hero">
+                            Join
                         </button>
                     </div>
+                    <button class="create-btn-hero" @onclick="ShowCreateModal">
+                        <i class="fas fa-plus"></i>
+                        Create board
+                    </button>
                 </div>
                 @if (!string.IsNullOrEmpty(errorMessage))
                 {
-                    <div class="error-message-compact">@errorMessage</div>
+                    <div class="hero-error-message">@errorMessage</div>
                 }
             </div>
+            <div class="hero-right">
+                <div class="hero-illustrations">
+                    <div class="sticky-note note-1">
+                        <div class="note-content">🐸</div>
+                    </div>
+                    <div class="sticky-note note-2">
+                        <div class="note-content">🐦</div>
+                    </div>
+                    <div class="sticky-note note-3">
+                        <div class="note-content">🦋</div>
+                    </div>
+                </div>
+            </div>
         </div>
+    </div>
+</div>
 
-        <!-- Two Column Layout for Boards -->
-        <div class="boards-grid">
-            <!-- My Boards Column -->
-            <AuthorizeView>
-                <Authorized>
-                    <section class="boards-column">
-                        <h2>My Boards</h2>
-                        <p class="section-description">Boards you own and collaborate on</p>
+
+<div class="home-content home-wide">
+
+        <!-- Content for Unauthenticated Users -->
+        <AuthorizeView>
+            <NotAuthorized>
+                <!-- Public Boards Section -->
+                <section class="boards-section">
+                    <div class="section-header">
+                        <h2>Public Boards</h2>
+                        <p class="section-description">Community boards anyone can join</p>
+                    </div>
+                    
+                    @if (publicBoards != null && publicBoards.Count > 0)
+                    {
+                        <div class="boards-grid">
+                            @foreach (var board in publicBoards)
+                            {
+                                <div class="board-card" @onclick="@(() => JoinSpecificBoard(board.Id))">
+                                    <div class="board-header">
+                                        <h3>@board.Name</h3>
+                                        <div class="board-badges">
+                                            <span class="board-visibility-badge public">Public</span>
+                                        </div>
+                                    </div>
+                                    <div class="board-info">
+                                        <span><i class="fas fa-sticky-note"></i> @GetStickyCount(board)</span>
+                                        <span><i class="fas fa-clock"></i> @FormatDate(board.UpdatedAt)</span>
+                                        <span><i class="fas fa-user"></i> @(board.Owner?.DisplayName ?? "Unknown")</span>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else if (publicBoards != null)
+                    {
+                        <div class="empty-state">
+                            <p>No public boards available right now.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="empty-state">
+                            <p>Loading public boards...</p>
+                        </div>
+                    }
+                </section>
+            </NotAuthorized>
+            
+            <Authorized>
+                <!-- Two Column Layout for Authenticated Users -->
+                <div class="boards-two-column-layout">
+                    
+                    <!-- Left Column: Recent + My Boards -->
+                    <div class="boards-column">
+                        <!-- Recent Boards Section -->
+                        <section class="boards-section">
+                            <div class="section-header">
+                                <h2>Recent</h2>
+                                <p class="section-description">Recently accessed boards</p>
+                            </div>
+                            <div class="empty-state">
+                                <p>Recent boards feature coming soon!</p>
+                            </div>
+                        </section>
                         
-                        @if (userBoards != null && userBoards.Count > 0 || collaborationBoards != null && collaborationBoards.Count > 0)
-                        {
-                            <div class="boards-list">
-                                <!-- Owned Boards -->
-                                @if (userBoards != null && userBoards.Count > 0)
-                                {
-                                    @foreach (var board in userBoards)
+                        <!-- My Boards Section -->
+                        <section class="boards-section">
+                            <div class="section-header">
+                                <h2>My Boards</h2>
+                                <p class="section-description">Boards you own and collaborate on</p>
+                            </div>
+                            
+                            @if (userBoards != null && userBoards.Count > 0 || collaborationBoards != null && collaborationBoards.Count > 0)
+                            {
+                                <div class="boards-list">
+                                    <!-- Owned Boards -->
+                                    @if (userBoards != null && userBoards.Count > 0)
+                                    {
+                                        @foreach (var board in userBoards)
+                                        {
+                                            <div class="board-item" @onclick="@(() => JoinSpecificBoard(board.Id))">
+                                                <div class="board-header">
+                                                    <h3>@board.Name</h3>
+                                                    <div class="board-badges">
+                                                        <span class="board-visibility-badge @(board.AccessLevel == BoardAccessLevel.Public ? "public" : "private")">
+                                                            @(board.AccessLevel == BoardAccessLevel.Public ? "Public" : 
+                                                              board.AccessLevel == BoardAccessLevel.Unlisted ? "Unlisted" : "Private")
+                                                        </span>
+                                                        <span class="board-role-badge owner">Owner</span>
+                                                    </div>
+                                                </div>
+                                                <div class="board-info">
+                                                    <span><i class="fas fa-sticky-note"></i> @GetElementCount(board)</span>
+                                                    <span><i class="fas fa-users"></i> @GetCollaboratorCount(board)</span>
+                                                    <span><i class="fas fa-clock"></i> @FormatDate(board.UpdatedAt)</span>
+                                                </div>
+                                            </div>
+                                        }
+                                    }
+                                    
+                                    <!-- Collaboration Boards -->
+                                    @if (collaborationBoards != null && collaborationBoards.Count > 0)
+                                    {
+                                        @foreach (var collaboration in collaborationBoards)
+                                        {
+                                            <div class="board-item" @onclick="@(() => JoinSpecificBoard(collaboration.Board.Id))">
+                                                <div class="board-header">
+                                                    <h3>@collaboration.Board.Name</h3>
+                                                    <div class="board-badges">
+                                                        <span class="board-visibility-badge @(collaboration.Board.AccessLevel == BoardAccessLevel.Public ? "public" : "private")">
+                                                            @(collaboration.Board.AccessLevel == BoardAccessLevel.Public ? "Public" : 
+                                                              collaboration.Board.AccessLevel == BoardAccessLevel.Unlisted ? "Unlisted" : "Private")
+                                                        </span>
+                                                        <span class="board-role-badge @collaboration.Role.ToString().ToLower()">@collaboration.Role</span>
+                                                    </div>
+                                                </div>
+                                                <div class="board-info">
+                                                    <span><i class="fas fa-sticky-note"></i> @GetElementCount(collaboration.Board)</span>
+                                                    <span><i class="fas fa-user"></i> Owner: @(collaboration.Board.Owner?.DisplayName ?? "Unknown")</span>
+                                                    <span><i class="fas fa-clock"></i> @FormatDate(collaboration.Board.UpdatedAt)</span>
+                                                </div>
+                                            </div>
+                                        }
+                                    }
+                                </div>
+                            }
+                            else if (userBoards != null && collaborationBoards != null)
+                            {
+                                <div class="empty-state">
+                                    <p>You haven't created or joined any boards yet.</p>
+                                    <button class="link-btn" @onclick="ShowCreateModal">Create your first board</button>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="empty-state">
+                                    <p>Loading your boards...</p>
+                                </div>
+                            }
+                        </section>
+                    </div>
+                    
+                    <!-- Right Column: Public Boards -->
+                    <div class="boards-column">
+                        <section class="boards-section">
+                            <div class="section-header">
+                                <h2>Public Boards</h2>
+                                <p class="section-description">Community boards anyone can join</p>
+                            </div>
+                            
+                            @if (publicBoards != null && publicBoards.Count > 0)
+                            {
+                                <div class="boards-list">
+                                    @foreach (var board in publicBoards)
                                     {
                                         <div class="board-item" @onclick="@(() => JoinSpecificBoard(board.Id))">
                                             <div class="board-header">
                                                 <h3>@board.Name</h3>
                                                 <div class="board-badges">
-                                                    <span class="board-visibility-badge @(board.AccessLevel == BoardAccessLevel.Public ? "public" : "private")">
-                                                        @(board.AccessLevel == BoardAccessLevel.Public ? "Public" : 
-                                                          board.AccessLevel == BoardAccessLevel.Unlisted ? "Unlisted" : "Private")
-                                                    </span>
-                                                    <span class="board-role-badge owner">Owner</span>
+                                                    <span class="board-visibility-badge public">Public</span>
                                                 </div>
                                             </div>
                                             <div class="board-info">
-                                                <span><i class="fas fa-sticky-note"></i> @GetElementCount(board)</span>
-                                                <span><i class="fas fa-users"></i> @GetCollaboratorCount(board)</span>
+                                                <span><i class="fas fa-sticky-note"></i> @GetStickyCount(board)</span>
                                                 <span><i class="fas fa-clock"></i> @FormatDate(board.UpdatedAt)</span>
+                                                <span><i class="fas fa-user"></i> @(board.Owner?.DisplayName ?? "Unknown")</span>
                                             </div>
                                         </div>
                                     }
-                                }
-                                
-                                <!-- Collaboration Boards -->
-                                @if (collaborationBoards != null && collaborationBoards.Count > 0)
-                                {
-                                    @foreach (var collaboration in collaborationBoards)
-                                    {
-                                        <div class="board-item" @onclick="@(() => JoinSpecificBoard(collaboration.Board.Id))">
-                                            <div class="board-header">
-                                                <h3>@collaboration.Board.Name</h3>
-                                                <div class="board-badges">
-                                                    <span class="board-visibility-badge @(collaboration.Board.AccessLevel == BoardAccessLevel.Public ? "public" : "private")">
-                                                        @(collaboration.Board.AccessLevel == BoardAccessLevel.Public ? "Public" : 
-                                                          collaboration.Board.AccessLevel == BoardAccessLevel.Unlisted ? "Unlisted" : "Private")
-                                                    </span>
-                                                    <span class="board-role-badge @collaboration.Role.ToString().ToLower()">@collaboration.Role</span>
-                                                </div>
-                                            </div>
-                                            <div class="board-info">
-                                                <span><i class="fas fa-sticky-note"></i> @GetElementCount(collaboration.Board)</span>
-                                                <span><i class="fas fa-user"></i> Owner: @(collaboration.Board.Owner?.DisplayName ?? "Unknown")</span>
-                                                <span><i class="fas fa-clock"></i> @FormatDate(collaboration.Board.UpdatedAt)</span>
-                                            </div>
-                                        </div>
-                                    }
-                                }
-                            </div>
-                        }
-                        else if (userBoards != null && collaborationBoards != null)
-                        {
-                            <div class="empty-state">
-                                <p>You haven't created or joined any boards yet.</p>
-                                <button class="link-btn" @onclick="ShowCreateModal">Create your first board</button>
-                            </div>
-                        }
-                        else
-                        {
-                            <div class="empty-state">
-                                <p>Loading your boards...</p>
-                            </div>
-                        }
-                    </section>
-                </Authorized>
-                <NotAuthorized>
-                    <section class="boards-column">
-                        <h2>My Boards</h2>
-                        <p class="section-description">Sign in to see your boards</p>
-                        <div class="empty-state">
-                            <p>Please sign in to view your boards and collaborations.</p>
-                            <button class="link-btn" @onclick="NavigateToLogin">
-                                <i class="fas fa-sign-in-alt"></i>
-                                Sign In
-                            </button>
-                        </div>
-                    </section>
-                </NotAuthorized>
-            </AuthorizeView>
-
-            <!-- Public Boards Column -->
-            <section class="boards-column">
-                <h2>Public Boards</h2>
-                <p class="section-description">Community boards anyone can join</p>
-                
-                @if (publicBoards != null && publicBoards.Count > 0)
-                {
-                    <div class="boards-list">
-                        @foreach (var board in publicBoards)
-                        {
-                            <div class="board-item" @onclick="@(() => JoinSpecificBoard(board.Id))">
-                                <div class="board-header">
-                                    <h3>@board.Name</h3>
-                                    <div class="board-badges">
-                                        <span class="board-visibility-badge public">Public</span>
-                                    </div>
                                 </div>
-                                <div class="board-info">
-                                    <span><i class="fas fa-sticky-note"></i> @GetStickyCount(board)</span>
-                                    <span><i class="fas fa-clock"></i> @FormatDate(board.UpdatedAt)</span>
-                                    <span><i class="fas fa-user"></i> @(board.Owner?.DisplayName ?? "Unknown")</span>
+                            }
+                            else if (publicBoards != null)
+                            {
+                                <div class="empty-state">
+                                    <p>No public boards available right now.</p>
                                 </div>
-                            </div>
-                        }
+                            }
+                            else
+                            {
+                                <div class="empty-state">
+                                    <p>Loading public boards...</p>
+                                </div>
+                            }
+                        </section>
                     </div>
-                }
-                else if (publicBoards != null)
-                {
-                    <div class="empty-state">
-                        <p>No public boards available right now.</p>
-                    </div>
-                }
-                else
-                {
-                    <div class="empty-state">
-                        <p>Loading public boards...</p>
-                    </div>
-                }
-            </section>
-        </div>
+                </div>
+            </Authorized>
+        </AuthorizeView>
     </div>
-</StandardPageLayout>
 
 <!-- Create Board Modal -->
 @if (showCreateModal)
@@ -286,6 +360,7 @@
     private BoardAccessLevel selectedAccessLevel = BoardAccessLevel.Private;
     private bool showCreateModal = false;
     private string errorMessage = "";
+    private string activeTab = "welcome";
     private List<WhiteboardApp.Models.Board>? publicBoards;
     private List<WhiteboardApp.Models.Board>? userBoards;
     private List<BoardCollaborator>? collaborationBoards;
@@ -301,6 +376,8 @@
             var authState = await AuthenticationStateTask;
             if (authState.User.Identity?.IsAuthenticated == true)
             {
+                // Authenticated users no longer use tabs
+                activeTab = "authenticated";
                 try 
                 {
                     currentUser = await UserService.GetOrCreateUserAsync(authState.User);
@@ -314,6 +391,16 @@
                     collaborationBoards = null;
                 }
             }
+            else
+            {
+                // Unauthenticated users start with "welcome" tab
+                activeTab = "welcome";
+            }
+        }
+        else
+        {
+            // No auth state task means unauthenticated
+            activeTab = "welcome";
         }
     }
 
@@ -446,6 +533,7 @@
         var returnUrl = Uri.EscapeDataString(Navigation.Uri);
         Navigation.NavigateTo($"/Account/Login?returnUrl={returnUrl}", forceLoad: true);
     }
+    
 }
 
 <style>
@@ -564,7 +652,7 @@
     padding: 0 var(--space-lg);
     background: var(--accent-secondary);
     color: var(--bg-primary);
-    border: none;
+    border: 1px solid var(--accent-secondary);
     border-radius: var(--radius-md);
     font-weight: var(--font-weight-medium);
     cursor: pointer;
@@ -593,8 +681,8 @@
     text-align: center;
 }
 
-/* Two Column Grid Layout */
-.boards-grid {
+/* Two Column Layout */
+.boards-two-column-layout {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: var(--space-2xl);
@@ -605,9 +693,12 @@
 .boards-column {
     background: var(--bg-primary);
     border-radius: var(--radius-lg);
-    padding: var(--space-2xl);
+    padding: var(--space-lg);
     border: 1px solid var(--border-color);
     transition: background-color 0.3s ease, border-color 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
 }
 
 .boards-column h2 {
@@ -617,13 +708,11 @@
     color: var(--text-primary);
 }
 
-.section-description {
-    color: var(--text-secondary);
-    font-size: var(--font-size-sm);
-    margin: 0 0 var(--space-xl) 0;
+.boards-section {
+    flex: 1;
 }
 
-/* Board item styling */
+/* Board item styling for vertical lists */
 .boards-list {
     display: flex;
     flex-direction: column;
@@ -641,9 +730,15 @@
 
 .board-item:hover {
     border-color: var(--border-color-hover);
-    box-shadow: 0 2px 8px var(--shadow-light);
-    transform: translateY(-1px);
+    background: var(--bg-tertiary);
 }
+
+.section-description {
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    margin: 0 0 var(--space-xl) 0;
+}
+
 
 .board-header {
     display: flex;
@@ -779,13 +874,13 @@
         padding: var(--space-xs) 0;
     }
     
-    .boards-grid {
+    .boards-two-column-layout {
         grid-template-columns: 1fr;
         gap: var(--space-xl);
     }
     
     .boards-column {
-        padding: var(--space-xl);
+        padding: var(--space-md);
     }
     
     .board-header {

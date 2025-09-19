@@ -41,8 +41,8 @@
                                 
                                 <div class="form-group">
                                     <label>Display Name</label>
-                                    <input type="text" @bind="currentUser.DisplayName" @bind:event="oninput" />
-                                    <small class="text-muted">How your name appears to other users</small>
+                                    <input type="text" value="@currentUser.DisplayName" readonly />
+                                    <small class="text-muted">Display name is managed by your identity provider</small>
                                 </div>
                                 
                                 <div class="form-group">

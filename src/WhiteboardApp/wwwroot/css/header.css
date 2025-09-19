@@ -1,10 +1,13 @@
-/* Site Header Styles */
+/* Modern Dark Header Styles */
 
 .site-header {
-    background: var(--text-primary);
-    color: var(--bg-primary);
-    padding: 1rem;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    padding: 1rem 2rem;
     border-bottom: 1px solid var(--border-color);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 .site-header-content {
@@ -27,15 +30,21 @@
 .site-title {
     margin: 0;
     font-size: 1.75rem;
-    font-weight: 600;
-    color: var(--bg-primary);
+    font-weight: var(--font-weight-bold);
+    color: var(--text-primary);
+    background: var(--gradient-primary);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: none;
 }
 
 .site-description {
     margin: 0.25rem 0 0 0;
-    color: rgba(255, 255, 255, 0.8);
+    color: var(--text-secondary);
     font-size: 0.9rem;
     line-height: 1.3;
+    font-weight: var(--font-weight-medium);
 }
 
 /* Responsive design */

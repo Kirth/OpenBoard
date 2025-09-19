@@ -1,49 +1,75 @@
 :root {
-    /* Light mode colors */
+    /* Light Theme - Default */
     --bg-primary: #ffffff;
-    --bg-secondary: #f5f5f5;
-    --bg-tertiary: #e9ecef;
-    --text-primary: #2c3e50;
-    --text-secondary: #6c757d;
-    --text-muted: #adb5bd;
-    --border-color: rgba(0, 0, 0, 0.1);
-    --border-color-hover: rgba(0, 0, 0, 0.15);
-    --shadow-light: rgba(0, 0, 0, 0.05);
-    --shadow-medium: rgba(0, 0, 0, 0.1);
-    --shadow-heavy: rgba(0, 0, 0, 0.15);
-    --accent-primary: #3b82f6;
-    --accent-secondary: #8b5cf6;
+    --bg-secondary: #f8fafc;
+    --bg-tertiary: #f1f5f9;
+    --bg-elevated: #ffffff;
+    --bg-hero: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 50%, #cbd5e1 100%);
+    --text-primary: #1e293b;
+    --text-secondary: #64748b;
+    --text-muted: #94a3b8;
+    --border-color: #e2e8f0;
+    --border-color-hover: #cbd5e1;
+    
+    /* Light Theme Subtle Shadows */
+    --shadow-light: 0 1px 3px rgba(0, 0, 0, 0.1);
+    --shadow-medium: 0 2px 6px rgba(0, 0, 0, 0.1);
+    --shadow-large: 0 4px 12px rgba(0, 0, 0, 0.15);
+    --shadow-glow: 0 0 0 1px rgba(139, 92, 246, 0.2);
+    --shadow-card-hover: 0 2px 8px rgba(0, 0, 0, 0.1);
+    
+    /* Purple to Cyan Gradient System */
+    --gradient-primary: linear-gradient(135deg, #8b5cf6 0%, #06b6d4 100%);
+    --gradient-secondary: linear-gradient(135deg, #a855f7 0%, #3b82f6 100%);
+    --gradient-accent: linear-gradient(135deg, #ec4899 0%, #8b5cf6 50%, #06b6d4 100%);
+    
+    /* Accent Colors */
+    --accent-primary: #8b5cf6;
+    --accent-secondary: #06b6d4;
+    --accent-tertiary: #ec4899;
+    
+    /* Semantic Colors */
     --success: #10b981;
     --warning: #f59e0b;
     --error: #ef4444;
-    --canvas-bg: #ffffff;
-    --toolbar-bg: rgba(255, 255, 255, 0.95);
-    --toolbar-bg-mobile: rgba(255, 255, 255, 0.98);
+    --info: #06b6d4;
     
-    /* Extended color palette */
+    /* Muted Chips */
+    --chip-teal: #14b8a6;
+    --chip-rose: #f43f5e;
+    --chip-amber: #f59e0b;
+    --chip-purple: #a855f7;
+    --chip-cyan: #06b6d4;
+    
+    /* Canvas & UI */
+    --canvas-bg: #f8fafc;
+    --toolbar-bg: rgba(248, 250, 252, 0.95);
+    --toolbar-bg-mobile: rgba(248, 250, 252, 0.98);
+    
+    /* Extended Drawing Palette */
     --color-white: #ffffff;
     --color-black: #000000;
-    --color-red: #ff0000;
-    --color-green: #00ff00;
-    --color-blue: #0000ff;
-    --color-yellow: #ffff00;
-    --color-magenta: #ff00ff;
-    --color-cyan: #00ffff;
-    --color-orange: #ffa500;
-    --color-purple: #800080;
-    --color-pink: #ffc0cb;
+    --color-red: #ef4444;
+    --color-green: #10b981;
+    --color-blue: #3b82f6;
+    --color-yellow: #f59e0b;
+    --color-magenta: #ec4899;
+    --color-cyan: #06b6d4;
+    --color-orange: #f97316;
+    --color-purple: #8b5cf6;
+    --color-pink: #f472b6;
     
-    /* Bootstrap-inspired semantic colors */
-    --primary: #0d6efd;
-    --primary-hover: #0b5ed7;
-    --secondary: #6c757d;
-    --info: #0dcaf0;
-    --warning-bg: #fff3cd;
-    --warning-border: #ffecb5;
-    --error-bg: #f8d7da;
-    --error-border: #f5c2c7;
-    --success-bg: #d1e7dd;
-    --success-border: #badbcc;
+    /* Modern UI Colors */
+    --primary: #8b5cf6;
+    --primary-hover: #7c3aed;
+    --secondary: #64748b;
+    --info: #06b6d4;
+    --warning-bg: rgba(245, 158, 11, 0.1);
+    --warning-border: rgba(245, 158, 11, 0.2);
+    --error-bg: rgba(239, 68, 68, 0.1);
+    --error-border: rgba(239, 68, 68, 0.2);
+    --success-bg: rgba(16, 185, 129, 0.1);
+    --success-border: rgba(16, 185, 129, 0.2);
     
     /* Spacing scale */
     --space-xs: 4px;
@@ -61,8 +87,9 @@
     --radius-xl: 12px;
     --radius-full: 50px;
     
-    /* Typography scale */
-    --font-family-system: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    /* Modern Typography - Inter/Geist Style */
+    --font-family-primary: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --font-family-mono: 'JetBrains Mono', 'SF Mono', 'Consolas', monospace;
     --font-size-xs: 0.75rem;
     --font-size-sm: 0.875rem;
     --font-size-base: 1rem;
@@ -70,46 +97,81 @@
     --font-size-xl: 1.25rem;
     --font-size-2xl: 1.5rem;
     --font-size-3xl: 1.875rem;
+    --font-size-4xl: 2.25rem;
+    --font-weight-light: 300;
     --font-weight-normal: 400;
     --font-weight-medium: 500;
     --font-weight-semibold: 600;
     --font-weight-bold: 700;
+    --font-weight-extrabold: 800;
 }
 
-[data-theme="dark"] {
-    /* Dark mode colors */
-    --bg-primary: #1e1e1e;
-    --bg-secondary: #2d2d2d;
-    --bg-tertiary: #3d3d3d;
-    --text-primary: #e5e7eb;
-    --text-secondary: #9ca3af;
-    --text-muted: #6b7280;
+/* Dark Theme */
+[data-theme="dark"], .dark-theme {
+    --bg-primary: #0f0f15;
+    --bg-secondary: #1a1a23;
+    --bg-tertiary: #252530;
+    --bg-elevated: #2a2a35;
+    --bg-hero: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #1e3a8a 100%);
+    --text-primary: #ffffff;
+    --text-secondary: #a1a1aa;
+    --text-muted: #71717a;
     --border-color: rgba(255, 255, 255, 0.1);
     --border-color-hover: rgba(255, 255, 255, 0.2);
-    --shadow-light: rgba(0, 0, 0, 0.2);
-    --shadow-medium: rgba(0, 0, 0, 0.3);
-    --shadow-heavy: rgba(0, 0, 0, 0.4);
-    --accent-primary: #60a5fa;
-    --accent-secondary: #a78bfa;
-    --success: #34d399;
-    --warning: #fbbf24;
-    --error: #f87171;
-    --canvas-bg: #2a2a2a;
-    --toolbar-bg: rgba(46, 46, 46, 0.95);
-    --toolbar-bg-mobile: rgba(46, 46, 46, 0.98);
+    
+    /* Dark Theme Subtle Shadows */
+    --shadow-light: 0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow-medium: 0 2px 6px rgba(0, 0, 0, 0.4);
+    --shadow-large: 0 4px 12px rgba(0, 0, 0, 0.5);
+    --shadow-card-hover: 0 2px 8px rgba(0, 0, 0, 0.3);
+    
+    /* Dark Canvas & UI */
+    --canvas-bg: #1a1a23;
+    --toolbar-bg: rgba(26, 26, 35, 0.95);
+    --toolbar-bg-mobile: rgba(26, 26, 35, 0.98);
 }
 
-/* Auto dark mode based on system preference - handled by JavaScript now */
+/* Auto dark mode based on system preference */
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --bg-primary: #0f0f15;
+        --bg-secondary: #1a1a23;
+        --bg-tertiary: #252530;
+        --bg-elevated: #2a2a35;
+        --bg-hero: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #1e3a8a 100%);
+        --text-primary: #ffffff;
+        --text-secondary: #a1a1aa;
+        --text-muted: #71717a;
+        --border-color: rgba(255, 255, 255, 0.1);
+        --border-color-hover: rgba(255, 255, 255, 0.2);
+        
+        /* Dark Theme Subtle Shadows */
+        --shadow-light: 0 1px 3px rgba(0, 0, 0, 0.3);
+        --shadow-medium: 0 2px 6px rgba(0, 0, 0, 0.4);
+        --shadow-large: 0 4px 12px rgba(0, 0, 0, 0.5);
+        --shadow-card-hover: 0 2px 8px rgba(0, 0, 0, 0.3);
+        
+        /* Dark Canvas & UI */
+        --canvas-bg: #1a1a23;
+        --toolbar-bg: rgba(26, 26, 35, 0.95);
+        --toolbar-bg-mobile: rgba(26, 26, 35, 0.98);
+    }
+}
+
+/* Import Inter font */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 html, body {
     margin: 0;
     padding: 0;
-    font-family: var(--font-family-system);
+    font-family: var(--font-family-primary);
     -webkit-text-size-adjust: 100%;
     -webkit-tap-highlight-color: transparent;
     background-color: var(--bg-primary);
     color: var(--text-primary);
     transition: background-color 0.3s ease, color 0.3s ease;
+    font-feature-settings: 'cv11', 'ss01';
+    font-optical-sizing: auto;
 }
 
 /* Disable text selection only on canvas and drawing areas */
