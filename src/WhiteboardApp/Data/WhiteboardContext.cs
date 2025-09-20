@@ -14,6 +14,7 @@ public class WhiteboardContext : DbContext
     public DbSet<Board> Boards { get; set; }
     public DbSet<BoardElement> BoardElements { get; set; }
     public DbSet<BoardCollaborator> BoardCollaborators { get; set; }
+    public DbSet<UserBoardAccess> UserBoardAccesses { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -149,6 +150,35 @@ public class WhiteboardContext : DbContext
 
             entity.HasIndex(e => e.UserId);
             entity.HasIndex(e => e.Role);
+        });
+
+        // Configure UserBoardAccess entity
+        modelBuilder.Entity<UserBoardAccess>(entity =>
+        {
+            entity.ToTable("userboardaccesses");
+            entity.HasKey(e => e.Id);
+            
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.UserId).HasColumnName("userid");
+            entity.Property(e => e.BoardId).HasColumnName("boardid");
+            entity.Property(e => e.LastAccessedAt).HasColumnName("lastaccessedat").HasDefaultValueSql("NOW()");
+            entity.Property(e => e.AccessCount).HasColumnName("accesscount").HasDefaultValue(1);
+            entity.Property(e => e.IsJoin).HasColumnName("isjoin").HasDefaultValue(true);
+
+            // Relationships
+            entity.HasOne(e => e.User)
+                  .WithMany(u => u.BoardAccesses)
+                  .HasForeignKey(e => e.UserId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.Board)
+                  .WithMany()
+                  .HasForeignKey(e => e.BoardId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            // Unique constraint to prevent duplicate access records for the same user-board combination
+            entity.HasIndex(e => new { e.UserId, e.BoardId }).IsUnique();
+            entity.HasIndex(e => e.LastAccessedAt);
         });
 
         base.OnModelCreating(modelBuilder);

@@ -64,6 +64,7 @@ public class User
     public virtual ICollection<Board> OwnedBoards { get; set; } = new List<Board>();
     public virtual ICollection<BoardElement> CreatedElements { get; set; } = new List<BoardElement>();
     public virtual ICollection<BoardCollaborator> BoardCollaborations { get; set; } = new List<BoardCollaborator>();
+    public virtual ICollection<UserBoardAccess> BoardAccesses { get; set; } = new List<UserBoardAccess>();
 }
 
 /// <summary>

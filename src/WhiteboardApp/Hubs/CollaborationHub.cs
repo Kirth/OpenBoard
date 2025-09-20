@@ -111,6 +111,20 @@ public class CollaborationHub : Hub
 
             await Groups.AddToGroupAsync(Context.ConnectionId, $"Board_{boardId}");
 
+            // Track board access for authenticated users
+            if (user != null)
+            {
+                try
+                {
+                    await _boardService.TrackBoardAccessAsync(user.Id, boardGuid, isJoin: true);
+                }
+                catch (Exception ex)
+                {
+                    // Log but don't fail board join if tracking fails (table may not exist yet)
+                    _logger.LogWarning(ex, "Failed to track board access for user {UserId} on board {BoardId}", user.Id, boardGuid);
+                }
+            }
+
             // Create user session
             var userSession = await _userSessionManager.CreateSessionAsync(Context.ConnectionId, boardGuid, displayName);
 

@@ -247,28 +247,48 @@ public class UserService : IUserService
 
     public async Task<List<Board>> GetUserRecentBoardsAsync(Guid userId, int limit = 10)
     {
-        var user = await _context.Users
-            .Include(u => u.OwnedBoards)
-            .Include(u => u.BoardCollaborations)
-                .ThenInclude(bc => bc.Board)
-            .FirstOrDefaultAsync(u => u.Id == userId && u.IsActive);
-
-        if (user == null)
+        try
         {
-            return new List<Board>();
+            // Get boards based on actual user access tracking
+            var recentBoards = await _context.UserBoardAccesses
+                .Where(ua => ua.UserId == userId)
+                .OrderByDescending(ua => ua.LastAccessedAt)
+                .Take(limit)
+                .Select(ua => ua.Board)
+                .Include(b => b.Owner)
+                .Include(b => b.Elements)
+                .Include(b => b.Collaborators)
+                    .ThenInclude(c => c.User)
+                .ToListAsync();
+
+            return recentBoards;
         }
+        catch
+        {
+            // Fallback to old behavior if UserBoardAccesses table doesn't exist yet
+            var user = await _context.Users
+                .Include(u => u.OwnedBoards)
+                .Include(u => u.BoardCollaborations)
+                    .ThenInclude(bc => bc.Board)
+                .FirstOrDefaultAsync(u => u.Id == userId && u.IsActive);
 
-        // Combine owned boards and collaboration boards, sort by most recent activity
-        var ownedBoards = user.OwnedBoards?.AsEnumerable() ?? Enumerable.Empty<Board>();
-        var collaborationBoards = user.BoardCollaborations?.Select(bc => bc.Board) ?? Enumerable.Empty<Board>();
+            if (user == null)
+            {
+                return new List<Board>();
+            }
 
-        var allBoards = ownedBoards.Concat(collaborationBoards)
-            .Where(b => b != null)
-            .OrderByDescending(b => b.UpdatedAt)
-            .Take(limit)
-            .ToList();
+            // Combine owned boards and collaboration boards, sort by most recent activity
+            var ownedBoards = user.OwnedBoards?.AsEnumerable() ?? Enumerable.Empty<Board>();
+            var collaborationBoards = user.BoardCollaborations?.Select(bc => bc.Board) ?? Enumerable.Empty<Board>();
 
-        return allBoards;
+            var allBoards = ownedBoards.Concat(collaborationBoards)
+                .Where(b => b != null)
+                .OrderByDescending(b => b.UpdatedAt)
+                .Take(limit)
+                .ToList();
+
+            return allBoards;
+        }
     }
 
     public async Task<User?> GetUserByEmailAsync(string email)

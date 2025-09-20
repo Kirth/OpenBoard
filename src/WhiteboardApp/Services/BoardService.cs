@@ -36,11 +36,12 @@ public class BoardService
         return board;
     }
 
-    public async Task<Board> CreateBoardAsync(string name, User owner, BoardAccessLevel accessLevel = BoardAccessLevel.Private)
+    public async Task<Board> CreateBoardAsync(string name, User owner, BoardAccessLevel accessLevel = BoardAccessLevel.Private, string emoji = "📋")
     {
         var board = new Board 
         { 
             Name = name,
+            Emoji = emoji,
             OwnerId = owner.Id,
             AccessLevel = accessLevel
         };
@@ -164,6 +165,7 @@ public class BoardService
         {
             Id = Guid.NewGuid(),
             Name = newBoardName,
+            Emoji = sourceBoard.Emoji,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
             OwnerId = newOwner.Id,
@@ -305,6 +307,38 @@ public class BoardService
             _context.BoardCollaborators.Remove(collaboration);
             await _context.SaveChangesAsync();
         }
+    }
+
+    public async Task TrackBoardAccessAsync(Guid userId, Guid boardId, bool isJoin = true)
+    {
+        var existingAccess = await _context.UserBoardAccesses
+            .FirstOrDefaultAsync(ua => ua.UserId == userId && ua.BoardId == boardId);
+
+        if (existingAccess != null)
+        {
+            // Update existing access record
+            existingAccess.LastAccessedAt = DateTime.UtcNow;
+            existingAccess.AccessCount++;
+            if (isJoin && !existingAccess.IsJoin)
+            {
+                existingAccess.IsJoin = true;
+            }
+        }
+        else
+        {
+            // Create new access record
+            var newAccess = new UserBoardAccess
+            {
+                UserId = userId,
+                BoardId = boardId,
+                LastAccessedAt = DateTime.UtcNow,
+                AccessCount = 1,
+                IsJoin = isJoin
+            };
+            _context.UserBoardAccesses.Add(newAccess);
+        }
+
+        await _context.SaveChangesAsync();
     }
 }
 

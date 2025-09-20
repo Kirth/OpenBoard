@@ -1,67 +1,50 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @inject NavigationManager Navigation
 
-<link href="css/components.css" rel="stylesheet" />
-
-<div class="user-menu">
-    <AuthorizeView>
-        <Authorized>
-            <div class="user-info" @onclick="ShowUserMenu">
-                <span class="user-avatar">
-                    @if (!string.IsNullOrEmpty(context.User.FindFirst("name")?.Value))
-                    {
-                        @GetInitials(context.User.FindFirst("name")?.Value ?? "")
-                    }
-                    else
-                    {
-                        <i class="fas fa-user"></i>
-                    }
-                </span>
-                <div class="user-details">
-                    <span class="user-name">
-                        @(context.User.FindFirst("name")?.Value ?? 
-                          context.User.FindFirst("preferred_username")?.Value ?? 
-                          context.User.FindFirst("email")?.Value ?? "User")
-                    </span>
-                    <span class="user-email">
-                        @(context.User.FindFirst("email")?.Value ?? "")
-                    </span>
-                </div>
-                <div class="dropdown-indicator">
-                    <i class="fas fa-chevron-down"></i>
-                </div>
-            </div>
-            
-            @if (showDropdown)
+<AuthorizeView>
+    <Authorized>
+        <div class="avatar" @onclick="ShowUserMenu" style="cursor: pointer;" title="@(context.User.FindFirst("name")?.Value ?? "User")">
+            @if (!string.IsNullOrEmpty(context.User.FindFirst("name")?.Value))
             {
-                <div class="user-dropdown">
-                    <div class="dropdown-header">
-                        <strong>@(context.User.FindFirst("name")?.Value ?? "User")</strong>
-                        <small class="text-muted">@(context.User.FindFirst("email")?.Value ?? "")</small>
-                    </div>
-                    <div class="dropdown-divider"></div>
-                    <a class="dropdown-item" href="/profile">
-                        <i class="fas fa-user-circle"></i> Profile
+                @GetInitials(context.User.FindFirst("name")?.Value ?? "")
+            }
+            else
+            {
+                @GetInitials("User")
+            }
+        </div>
+        
+        @if (showDropdown)
+        {
+            <div class="user-dropdown" style="position: absolute; top: 100%; right: 0; z-index: 1000; margin-top: 8px; min-width: 220px; background: var(--surface); border: 1px solid var(--chip-border); border-radius: var(--radius-md); box-shadow: var(--shadow-2); padding: 6px;">
+                <div style="padding: 12px 14px; border-bottom: 1px solid var(--chip-border);">
+                    <div style="font-weight: var(--font-weight-semibold); color: var(--text);">@(context.User.FindFirst("name")?.Value ?? "User")</div>
+                    <div style="font-size: var(--font-size-sm); color: var(--text-dim); margin-top: 2px;">@(context.User.FindFirst("email")?.Value ?? "")</div>
+                </div>
+                <div style="padding: 6px;">
+                    <a href="/profile" style="display: block; width: 100%; text-align: left; padding: 10px; border-radius: var(--radius-sm); background: none; border: none; color: var(--text); cursor: pointer; text-decoration: none; transition: background 0.2s ease;" 
+                       onmouseover="this.style.background='var(--muted)'" onmouseout="this.style.background='none'">
+                        Profile
                     </a>
-                    <a class="dropdown-item" href="/">
-                        <i class="fas fa-clipboard-list"></i> My Boards
+                    <a href="/" style="display: block; width: 100%; text-align: left; padding: 10px; border-radius: var(--radius-sm); background: none; border: none; color: var(--text); cursor: pointer; text-decoration: none; transition: background 0.2s ease;"
+                       onmouseover="this.style.background='var(--muted)'" onmouseout="this.style.background='none'">
+                        My Boards
                     </a>
-                    <div class="dropdown-divider"></div>
-                    <button class="dropdown-item" @onclick="Logout">
-                        <i class="fas fa-sign-out-alt"></i> Sign Out
+                    <div style="height: 1px; background: var(--chip-border); margin: 6px 0;"></div>
+                    <button type="button" @onclick="Logout" style="display: block; width: 100%; text-align: left; padding: 10px; border-radius: var(--radius-sm); background: none; border: none; color: var(--text); cursor: pointer; transition: background 0.2s ease;"
+                            onmouseover="this.style.background='var(--muted)'" onmouseout="this.style.background='none'">
+                        Sign Out
                     </button>
                 </div>
-            }
-        </Authorized>
-        <NotAuthorized>
-            <div class="auth-actions">
-                <button class="btn btn-primary" @onclick="Login">
-                    <i class="fas fa-sign-in-alt"></i> Sign In
-                </button>
             </div>
-        </NotAuthorized>
-    </AuthorizeView>
-</div>
+        }
+    </Authorized>
+    <NotAuthorized>
+        <button class="btn btn-primary" @onclick="Login" style="font-size: var(--font-size-sm); padding: 8px 12px;">
+            Sign In
+        </button>
+    </NotAuthorized>
+</AuthorizeView>
 
 @code {
     private bool showDropdown = false;

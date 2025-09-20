@@ -2,97 +2,188 @@
 @using WhiteboardApp.Services
 @using WhiteboardApp.Models
 @using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.JSInterop
 @inject BoardService BoardService
 @inject IUserService UserService
 @inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
 
 <PageTitle>OpenBoard</PageTitle>
 
 <link href="css/home.css" rel="stylesheet" />
+<script src="js/theme.js"></script>
 
-<!-- Custom Header Integration -->
-<div class="integrated-header">
-    <div class="integrated-header-content">
-        <!-- Top Header Row -->
-        <div class="header-top-row">
-            <div class="site-branding">
-                <h1 class="site-title">OpenBoard</h1>
-                <p class="site-tagline">Real-time collaborative whiteboard</p>
-            </div>
-            <UserMenu />
-        </div>
+<header class="container topbar" role="banner">
+    <div class="brand">
+        <div class="logo" aria-hidden="true">OB</div>
+        OpenBoard
+    </div>
+    <nav class="nav" aria-label="Primary">
+        <a href="#features">Features</a>
+        <a href="#community">Community</a>
+        <a href="#">Docs</a>
+    </nav>
+    <div class="user">
+        <button id="themeToggle" class="toggle" aria-pressed="true" title="Toggle theme" @onclick="ToggleTheme">🌙</button>
+        <span class="chip">v0.1 demo</span>
+        <UserMenu />
+    </div>
+</header>
+
+<section class="container hero">
+    <div>
+        <h1>Real‑time collaborative whiteboarding</h1>
+        <p class="sub">Sketch ideas, stack stickies, and plan together from anywhere. Open source and fast.</p>
+
+        <form class="join" role="search" aria-label="Join board" @onsubmit="JoinBoard" @onsubmit:preventDefault="true">
+            <span class="frog-icon" aria-hidden="true">🐸</span>
+            <input @bind="boardId" @oninput="ClearError" placeholder="Enter board ID to join…" autocomplete="off" />
+            <button class="btn btn-ghost" type="button" @onclick="JoinBoard" disabled="@string.IsNullOrWhiteSpace(boardId)">Join</button>
+        </form>
         
-        <!-- Hero Action Row -->
-        <div class="hero-action-row">
-            <div class="hero-left">
-                <div class="search-join-area">
-                    <div class="search-input-container">
-                        <img src="img/pencil-frog-small.png" alt="Search" class="search-icon" />
-                        <input type="text" placeholder="Enter Board ID to join..." @bind="boardId" @oninput="ClearError" class="hero-search-input" />
-                        <button @onclick="JoinBoard" disabled="@string.IsNullOrWhiteSpace(boardId)" class="join-btn-hero">
-                            Join
-                        </button>
-                    </div>
-                    <button class="create-btn-hero" @onclick="ShowCreateModal">
-                        <i class="fas fa-plus"></i>
-                        Create board
-                    </button>
-                </div>
-                @if (!string.IsNullOrEmpty(errorMessage))
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="hero-error-message">@errorMessage</div>
+        }
+
+        <div class="cta-row">
+            <button class="btn btn-primary" type="button" @onclick="ShowCreateModal">Create board</button>
+            <div class="template-dropdown">
+                <button class="btn btn-ghost" type="button" @onclick="ToggleTemplateMenu" 
+                        aria-expanded="@showTemplateMenu" aria-controls="templateMenu">
+                    New from template ▾
+                </button>
+                @if (showTemplateMenu)
                 {
-                    <div class="hero-error-message">@errorMessage</div>
+                    <div id="templateMenu" class="template-menu">
+                        <button type="button" @onclick="@(() => CreateFromTemplate("kanban"))">Kanban</button>
+                        <button type="button" @onclick="@(() => CreateFromTemplate("retrospective"))">Retrospective</button>
+                        <button type="button" @onclick="@(() => CreateFromTemplate("flowchart"))">Flowchart</button>
+                        <button type="button" @onclick="@(() => CreateFromTemplate("blank"))">Blank</button>
+                    </div>
                 }
-            </div>
-            <div class="hero-right">
-                <div class="hero-illustrations">
-                    <div class="sticky-note note-1">
-                        <div class="note-content">🐸</div>
-                    </div>
-                    <div class="sticky-note note-2">
-                        <div class="note-content">🐦</div>
-                    </div>
-                    <div class="sticky-note note-3">
-                        <div class="note-content">🦋</div>
-                    </div>
-                </div>
             </div>
         </div>
     </div>
-</div>
 
+    <div class="hero-art" aria-hidden="true">
+        <div class="hero-placeholder">🎨</div>
+    </div>
+</section>
 
-<div class="home-content home-wide">
+<main class="container" role="main">
+    <div class="tabs-wrap">
+        <nav class="tabs" aria-label="Board sections">
+            <button class="tab @(activeTab == "my" ? "active" : "")" type="button" @onclick="@(() => SetActiveTab("my"))">My boards</button>
+            <button class="tab @(activeTab == "public" ? "active" : "")" type="button" @onclick="@(() => SetActiveTab("public"))">Public</button>
+            <button class="tab @(activeTab == "recent" ? "active" : "")" type="button" @onclick="@(() => SetActiveTab("recent"))">Recent</button>
+        </nav>
+        <div class="toolbar" role="region" aria-label="Filters">
+            <input class="input" @bind="searchQuery" @oninput="FilterBoards" placeholder="Search boards" />
+            <select @bind="sortOrder" aria-label="Sort">
+                <option value="updated">Updated</option>
+                <option value="alphabetical">Alphabetical</option>
+                <option value="created">Created</option>
+            </select>
+        </div>
+    </div>
 
-        <!-- Content for Unauthenticated Users -->
+    <section class="grid" aria-label="Boards list">
         <AuthorizeView>
-            <NotAuthorized>
-                <!-- Public Boards Section -->
-                <section class="boards-section">
-                    <div class="section-header">
-                        <h2>Public Boards</h2>
-                        <p class="section-description">Community boards anyone can join</p>
-                    </div>
-                    
-                    @if (publicBoards != null && publicBoards.Count > 0)
+            <Authorized>
+                @if (activeTab == "my")
+                {
+                    @if (displayedBoards != null && displayedBoards.Count > 0)
                     {
-                        <div class="boards-grid">
-                            @foreach (var board in publicBoards)
-                            {
-                                <div class="board-card" @onclick="@(() => JoinSpecificBoard(board.Id))">
-                                    <div class="board-header">
-                                        <h3>@board.Name</h3>
-                                        <div class="board-badges">
-                                            <span class="board-visibility-badge public">Public</span>
+                        @foreach (var board in displayedBoards)
+                        {
+                            <article class="card" tabindex="0" @onclick="@(async () => await JoinSpecificBoard(board.Id))">
+                                <div class="thumb" aria-hidden="true">@board.Emoji</div>
+                                <div class="meta">
+                                    <h3>
+                                        @board.Name
+                                        <button class="icon-btn" aria-label="Star board" aria-pressed="false" 
+                                                @onclick="@(e => ToggleStar(board.Id))" 
+                                                @onclick:stopPropagation="true">★</button>
+                                    </h3>
+                                    <div class="row">
+                                        <span>Updated @FormatDate(board.UpdatedAt)</span>
+                                        <span>•</span>
+                                        <span>@GetElementCount(board)</span>
+                                    </div>
+                                    @if (GetCollaboratorCount(board) > 0)
+                                    {
+                                        <div class="avatars" aria-label="Collaborators">
+                                            @* Placeholder for collaborator avatars *@
                                         </div>
-                                    </div>
-                                    <div class="board-info">
-                                        <span><i class="fas fa-sticky-note"></i> @GetStickyCount(board)</span>
-                                        <span><i class="fas fa-clock"></i> @FormatDate(board.UpdatedAt)</span>
-                                        <span><i class="fas fa-user"></i> @(board.Owner?.DisplayName ?? "Unknown")</span>
-                                    </div>
+                                    }
                                 </div>
+                                <div class="actions">
+                                    <div class="badge @GetAccessLevelClass(board.AccessLevel)">
+                                        @GetAccessLevelIcon(board.AccessLevel) @GetAccessLevelText(board.AccessLevel)
+                                    </div>
+                                    <button class="icon-btn" title="Share" @onclick="@(e => ShareBoard(board.Id))" @onclick:stopPropagation="true">⋯</button>
+                                </div>
+                            </article>
+                        }
+                    }
+                    else if (displayedBoards != null)
+                    {
+                        <div class="empty-state">
+                            <p>@(string.IsNullOrEmpty(searchQuery) ? "You haven't created any boards yet." : "No boards match your search.")</p>
+                            @if (string.IsNullOrEmpty(searchQuery))
+                            {
+                                <button class="link-btn" @onclick="ShowCreateModal">Create your first board</button>
                             }
                         </div>
+                    }
+                    else
+                    {
+                        @* Loading skeleton *@
+                        @for (int i = 0; i < 3; i++)
+                        {
+                            <article class="card">
+                                <div class="thumb skeleton"></div>
+                                <div class="meta">
+                                    <div class="skeleton" style="height:18px; width:160px; border-radius:6px"></div>
+                                    <div class="skeleton" style="height:12px; width:220px; margin-top:10px; border-radius:6px"></div>
+                                </div>
+                                <div class="actions">
+                                    <div class="skeleton" style="height:28px; width:80px; border-radius:999px"></div>
+                                </div>
+                            </article>
+                        }
+                    }
+                }
+                else if (activeTab == "public")
+                {
+                    @if (publicBoards != null && publicBoards.Count > 0)
+                    {
+                        @foreach (var board in publicBoards.Where(FilterBoard))
+                        {
+                            <article class="card" tabindex="0" @onclick="@(async () => await JoinSpecificBoard(board.Id))">
+                                <div class="thumb" aria-hidden="true">@board.Emoji</div>
+                                <div class="meta">
+                                    <h3>
+                                        @board.Name
+                                        <button class="icon-btn" aria-label="Star board" aria-pressed="false" 
+                                                @onclick="@(e => ToggleStar(board.Id))" 
+                                                @onclick:stopPropagation="true">★</button>
+                                    </h3>
+                                    <div class="row">
+                                        <span>Updated @FormatDate(board.UpdatedAt)</span>
+                                        <span>•</span>
+                                        <span>@GetStickyCount(board)</span>
+                                        <span>•</span>
+                                        <span>@(board.Owner?.DisplayName ?? "Unknown")</span>
+                                    </div>
+                                </div>
+                                <div class="actions">
+                                    <div class="badge public">🌐 Public</div>
+                                    <button class="icon-btn" title="Share" @onclick="@(e => ShareBoard(board.Id))" @onclick:stopPropagation="true">⋯</button>
+                                </div>
+                            </article>
+                        }
                     }
                     else if (publicBoards != null)
                     {
@@ -102,165 +193,170 @@
                     }
                     else
                     {
+                        @* Loading skeleton *@
+                        @for (int i = 0; i < 3; i++)
+                        {
+                            <article class="card">
+                                <div class="thumb skeleton"></div>
+                                <div class="meta">
+                                    <div class="skeleton" style="height:18px; width:160px; border-radius:6px"></div>
+                                    <div class="skeleton" style="height:12px; width:220px; margin-top:10px; border-radius:6px"></div>
+                                </div>
+                                <div class="actions">
+                                    <div class="skeleton" style="height:28px; width:80px; border-radius:999px"></div>
+                                </div>
+                            </article>
+                        }
+                    }
+                }
+                else if (activeTab == "recent")
+                {
+                    @if (recentBoards != null && recentBoards.Count > 0)
+                    {
+                        @foreach (var board in recentBoards.Where(FilterBoard))
+                        {
+                            <article class="card" tabindex="0" @onclick="@(async () => await JoinSpecificBoard(board.Id))">
+                                <div class="thumb" aria-hidden="true">@board.Emoji</div>
+                                <div class="meta">
+                                    <h3>
+                                        @board.Name
+                                        <button class="icon-btn" aria-label="Star board" aria-pressed="false" 
+                                                @onclick="@(e => ToggleStar(board.Id))" 
+                                                @onclick:stopPropagation="true">★</button>
+                                    </h3>
+                                    <div class="row">
+                                        <span>Updated @FormatDate(board.UpdatedAt)</span>
+                                        <span>•</span>
+                                        <span>@GetElementCount(board)</span>
+                                        <span>•</span>
+                                        <span>@(board.Owner?.DisplayName ?? "Unknown")</span>
+                                    </div>
+                                </div>
+                                <div class="actions">
+                                    <div class="badge @GetAccessLevelClass(board.AccessLevel)">
+                                        @GetAccessLevelIcon(board.AccessLevel) @GetAccessLevelText(board.AccessLevel)
+                                    </div>
+                                    <button class="icon-btn" title="Share" @onclick="@(e => ShareBoard(board.Id))" @onclick:stopPropagation="true">⋯</button>
+                                </div>
+                            </article>
+                        }
+                    }
+                    else if (recentBoards != null)
+                    {
                         <div class="empty-state">
-                            <p>Loading public boards...</p>
+                            <p>No recent boards yet. Join or create a board to see it here!</p>
                         </div>
                     }
-                </section>
-            </NotAuthorized>
-            
-            <Authorized>
-                <!-- Two Column Layout for Authenticated Users -->
-                <div class="boards-two-column-layout">
-                    
-                    <!-- Left Column: Recent + My Boards -->
-                    <div class="boards-column">
-                        <!-- Recent Boards Section -->
-                        <section class="boards-section">
-                            <div class="section-header">
-                                <h2>Recent</h2>
-                                <p class="section-description">Recently accessed boards</p>
-                            </div>
-                            <div class="empty-state">
-                                <p>Recent boards feature coming soon!</p>
-                            </div>
-                        </section>
-                        
-                        <!-- My Boards Section -->
-                        <section class="boards-section">
-                            <div class="section-header">
-                                <h2>My Boards</h2>
-                                <p class="section-description">Boards you own and collaborate on</p>
-                            </div>
-                            
-                            @if (userBoards != null && userBoards.Count > 0 || collaborationBoards != null && collaborationBoards.Count > 0)
-                            {
-                                <div class="boards-list">
-                                    <!-- Owned Boards -->
-                                    @if (userBoards != null && userBoards.Count > 0)
-                                    {
-                                        @foreach (var board in userBoards)
-                                        {
-                                            <div class="board-item" @onclick="@(() => JoinSpecificBoard(board.Id))">
-                                                <div class="board-header">
-                                                    <h3>@board.Name</h3>
-                                                    <div class="board-badges">
-                                                        <span class="board-visibility-badge @(board.AccessLevel == BoardAccessLevel.Public ? "public" : "private")">
-                                                            @(board.AccessLevel == BoardAccessLevel.Public ? "Public" : 
-                                                              board.AccessLevel == BoardAccessLevel.Unlisted ? "Unlisted" : "Private")
-                                                        </span>
-                                                        <span class="board-role-badge owner">Owner</span>
-                                                    </div>
-                                                </div>
-                                                <div class="board-info">
-                                                    <span><i class="fas fa-sticky-note"></i> @GetElementCount(board)</span>
-                                                    <span><i class="fas fa-users"></i> @GetCollaboratorCount(board)</span>
-                                                    <span><i class="fas fa-clock"></i> @FormatDate(board.UpdatedAt)</span>
-                                                </div>
-                                            </div>
-                                        }
-                                    }
-                                    
-                                    <!-- Collaboration Boards -->
-                                    @if (collaborationBoards != null && collaborationBoards.Count > 0)
-                                    {
-                                        @foreach (var collaboration in collaborationBoards)
-                                        {
-                                            <div class="board-item" @onclick="@(() => JoinSpecificBoard(collaboration.Board.Id))">
-                                                <div class="board-header">
-                                                    <h3>@collaboration.Board.Name</h3>
-                                                    <div class="board-badges">
-                                                        <span class="board-visibility-badge @(collaboration.Board.AccessLevel == BoardAccessLevel.Public ? "public" : "private")">
-                                                            @(collaboration.Board.AccessLevel == BoardAccessLevel.Public ? "Public" : 
-                                                              collaboration.Board.AccessLevel == BoardAccessLevel.Unlisted ? "Unlisted" : "Private")
-                                                        </span>
-                                                        <span class="board-role-badge @collaboration.Role.ToString().ToLower()">@collaboration.Role</span>
-                                                    </div>
-                                                </div>
-                                                <div class="board-info">
-                                                    <span><i class="fas fa-sticky-note"></i> @GetElementCount(collaboration.Board)</span>
-                                                    <span><i class="fas fa-user"></i> Owner: @(collaboration.Board.Owner?.DisplayName ?? "Unknown")</span>
-                                                    <span><i class="fas fa-clock"></i> @FormatDate(collaboration.Board.UpdatedAt)</span>
-                                                </div>
-                                            </div>
-                                        }
-                                    }
+                    else
+                    {
+                        @* Loading skeleton *@
+                        @for (int i = 0; i < 3; i++)
+                        {
+                            <article class="card">
+                                <div class="thumb skeleton"></div>
+                                <div class="meta">
+                                    <div class="skeleton" style="height:18px; width:160px; border-radius:6px"></div>
+                                    <div class="skeleton" style="height:12px; width:220px; margin-top:10px; border-radius:6px"></div>
                                 </div>
-                            }
-                            else if (userBoards != null && collaborationBoards != null)
-                            {
-                                <div class="empty-state">
-                                    <p>You haven't created or joined any boards yet.</p>
-                                    <button class="link-btn" @onclick="ShowCreateModal">Create your first board</button>
+                                <div class="actions">
+                                    <div class="skeleton" style="height:28px; width:80px; border-radius:999px"></div>
                                 </div>
-                            }
-                            else
-                            {
-                                <div class="empty-state">
-                                    <p>Loading your boards...</p>
-                                </div>
-                            }
-                        </section>
-                    </div>
-                    
-                    <!-- Right Column: Public Boards -->
-                    <div class="boards-column">
-                        <section class="boards-section">
-                            <div class="section-header">
-                                <h2>Public Boards</h2>
-                                <p class="section-description">Community boards anyone can join</p>
-                            </div>
-                            
-                            @if (publicBoards != null && publicBoards.Count > 0)
-                            {
-                                <div class="boards-list">
-                                    @foreach (var board in publicBoards)
-                                    {
-                                        <div class="board-item" @onclick="@(() => JoinSpecificBoard(board.Id))">
-                                            <div class="board-header">
-                                                <h3>@board.Name</h3>
-                                                <div class="board-badges">
-                                                    <span class="board-visibility-badge public">Public</span>
-                                                </div>
-                                            </div>
-                                            <div class="board-info">
-                                                <span><i class="fas fa-sticky-note"></i> @GetStickyCount(board)</span>
-                                                <span><i class="fas fa-clock"></i> @FormatDate(board.UpdatedAt)</span>
-                                                <span><i class="fas fa-user"></i> @(board.Owner?.DisplayName ?? "Unknown")</span>
-                                            </div>
-                                        </div>
-                                    }
-                                </div>
-                            }
-                            else if (publicBoards != null)
-                            {
-                                <div class="empty-state">
-                                    <p>No public boards available right now.</p>
-                                </div>
-                            }
-                            else
-                            {
-                                <div class="empty-state">
-                                    <p>Loading public boards...</p>
-                                </div>
-                            }
-                        </section>
-                    </div>
-                </div>
+                            </article>
+                        }
+                    }
+                }
             </Authorized>
+            <NotAuthorized>
+                @if (publicBoards != null && publicBoards.Count > 0)
+                {
+                    @foreach (var board in publicBoards)
+                    {
+                        <article class="card" tabindex="0" @onclick="@(async () => await JoinSpecificBoard(board.Id))">
+                            <div class="thumb" aria-hidden="true">@board.Emoji</div>
+                            <div class="meta">
+                                <h3>@board.Name</h3>
+                                <div class="row">
+                                    <span>Updated @FormatDate(board.UpdatedAt)</span>
+                                    <span>•</span>
+                                    <span>@GetStickyCount(board)</span>
+                                    <span>•</span>
+                                    <span>@(board.Owner?.DisplayName ?? "Unknown")</span>
+                                </div>
+                            </div>
+                            <div class="actions">
+                                <div class="badge public">🌐 Public</div>
+                            </div>
+                        </article>
+                    }
+                }
+                else if (publicBoards != null)
+                {
+                    <div class="empty-state">
+                        <p>No public boards available right now.</p>
+                    </div>
+                }
+                else
+                {
+                    @* Loading skeleton *@
+                    @for (int i = 0; i < 3; i++)
+                    {
+                        <article class="card">
+                            <div class="thumb skeleton"></div>
+                            <div class="meta">
+                                <div class="skeleton" style="height:18px; width:160px; border-radius:6px"></div>
+                                <div class="skeleton" style="height:12px; width:220px; margin-top:10px; border-radius:6px"></div>
+                            </div>
+                            <div class="actions">
+                                <div class="skeleton" style="height:28px; width:80px; border-radius:999px"></div>
+                            </div>
+                        </article>
+                    }
+                }
+            </NotAuthorized>
         </AuthorizeView>
-    </div>
+    </section>
+
+    <footer class="container" id="community">
+        <p>OpenBoard is open source. <a href="#">View on GitHub</a></p>
+    </footer>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite" style="@(showToast ? "display: block;" : "display: none;")">
+    @toastMessage
+</div>
 
 <!-- Create Board Modal -->
 @if (showCreateModal)
 {
-    <div class="modal modal-simple" @onclick="HideCreateModal">
+    <div class="modal" @onclick="HideCreateModal">
         <div class="modal-content" @onclick:stopPropagation="true">
             <h3>Create Board</h3>
             
             <div class="form-group">
                 <label>Title</label>
                 <input type="text" @bind="newBoardTitle" placeholder="My Board" />
+            </div>
+            
+            <div class="form-group">
+                <label>Emoji</label>
+                <div class="emoji-picker-container">
+                    <div class="emoji-display" @onclick="ToggleEmojiPicker">
+                        <span class="selected-emoji">@selectedEmoji</span>
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
+                    @if (showEmojiPicker)
+                    {
+                        <div class="emoji-grid" @onclick:stopPropagation="true">
+                            @foreach (var emoji in availableEmojis)
+                            {
+                                <button type="button" class="emoji-option @(selectedEmoji == emoji ? "selected" : "")" 
+                                        @onclick="@(() => SelectEmoji(emoji))">
+                                    @emoji
+                                </button>
+                            }
+                        </div>
+                    }
+                </div>
             </div>
             
             <div class="form-group">
@@ -357,14 +453,33 @@
     
     private string boardId = "";
     private string newBoardTitle = "";
+    private string selectedEmoji = "📋";
+    private bool showEmojiPicker = false;
     private BoardAccessLevel selectedAccessLevel = BoardAccessLevel.Private;
     private bool showCreateModal = false;
+    private bool showTemplateMenu = false;
+    private bool showToast = false;
+    private string toastMessage = "";
     private string errorMessage = "";
-    private string activeTab = "welcome";
+    private string activeTab = "my";
+    private string searchQuery = "";
+    private string sortOrder = "updated";
+    private string currentTheme = "dark";
+    
     private List<WhiteboardApp.Models.Board>? publicBoards;
     private List<WhiteboardApp.Models.Board>? userBoards;
     private List<BoardCollaborator>? collaborationBoards;
+    private List<WhiteboardApp.Models.Board>? recentBoards;
+    private List<WhiteboardApp.Models.Board>? displayedBoards;
     private User? currentUser;
+    private HashSet<Guid> starredBoards = new();
+    
+    private readonly string[] availableEmojis = new[]
+    {
+        "📋", "📝", "🎨", "💡", "🚀", "⭐", "🎯", "🔥",
+        "📊", "📈", "🗂️", "📌", "✨", "🌟", "💫", "🎪",
+        "🎭", "🎨", "🖼️", "🖊️", "✏️", "🖍️", "🖌️", "📏"
+    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -376,32 +491,81 @@
             var authState = await AuthenticationStateTask;
             if (authState.User.Identity?.IsAuthenticated == true)
             {
-                // Authenticated users no longer use tabs
-                activeTab = "authenticated";
                 try 
                 {
                     currentUser = await UserService.GetOrCreateUserAsync(authState.User);
                     userBoards = await BoardService.GetUserOwnedBoardsAsync(currentUser);
                     collaborationBoards = currentUser.BoardCollaborations?.ToList() ?? new List<BoardCollaborator>();
+                    
+                    // Load recent boards using UserService
+                    recentBoards = await UserService.GetUserRecentBoardsAsync(currentUser.Id, 5);
+                    
+                    // Set initial displayed boards
+                    UpdateDisplayedBoards();
                 }
                 catch
                 {
-                    // If there's an issue getting user boards, just leave them as null
                     userBoards = null;
                     collaborationBoards = null;
+                    recentBoards = null;
                 }
             }
             else
             {
-                // Unauthenticated users start with "welcome" tab
-                activeTab = "welcome";
+                activeTab = "public";
             }
         }
         else
         {
-            // No auth state task means unauthenticated
-            activeTab = "welcome";
+            activeTab = "public";
         }
+    }
+
+    private void SetActiveTab(string tab)
+    {
+        activeTab = tab;
+        UpdateDisplayedBoards();
+    }
+
+    private void UpdateDisplayedBoards()
+    {
+        if (activeTab == "my")
+        {
+            var allMyBoards = new List<WhiteboardApp.Models.Board>();
+            if (userBoards != null) allMyBoards.AddRange(userBoards);
+            if (collaborationBoards != null) allMyBoards.AddRange(collaborationBoards.Select(c => c.Board));
+            
+            displayedBoards = allMyBoards
+                .Where(FilterBoard)
+                .OrderBy(b => sortOrder switch
+                {
+                    "alphabetical" => b.Name,
+                    "created" => b.CreatedAt.ToString(),
+                    _ => b.UpdatedAt.ToString()
+                })
+                .ToList();
+                
+            if (sortOrder == "updated" || sortOrder == "created")
+            {
+                displayedBoards.Reverse();
+            }
+        }
+    }
+
+    private bool FilterBoard(WhiteboardApp.Models.Board board)
+    {
+        if (string.IsNullOrEmpty(searchQuery)) return true;
+        return board.Name.Contains(searchQuery, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void FilterBoards()
+    {
+        UpdateDisplayedBoards();
+    }
+
+    private void SortBoards()
+    {
+        UpdateDisplayedBoards();
     }
 
     private async Task CreateNewBoard()
@@ -423,7 +587,6 @@
                 }
                 catch
                 {
-                    // Fallback to anonymous user if there's an issue
                     user = await UserService.GetAnonymousUserAsync();
                 }
             }
@@ -437,7 +600,7 @@
             user = await UserService.GetAnonymousUserAsync();
         }
 
-        var board = await BoardService.CreateBoardAsync(newBoardTitle.Trim(), user, selectedAccessLevel);
+        var board = await BoardService.CreateBoardAsync(newBoardTitle.Trim(), user, selectedAccessLevel, selectedEmoji);
         
         // Refresh user boards list if user is authenticated
         if (user.SubjectId != "anonymous-user")
@@ -445,10 +608,31 @@
             userBoards = await BoardService.GetUserOwnedBoardsAsync(user);
             currentUser = user;
             collaborationBoards = currentUser.BoardCollaborations?.ToList() ?? new List<BoardCollaborator>();
+            
+            // Refresh recent boards using UserService
+            recentBoards = await UserService.GetUserRecentBoardsAsync(user.Id, 5);
+            UpdateDisplayedBoards();
         }
         
         HideCreateModal();
         Navigation.NavigateTo($"/board/{board.Id}");
+    }
+
+    private async Task CreateFromTemplate(string template)
+    {
+        showTemplateMenu = false;
+        // For now, just create a blank board with a template-specific emoji
+        var templateEmoji = template switch
+        {
+            "kanban" => "📋",
+            "retrospective" => "🔄",
+            "flowchart" => "🔀",
+            _ => "📝"
+        };
+        
+        selectedEmoji = templateEmoji;
+        newBoardTitle = $"{template.Substring(0, 1).ToUpper()}{template.Substring(1)} Board";
+        ShowCreateModal();
     }
 
     private async Task JoinBoard()
@@ -473,18 +657,56 @@
             return;
         }
 
+        // Track board access for authenticated users
+        if (AuthenticationStateTask != null)
+        {
+            var authState = await AuthenticationStateTask;
+            if (authState.User.Identity?.IsAuthenticated == true)
+            {
+                try
+                {
+                    var user = await UserService.GetOrCreateUserAsync(authState.User);
+                    await BoardService.TrackBoardAccessAsync(user.Id, boardGuid, isJoin: false);
+                }
+                catch
+                {
+                    // Ignore tracking errors
+                }
+            }
+        }
+
         Navigation.NavigateTo($"/board/{boardId}");
     }
 
-    private void JoinSpecificBoard(Guid id)
+    private async Task JoinSpecificBoard(Guid id)
     {
+        // Track board access for authenticated users
+        if (AuthenticationStateTask != null)
+        {
+            var authState = await AuthenticationStateTask;
+            if (authState.User.Identity?.IsAuthenticated == true)
+            {
+                try
+                {
+                    var user = await UserService.GetOrCreateUserAsync(authState.User);
+                    await BoardService.TrackBoardAccessAsync(user.Id, id, isJoin: false);
+                }
+                catch
+                {
+                    // Ignore tracking errors
+                }
+            }
+        }
+
         Navigation.NavigateTo($"/board/{id}");
     }
 
     private void ShowCreateModal()
     {
         newBoardTitle = "";
+        selectedEmoji = "📋";
         selectedAccessLevel = BoardAccessLevel.Private;
+        showEmojiPicker = false;
         showCreateModal = true;
     }
 
@@ -492,16 +714,65 @@
     {
         showCreateModal = false;
         newBoardTitle = "";
+        selectedEmoji = "📋";
         selectedAccessLevel = BoardAccessLevel.Private;
+        showEmojiPicker = false;
+    }
+    
+    private void ToggleEmojiPicker()
+    {
+        showEmojiPicker = !showEmojiPicker;
+    }
+    
+    private void SelectEmoji(string emoji)
+    {
+        selectedEmoji = emoji;
+        showEmojiPicker = false;
+    }
+
+    private void ToggleTemplateMenu()
+    {
+        showTemplateMenu = !showTemplateMenu;
+    }
+
+    private async Task ToggleTheme()
+    {
+        await JSRuntime.InvokeVoidAsync("OpenBoardTheme.toggle");
+    }
+
+    private void ToggleStar(Guid boardId)
+    {
+        if (starredBoards.Contains(boardId))
+        {
+            starredBoards.Remove(boardId);
+        }
+        else
+        {
+            starredBoards.Add(boardId);
+        }
+    }
+
+    private void ShareBoard(Guid boardId)
+    {
+        toastMessage = "Link copied";
+        showToast = true;
+        StateHasChanged();
+        
+        // Hide toast after 1.4 seconds
+        Task.Delay(1400).ContinueWith(_ =>
+        {
+            showToast = false;
+            InvokeAsync(StateHasChanged);
+        });
     }
 
     private string FormatDate(DateTime date)
     {
         var timeAgo = DateTime.UtcNow - date;
         if (timeAgo.TotalMinutes < 1) return "now";
-        if (timeAgo.TotalHours < 1) return $"{(int)timeAgo.TotalMinutes}m";
-        if (timeAgo.TotalDays < 1) return $"{(int)timeAgo.TotalHours}h";
-        if (timeAgo.TotalDays < 7) return $"{(int)timeAgo.TotalDays}d";
+        if (timeAgo.TotalHours < 1) return $"{(int)timeAgo.TotalMinutes}m ago";
+        if (timeAgo.TotalDays < 1) return $"{(int)timeAgo.TotalHours}h ago";
+        if (timeAgo.TotalDays < 7) return $"{(int)timeAgo.TotalDays}d ago";
         return date.ToString("M/d");
     }
 
@@ -522,507 +793,42 @@
         return count == 1 ? "1 item" : $"{count} items";
     }
 
-    private string GetCollaboratorCount(WhiteboardApp.Models.Board board)
+    private int GetCollaboratorCount(WhiteboardApp.Models.Board board)
     {
         var count = board.Collaborators?.Count ?? 0;
-        return count == 1 ? "1 collaborator" : $"{count} collaborators";
+        return count;
     }
 
-    private void NavigateToLogin()
+    private string GetAccessLevelClass(BoardAccessLevel level)
     {
-        var returnUrl = Uri.EscapeDataString(Navigation.Uri);
-        Navigation.NavigateTo($"/Account/Login?returnUrl={returnUrl}", forceLoad: true);
+        return level switch
+        {
+            BoardAccessLevel.Public => "public",
+            BoardAccessLevel.Private => "private",
+            BoardAccessLevel.Unlisted => "unlisted",
+            _ => ""
+        };
     }
-    
-}
 
-<style>
-/* Home page specific width overrides */
-.home-wide {
-    max-width: 1600px !important;
-    width: 100%;
-    margin: 0 auto;
-}
-
-/* Compact Header Styling */
-.home-header {
-    background: var(--bg-primary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    margin-bottom: var(--space-3xl);
-    box-shadow: 0 2px 4px var(--shadow-light);
-}
-
-.home-header-content {
-    padding: var(--space-lg) var(--space-xl);
-}
-
-.header-with-mascot {
-    display: flex;
-    align-items: center;
-    gap: var(--space-lg);
-}
-
-.mascot-section {
-    flex-shrink: 0;
-}
-
-.mascot-image {
-    width: 48px;
-    height: 48px;
-    object-fit: contain;
-    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
-}
-
-.join-create-compact {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-lg);
-    flex-wrap: wrap;
-}
-
-.join-board-compact {
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-}
-
-.join-board-compact input {
-    width: 280px;
-    height: 36px;
-    padding: 0 var(--space-md);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-sm);
-    background: var(--bg-secondary);
-    color: var(--text-primary);
-    transition: border-color 0.2s ease;
-}
-
-.join-board-compact input:focus {
-    outline: none;
-    border-color: var(--primary);
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
-}
-
-.join-btn-compact {
-    display: flex;
-    align-items: center;
-    gap: var(--space-xs);
-    height: 36px;
-    padding: 0 var(--space-lg);
-    background: var(--primary);
-    color: var(--bg-primary);
-    border: none;
-    border-radius: var(--radius-md);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: background 0.2s ease;
-    font-size: var(--font-size-sm);
-    white-space: nowrap;
-}
-
-.join-btn-compact:hover:not(:disabled) {
-    background: var(--primary-hover);
-}
-
-.join-btn-compact:disabled {
-    background: var(--bg-tertiary);
-    color: var(--text-muted);
-    cursor: not-allowed;
-}
-
-.join-btn-compact i {
-    font-size: 12px;
-}
-
-.divider-compact {
-    color: var(--text-secondary);
-    font-weight: var(--font-weight-medium);
-    font-size: var(--font-size-sm);
-    padding: 0 var(--space-sm);
-}
-
-.create-btn-compact {
-    display: flex;
-    align-items: center;
-    gap: var(--space-xs);
-    height: 36px;
-    padding: 0 var(--space-lg);
-    background: var(--accent-secondary);
-    color: var(--bg-primary);
-    border: 1px solid var(--accent-secondary);
-    border-radius: var(--radius-md);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    transition: background 0.2s ease;
-    font-size: var(--font-size-sm);
-    white-space: nowrap;
-}
-
-.create-btn-compact:hover {
-    background: var(--accent-secondary);
-    filter: brightness(0.9);
-}
-
-.create-btn-compact i {
-    font-size: 12px;
-}
-
-.error-message-compact {
-    margin-top: var(--space-md);
-    padding: var(--space-sm) var(--space-md);
-    background: var(--error-bg);
-    color: var(--error);
-    border: 1px solid var(--error-border);
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-sm);
-    text-align: center;
-}
-
-/* Two Column Layout */
-.boards-two-column-layout {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--space-2xl);
-    margin-top: var(--space-3xl);
-    min-height: 400px;
-}
-
-.boards-column {
-    background: var(--bg-primary);
-    border-radius: var(--radius-lg);
-    padding: var(--space-lg);
-    border: 1px solid var(--border-color);
-    transition: background-color 0.3s ease, border-color 0.3s ease;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-lg);
-}
-
-.boards-column h2 {
-    font-size: var(--font-size-xl);
-    font-weight: var(--font-weight-semibold);
-    margin: 0 0 var(--space-sm) 0;
-    color: var(--text-primary);
-}
-
-.boards-section {
-    flex: 1;
-}
-
-/* Board item styling for vertical lists */
-.boards-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-md);
-}
-
-.board-item {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    padding: var(--space-lg);
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-
-.board-item:hover {
-    border-color: var(--border-color-hover);
-    background: var(--bg-tertiary);
-}
-
-.section-description {
-    color: var(--text-secondary);
-    font-size: var(--font-size-sm);
-    margin: 0 0 var(--space-xl) 0;
-}
-
-
-.board-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: var(--space-md);
-    gap: var(--space-md);
-}
-
-.board-header h3 {
-    font-size: var(--font-size-lg);
-    font-weight: var(--font-weight-medium);
-    margin: 0;
-    color: var(--text-primary);
-    transition: color 0.2s ease;
-    flex: 1;
-    min-width: 0;
-}
-
-.board-header h3:hover {
-    color: var(--primary);
-}
-
-.board-badges {
-    display: flex;
-    gap: var(--space-sm);
-    align-items: center;
-    flex-shrink: 0;
-}
-
-.board-visibility-badge, .board-role-badge {
-    font-size: var(--font-size-xs);
-    padding: 2px var(--space-sm);
-    border-radius: var(--radius-xl);
-    font-weight: var(--font-weight-medium);
-    text-transform: uppercase;
-    white-space: nowrap;
-}
-
-.board-visibility-badge.public {
-    background: var(--success-bg);
-    color: var(--success);
-}
-
-.board-visibility-badge.private {
-    background: var(--error-bg);
-    color: var(--error);
-}
-
-.board-role-badge.owner {
-    background: var(--warning-bg);
-    color: var(--warning);
-}
-
-.board-role-badge.collaborator {
-    background: var(--success-bg);
-    color: var(--success);
-}
-
-.board-info {
-    display: flex;
-    gap: var(--space-lg);
-    color: var(--text-secondary);
-    font-size: var(--font-size-sm);
-    flex-wrap: wrap;
-}
-
-.board-info span {
-    display: flex;
-    align-items: center;
-    gap: var(--space-xs);
-}
-
-.board-info i {
-    font-size: 12px;
-    opacity: 0.7;
-}
-
-/* Mobile responsiveness */
-@@media (max-width: 1200px) {
-    .home-wide {
-        max-width: 1200px !important;
-        padding: 0 var(--space-xl);
+    private string GetAccessLevelIcon(BoardAccessLevel level)
+    {
+        return level switch
+        {
+            BoardAccessLevel.Public => "🌐",
+            BoardAccessLevel.Private => "🔒",
+            BoardAccessLevel.Unlisted => "🔗",
+            _ => ""
+        };
     }
-    
-    .boards-grid {
-        gap: var(--space-xl);
+
+    private string GetAccessLevelText(BoardAccessLevel level)
+    {
+        return level switch
+        {
+            BoardAccessLevel.Public => "Public",
+            BoardAccessLevel.Private => "Private",
+            BoardAccessLevel.Unlisted => "Unlisted",
+            _ => ""
+        };
     }
 }
-
-@@media (max-width: 768px) {
-    .home-wide {
-        max-width: 100% !important;
-        padding: 0 var(--space-md);
-    }
-    
-    .home-header-content {
-        padding: var(--space-md);
-    }
-    
-    .header-with-mascot {
-        flex-direction: column;
-        gap: var(--space-md);
-        align-items: center;
-    }
-    
-    .join-create-compact {
-        flex-direction: column;
-        gap: var(--space-md);
-        align-items: stretch;
-        width: 100%;
-    }
-    
-    .join-board-compact {
-        flex-direction: column;
-        gap: var(--space-sm);
-        align-items: stretch;
-    }
-    
-    .join-board-compact input {
-        width: 100%;
-    }
-    
-    .join-btn-compact,
-    .create-btn-compact {
-        width: 100%;
-        justify-content: center;
-        height: 40px;
-    }
-    
-    .divider-compact {
-        text-align: center;
-        padding: var(--space-xs) 0;
-    }
-    
-    .boards-two-column-layout {
-        grid-template-columns: 1fr;
-        gap: var(--space-xl);
-    }
-    
-    .boards-column {
-        padding: var(--space-md);
-    }
-    
-    .board-header {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: var(--space-sm);
-    }
-    
-    .board-badges {
-        align-self: flex-start;
-    }
-    
-    .board-info {
-        gap: var(--space-md);
-    }
-}
-
-@@media (max-width: 480px) {
-    .home-header-content {
-        padding: var(--space-sm);
-    }
-    
-    .join-board-compact input {
-        font-size: var(--font-size-base);
-        height: 40px;
-    }
-}
-
-.radio-group {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.radio-option {
-    border: 2px solid var(--border-color, #e0e4e7);
-    border-radius: 12px;
-    padding: 16px;
-    transition: all 0.2s ease;
-    background: var(--bg-secondary, #fafbfc);
-    cursor: pointer;
-}
-
-.radio-option:hover {
-    border-color: var(--accent-primary, #007bff);
-    background: var(--bg-primary, #ffffff);
-    box-shadow: 0 2px 8px rgba(0, 123, 255, 0.1);
-    transform: translateY(-1px);
-}
-
-.radio-option.selected {
-    border-color: var(--accent-primary, #007bff);
-    background: var(--bg-primary, #ffffff);
-    box-shadow: 0 4px 12px rgba(0, 123, 255, 0.15);
-    transform: translateY(-2px);
-}
-
-.radio-option.selected .radio-icon {
-    color: var(--accent-primary, #007bff);
-}
-
-.radio-option.selected .radio-title {
-    color: var(--accent-primary, #007bff);
-}
-
-.radio-option label {
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    cursor: pointer;
-    margin-bottom: 0;
-    width: 100%;
-}
-
-.radio-option input[type="radio"] {
-    margin: 0;
-    flex-shrink: 0;
-    margin-top: 2px;
-    width: 18px;
-    height: 18px;
-    accent-color: var(--accent-primary, #007bff);
-}
-
-.radio-content {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-
-.radio-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.radio-icon {
-    font-size: 16px;
-    color: var(--text-secondary, #666);
-    transition: color 0.2s ease;
-    width: 16px;
-    text-align: center;
-}
-
-.radio-title {
-    font-weight: 600;
-    color: var(--text-primary, #333);
-    font-size: 0.95em;
-    transition: color 0.2s ease;
-}
-
-.radio-description {
-    color: var(--text-secondary, #666);
-    font-size: 0.85em;
-    line-height: 1.4;
-    word-wrap: break-word;
-    overflow-wrap: break-word;
-    max-width: 100%;
-    margin: 0;
-}
-
-/* Enhance the auth notice */
-.auth-notice {
-    margin-top: 16px;
-    padding: 12px;
-    background: var(--info-bg, #e3f2fd);
-    border-radius: 8px;
-    border-left: 4px solid var(--info-color, #2196f3);
-}
-
-.auth-notice small {
-    color: var(--info-text, #1565c0);
-    font-size: 0.875em;
-}
-
-.auth-notice .link {
-    color: var(--info-color, #2196f3);
-    text-decoration: none;
-    font-weight: 500;
-}
-
-.auth-notice .link:hover {
-    text-decoration: underline;
-}
-</style>
