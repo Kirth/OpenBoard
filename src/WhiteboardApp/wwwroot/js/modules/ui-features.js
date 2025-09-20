@@ -9,27 +9,23 @@ export function setDependencies(deps) {
 }
 
 // Dark mode functionality
-let currentTheme = 'auto'; // 'light', 'dark', 'auto'
+let currentTheme = 'dark'; // 'light', 'dark'
 
 export function initializeDarkMode() {
-  // Get saved theme preference or default to auto
-  currentTheme = localStorage.getItem('theme') || 'auto';
-  console.log('Initializing dark mode with theme:', currentTheme);
-  console.log('System prefers dark mode:', window.matchMedia('(prefers-color-scheme: dark)').matches);
-
-  applyTheme(currentTheme);
-
-  // Listen for system theme changes
-  const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-  mediaQuery.addEventListener('change', handleSystemThemeChange);
-
-  console.log('Dark mode initialized with theme:', currentTheme);
-}
-
-function handleSystemThemeChange(e) {
-  if (currentTheme === 'auto') {
-    applyTheme('auto');
+  // Get saved theme preference or detect from browser preference on first visit
+  const savedTheme = localStorage.getItem('openboard-theme');
+  if (savedTheme) {
+    currentTheme = savedTheme;
+  } else {
+    // First time - detect browser preference
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    currentTheme = prefersDark ? 'dark' : 'light';
+    localStorage.setItem('openboard-theme', currentTheme);
   }
+  
+  console.log('Initializing dark mode with theme:', currentTheme);
+  applyTheme(currentTheme);
+  console.log('Dark mode initialized with theme:', currentTheme);
 }
 
 export function applyTheme(theme) {
@@ -41,18 +37,8 @@ export function applyTheme(theme) {
     html.setAttribute('data-theme', 'dark');
     console.log('Set data-theme to dark');
   } else if (theme === 'light') {
-    html.removeAttribute('data-theme');
-    console.log('Removed data-theme attribute (light mode)');
-  } else if (theme === 'auto') {
-    // For auto mode, check system preference and apply accordingly
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    if (prefersDark) {
-      html.setAttribute('data-theme', 'dark');
-      console.log('Auto mode: Set data-theme to dark (system prefers dark)');
-    } else {
-      html.removeAttribute('data-theme');
-      console.log('Auto mode: Removed data-theme attribute (system prefers light)');
-    }
+    html.setAttribute('data-theme', 'light');
+    console.log('Set data-theme to light');
   }
 
   console.log('New data-theme attribute:', html.getAttribute('data-theme'));
@@ -67,13 +53,7 @@ export function applyTheme(theme) {
 function updateThemeIcon() {
   const themeIcon = document.getElementById('theme-icon');
   if (themeIcon) {
-    if (currentTheme === 'dark') {
-      themeIcon.textContent = '☀️';
-    } else if (currentTheme === 'light') {
-      themeIcon.textContent = '🔄';
-    } else {
-      themeIcon.textContent = '🌙';
-    }
+    themeIcon.textContent = currentTheme === 'dark' ? '🌙' : '☀️';
   }
 }
 
@@ -90,19 +70,12 @@ function updateCanvasBackground() {
 export function toggleDarkMode() {
   console.log('toggleDarkMode called, current theme:', currentTheme);
 
-  if (currentTheme === 'light') {
-    currentTheme = 'dark';
-  } else if (currentTheme === 'dark') {
-    currentTheme = 'auto';
-  } else {
-    currentTheme = 'light';
-  }
+  // Simple toggle between light and dark
+  currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
 
-  localStorage.setItem('theme', currentTheme);
+  localStorage.setItem('openboard-theme', currentTheme);
   console.log('About to apply theme:', currentTheme);
   applyTheme(currentTheme);
-
-  showNotification(`Theme set to ${currentTheme}`, 'success', 2000);
   console.log('Theme changed to:', currentTheme);
 }
 

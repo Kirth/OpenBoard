@@ -19,7 +19,7 @@
 <body>
     @RenderBody()
 
-    <div id="blazor-error-ui">
+    <div id="blazor-error-ui" style="display: none;">
         <environment include="Staging,Production">
             An error has occurred. This application may no longer respond until reloaded.
         </environment>
@@ -35,6 +35,36 @@
     <script>
         // Expose signalR to modules
         window.signalR = signalR;
+        
+        // Blazor error UI management
+        // Wait for Blazor to be ready (it starts automatically in Blazor Server)
+        function setupBlazorErrorUI() {
+            const errorUI = document.getElementById('blazor-error-ui');
+            if (errorUI) {
+                // Add dismiss functionality
+                const dismissBtn = errorUI.querySelector('.dismiss');
+                if (dismissBtn) {
+                    dismissBtn.addEventListener('click', function() {
+                        errorUI.style.display = 'none';
+                    });
+                }
+                
+                // Override the default error handler to show our styled UI
+                window.addEventListener('error', function(e) {
+                    // Only show error UI for actual unhandled errors
+                    if (e.error && !e.error.handled) {
+                        errorUI.style.display = 'flex';
+                    }
+                });
+            }
+        }
+
+        // Set up error UI when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', setupBlazorErrorUI);
+        } else {
+            setupBlazorErrorUI();
+        }
     </script>
     <!-- Pre-load jsPDF library -->
     <script src="https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>

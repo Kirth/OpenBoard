@@ -87,6 +87,38 @@
   --radius-md: 10px;
   --radius-lg: 14px;
   --radius-xl: 999px;
+  
+  /* Additional shadow variants */
+  --shadow-light: 0 1px 3px rgba(0,0,0,.1);
+  --shadow-medium: 0 4px 12px rgba(0,0,0,.15);
+  --shadow-heavy: 0 8px 24px rgba(0,0,0,.25);
+  
+  /* Toolbar and canvas backgrounds */
+  --toolbar-bg: rgba(17, 21, 29, 0.95);
+  --toolbar-bg-mobile: var(--surface);
+  --canvas-bg: var(--bg);
+  
+  /* Additional border variants */
+  --border-light: rgba(255,255,255,.04);
+  
+  /* Color palette for board elements */
+  --color-white: #ffffff;
+  --color-black: #000000;
+  --color-red: #ef4444;
+  --color-green: #10b981;
+  --color-blue: #3b82f6;
+  --color-yellow: #f59e0b;
+  --color-magenta: #ec4899;
+  --color-cyan: #06b6d4;
+  --color-orange: #f97316;
+  --color-purple: #8b5cf6;
+  --color-pink: #f472b6;
+  
+  /* Hover states */
+  --bg-hover: rgba(255,255,255,.05);
+  
+  /* System font family */
+  --font-family-system: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
 }
 
 /* Light theme */
@@ -101,11 +133,54 @@ html[data-theme="light"] {
   --shadow-1: 0 1px 6px rgba(2,6,23,.07);
   --shadow-2: 0 12px 30px rgba(2,6,23,.12);
   --border-color-hover: rgba(2,6,23,.12);
+  
+  /* Extended tokens for light theme */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f2f4f8;
+  --bg-tertiary: #eef2f7;
+  --bg-elevated: #ffffff;
+  --text-primary: #0b1220;
+  --text-secondary: #5b6474;
+  --text-muted: #5b6474;
+  --border-color: rgba(2,6,23,.08);
+  
+  /* Light theme shadows */
+  --shadow-light: 0 1px 3px rgba(2,6,23,.05);
+  --shadow-medium: 0 4px 12px rgba(2,6,23,.08);
+  --shadow-heavy: 0 8px 24px rgba(2,6,23,.12);
+  
+  /* Light theme toolbar and canvas */
+  --toolbar-bg: rgba(255, 255, 255, 0.95);
+  --toolbar-bg-mobile: var(--surface);
+  --canvas-bg: var(--bg);
+  
+  /* Light theme borders */
+  --border-light: rgba(2,6,23,.04);
+  
+  /* Light theme hover states */
+  --bg-hover: rgba(2,6,23,.05);
 }
 
 /* Reset and base styles - override Bootstrap */
 *, *::before, *::after {
   box-sizing: border-box !important;
+}
+
+/* Theme transition support for key elements */
+.btn,
+.card,
+.modal,
+.surface,
+.toolbar,
+.status-bar,
+.board-container,
+input,
+select,
+textarea {
+  transition: background-color 0.3s ease, 
+              border-color 0.3s ease, 
+              color 0.3s ease,
+              box-shadow 0.3s ease;
 }
 
 html, body {
@@ -125,6 +200,7 @@ body {
   -webkit-font-smoothing: antialiased !important;
   text-rendering: optimizeLegibility !important;
   min-height: 100vh !important;
+  transition: background-color 0.3s ease, color 0.3s ease !important;
 }
 
 /* Override Bootstrap button styles */
@@ -175,6 +251,7 @@ body {
 a {
   color: inherit;
   text-decoration: none;
+  cursor: pointer;
 }
 
 a:hover {
@@ -191,6 +268,7 @@ a:hover {
 button {
   font-family: inherit;
   font-size: inherit;
+  cursor: pointer;
 }
 
 /* Form element styles */
@@ -202,6 +280,22 @@ input, select, textarea {
 input::placeholder, textarea::placeholder {
   color: var(--text-dim);
   opacity: 1;
+}
+
+/* Interactive form elements */
+input[type="radio"], 
+input[type="checkbox"], 
+input[type="range"], 
+input[type="file"], 
+select {
+  cursor: pointer;
+}
+
+/* Ensure all interactive elements have pointer cursor */
+[role="button"],
+[tabindex]:not([tabindex="-1"]),
+.clickable {
+  cursor: pointer;
 }
 
 /* Motion preferences */
@@ -363,6 +457,7 @@ input::placeholder, textarea::placeholder {
 .link {
   color: var(--primary);
   text-decoration: none;
+  cursor: pointer;
 }
 
 .link:hover {
@@ -425,4 +520,47 @@ input::placeholder, textarea::placeholder {
     transform: translateY(0);
     opacity: 1;
   }
+}
+
+/* Blazor Error UI */
+#blazor-error-ui {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: var(--error);
+  color: white;
+  padding: 12px 16px;
+  box-shadow: var(--shadow-2);
+  z-index: 10000;
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--font-size-sm);
+}
+
+#blazor-error-ui.show {
+  display: flex;
+}
+
+#blazor-error-ui .reload {
+  color: white;
+  text-decoration: underline;
+  margin-left: 16px;
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+}
+
+#blazor-error-ui .dismiss {
+  color: white;
+  cursor: pointer;
+  margin-left: 16px;
+  font-size: 16px;
+  padding: 4px;
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+
+#blazor-error-ui .dismiss:hover {
+  background: rgba(255, 255, 255, 0.1);
 }

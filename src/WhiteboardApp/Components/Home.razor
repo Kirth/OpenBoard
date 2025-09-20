@@ -24,7 +24,7 @@
         <a href="#">Docs</a>
     </nav>
     <div class="user">
-        <button id="themeToggle" class="toggle" aria-pressed="true" title="Toggle theme" @onclick="ToggleTheme">🌙</button>
+        <button id="themeToggle" class="toggle" aria-pressed="true" title="Toggle theme">🌙</button>
         <span class="chip">v0.1 demo</span>
         <UserMenu />
     </div>
@@ -55,7 +55,7 @@
                 </button>
                 @if (showTemplateMenu)
                 {
-                    <div id="templateMenu" class="template-menu">
+                    <div id="templateMenu" class="template-menu" @onclick:stopPropagation="true">
                         <button type="button" @onclick="@(() => CreateFromTemplate("kanban"))">Kanban</button>
                         <button type="button" @onclick="@(() => CreateFromTemplate("retrospective"))">Retrospective</button>
                         <button type="button" @onclick="@(() => CreateFromTemplate("flowchart"))">Flowchart</button>
@@ -71,7 +71,34 @@
     </div>
 </section>
 
-<main class="container" role="main">
+<main class="container" role="main" @onclick="@(() => { if (showTemplateMenu) showTemplateMenu = false; })">
+    <!-- Active Now Section -->
+    @if (activeBoards != null && activeBoards.Count > 0)
+    {
+        <section class="active-now-section" aria-label="Active boards">
+            <h2 class="section-title">
+                <span class="activity-dot"></span>
+                Active Now
+            </h2>
+            <div class="active-boards-grid">
+                @foreach (var board in activeBoards.Take(3))
+                {
+                    <article class="active-board-card" tabindex="0" @onclick="@(async () => await JoinSpecificBoard(board.Id))">
+                        <div class="active-thumb" aria-hidden="true">@board.Emoji</div>
+                        <div class="active-meta">
+                            <h3>@board.Name</h3>
+                            <div class="active-info">
+                                <span class="live-badge">🔴 Live</span>
+                                <span>•</span>
+                                <span>@(board.Owner?.DisplayName ?? "Unknown")</span>
+                            </div>
+                        </div>
+                    </article>
+                }
+            </div>
+        </section>
+    }
+
     <div class="tabs-wrap">
         <nav class="tabs" aria-label="Board sections">
             <button class="tab @(activeTab == "my" ? "active" : "")" type="button" @onclick="@(() => SetActiveTab("my"))">My boards</button>
@@ -267,51 +294,53 @@
                 }
             </Authorized>
             <NotAuthorized>
-                @if (publicBoards != null && publicBoards.Count > 0)
-                {
-                    @foreach (var board in publicBoards)
+                <div class="public-boards-section">
+                    @if (publicBoards != null && publicBoards.Count > 0)
                     {
-                        <article class="card" tabindex="0" @onclick="@(async () => await JoinSpecificBoard(board.Id))">
-                            <div class="thumb" aria-hidden="true">@board.Emoji</div>
-                            <div class="meta">
-                                <h3>@board.Name</h3>
-                                <div class="row">
-                                    <span>Updated @FormatDate(board.UpdatedAt)</span>
-                                    <span>•</span>
-                                    <span>@GetStickyCount(board)</span>
-                                    <span>•</span>
-                                    <span>@(board.Owner?.DisplayName ?? "Unknown")</span>
+                        @foreach (var board in publicBoards)
+                        {
+                            <article class="card" tabindex="0" @onclick="@(async () => await JoinSpecificBoard(board.Id))">
+                                <div class="thumb" aria-hidden="true">@board.Emoji</div>
+                                <div class="meta">
+                                    <h3>@board.Name</h3>
+                                    <div class="row">
+                                        <span>Updated @FormatDate(board.UpdatedAt)</span>
+                                        <span>•</span>
+                                        <span>@GetStickyCount(board)</span>
+                                        <span>•</span>
+                                        <span>@(board.Owner?.DisplayName ?? "Unknown")</span>
+                                    </div>
                                 </div>
-                            </div>
-                            <div class="actions">
-                                <div class="badge public">🌐 Public</div>
-                            </div>
-                        </article>
+                                <div class="actions">
+                                    <div class="badge public">🌐 Public</div>
+                                </div>
+                            </article>
+                        }
                     }
-                }
-                else if (publicBoards != null)
-                {
-                    <div class="empty-state">
-                        <p>No public boards available right now.</p>
-                    </div>
-                }
-                else
-                {
-                    @* Loading skeleton *@
-                    @for (int i = 0; i < 3; i++)
+                    else if (publicBoards != null)
                     {
-                        <article class="card">
-                            <div class="thumb skeleton"></div>
-                            <div class="meta">
-                                <div class="skeleton" style="height:18px; width:160px; border-radius:6px"></div>
-                                <div class="skeleton" style="height:12px; width:220px; margin-top:10px; border-radius:6px"></div>
-                            </div>
-                            <div class="actions">
-                                <div class="skeleton" style="height:28px; width:80px; border-radius:999px"></div>
-                            </div>
-                        </article>
+                        <div class="empty-state">
+                            <p>No public boards available right now.</p>
+                        </div>
                     }
-                }
+                    else
+                    {
+                        @* Loading skeleton *@
+                        @for (int i = 0; i < 3; i++)
+                        {
+                            <article class="card">
+                                <div class="thumb skeleton"></div>
+                                <div class="meta">
+                                    <div class="skeleton" style="height:18px; width:160px; border-radius:6px"></div>
+                                    <div class="skeleton" style="height:12px; width:220px; margin-top:10px; border-radius:6px"></div>
+                                </div>
+                                <div class="actions">
+                                    <div class="skeleton" style="height:28px; width:80px; border-radius:999px"></div>
+                                </div>
+                            </article>
+                        }
+                    }
+                </div>
             </NotAuthorized>
         </AuthorizeView>
     </section>
@@ -464,9 +493,9 @@
     private string activeTab = "my";
     private string searchQuery = "";
     private string sortOrder = "updated";
-    private string currentTheme = "dark";
     
     private List<WhiteboardApp.Models.Board>? publicBoards;
+    private List<WhiteboardApp.Models.Board>? activeBoards;
     private List<WhiteboardApp.Models.Board>? userBoards;
     private List<BoardCollaborator>? collaborationBoards;
     private List<WhiteboardApp.Models.Board>? recentBoards;
@@ -483,7 +512,18 @@
 
     protected override async Task OnInitializedAsync()
     {
-        publicBoards = await BoardService.GetPublicBoardsAsync();
+        try
+        {
+            publicBoards = await BoardService.GetPublicBoardsAsync();
+            activeBoards = await BoardService.GetActiveBoardsAsync();
+        }
+        catch (Exception ex)
+        {
+            // Log error but don't break the page
+            Console.WriteLine($"Error loading boards: {ex.Message}");
+            publicBoards = new List<WhiteboardApp.Models.Board>();
+            activeBoards = new List<WhiteboardApp.Models.Board>();
+        }
         
         // Load user's boards if authenticated
         if (AuthenticationStateTask != null)
@@ -633,6 +673,7 @@
         selectedEmoji = templateEmoji;
         newBoardTitle = $"{template.Substring(0, 1).ToUpper()}{template.Substring(1)} Board";
         ShowCreateModal();
+        StateHasChanged(); // Ensure UI updates
     }
 
     private async Task JoinBoard()
@@ -735,10 +776,6 @@
         showTemplateMenu = !showTemplateMenu;
     }
 
-    private async Task ToggleTheme()
-    {
-        await JSRuntime.InvokeVoidAsync("OpenBoardTheme.toggle");
-    }
 
     private void ToggleStar(Guid boardId)
     {

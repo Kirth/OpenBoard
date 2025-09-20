@@ -17,6 +17,10 @@ import * as uiFeatures from './modules/ui-features.js';
 import * as blazorIntegration from './modules/blazor-integration.js';
 import groupManager from './modules/group-manager.js';
 
+// User menu state
+let userMenuRef = null;
+let userMenuOpen = false;
+
 // Immediately expose critical functions that Blazor might call before full initialization
 if (typeof window !== 'undefined') {
   // Expose placeholder functions first to prevent "undefined" errors
@@ -38,6 +42,33 @@ if (typeof window !== 'undefined') {
   window.initializeApplication = () => {
     console.log('initializeApplication called directly...');
     return initializeApplication();
+  };
+
+  // User menu click-outside functionality - exposed immediately
+  window.setupUserMenuClickOutside = (dotNetRef) => {
+    userMenuRef = dotNetRef;
+    
+    // Add event listener for clicks outside user menu
+    document.addEventListener('click', (event) => {
+      if (userMenuOpen && userMenuRef) {
+        // Check if the click is outside the user menu and avatar
+        const userDropdown = document.querySelector('.user-dropdown');
+        const avatar = document.querySelector('.avatar');
+        
+        if (userDropdown && avatar) {
+          const isClickInsideDropdown = userDropdown.contains(event.target);
+          const isClickOnAvatar = avatar.contains(event.target);
+          
+          if (!isClickInsideDropdown && !isClickOnAvatar) {
+            userMenuRef.invokeMethodAsync('CloseDropdown');
+          }
+        }
+      }
+    });
+  };
+
+  window.setUserMenuOpen = (isOpen) => {
+    userMenuOpen = isOpen;
   };
 }
 

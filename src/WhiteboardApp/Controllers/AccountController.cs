@@ -46,9 +46,24 @@ public class AccountController : Controller
         {
             _logger.LogInformation("User {UserId} logging out", User.Identity.Name);
 
-            // Sign out from both the local cookie and OIDC
-            await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-            await HttpContext.SignOutAsync(OpenIdConnectDefaults.AuthenticationScheme);
+            try
+            {
+                // Sign out from the local cookie first
+                await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                
+                // Try to sign out from OIDC, but handle gracefully if end session endpoint is not available
+                await HttpContext.SignOutAsync(OpenIdConnectDefaults.AuthenticationScheme);
+            }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("end session endpoint"))
+            {
+                _logger.LogWarning("OIDC end session endpoint not available, performing local logout only: {Message}", ex.Message);
+                // Continue with local logout only
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during logout process");
+                // Continue anyway - user should be logged out locally
+            }
         }
 
         // Redirect to home page or specified return URL

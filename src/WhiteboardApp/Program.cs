@@ -64,6 +64,8 @@ builder.Services.AddAuthentication(options =>
     options.GetClaimsFromUserInfoEndpoint = true;
     options.UseTokenLifetime = false;
     options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
+    options.SignedOutRedirectUri = "/";
+    options.RemoteSignOutPath = "/signout-oidc";
 
     // Override metadata address to use Docker internal hostname for configuration retrieval
     // while keeping issuer as localhost:5556 for browser redirects
@@ -93,6 +95,18 @@ builder.Services.AddAuthentication(options =>
             
             if (context.ProtocolMessage.AuthorizationEndpoint != null)
                 context.ProtocolMessage.AuthorizationEndpoint = context.ProtocolMessage.AuthorizationEndpoint.Replace("dex:5556", "localhost:5556");
+            
+            return Task.CompletedTask;
+        },
+        OnRedirectToIdentityProviderForSignOut = context =>
+        {
+            // Handle logout redirects similarly - replace dex hostname with localhost for browser access
+            if (!string.IsNullOrEmpty(context.Request.Scheme) && !string.IsNullOrEmpty(context.Request.Host.Value))
+            {
+                // Set the post logout redirect URI to point back to the application
+                var postLogoutUri = $"{context.Request.Scheme}://{context.Request.Host}/";
+                context.ProtocolMessage.PostLogoutRedirectUri = postLogoutUri;
+            }
             
             return Task.CompletedTask;
         }

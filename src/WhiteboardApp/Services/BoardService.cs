@@ -7,10 +7,12 @@ namespace WhiteboardApp.Services;
 public class BoardService
 {
     private readonly WhiteboardContext _context;
+    private readonly IUserSessionManager _userSessionManager;
 
-    public BoardService(WhiteboardContext context)
+    public BoardService(WhiteboardContext context, IUserSessionManager userSessionManager)
     {
         _context = context;
+        _userSessionManager = userSessionManager;
     }
 
     public async Task<Board?> GetBoardAsync(Guid id)
@@ -94,6 +96,32 @@ public class BoardService
             .Where(b => b.AccessLevel == BoardAccessLevel.Public)
             .OrderByDescending(b => b.UpdatedAt)
             .ToListAsync();
+    }
+
+    public async Task<List<Board>> GetActiveBoardsAsync()
+    {
+        // Get all boards (public + unlisted for visibility to unauthenticated users)
+        var boards = await _context.Boards
+            .Include(b => b.Owner)
+            .Include(b => b.Elements)
+            .Where(b => b.AccessLevel == BoardAccessLevel.Public || b.AccessLevel == BoardAccessLevel.Unlisted)
+            .ToListAsync();
+
+        // Filter boards that have active sessions
+        var activeBoardIds = new List<Guid>();
+        foreach (var board in boards)
+        {
+            var sessions = await _userSessionManager.GetBoardSessionsAsync(board.Id);
+            if (sessions.Any())
+            {
+                activeBoardIds.Add(board.Id);
+            }
+        }
+
+        return boards
+            .Where(b => activeBoardIds.Contains(b.Id))
+            .OrderByDescending(b => b.UpdatedAt)
+            .ToList();
     }
 
     public async Task<List<Board>> GetUserAccessibleBoardsAsync(User user)

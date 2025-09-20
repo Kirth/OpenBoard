@@ -1,5 +1,8 @@
 @using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.JSInterop
 @inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+@implements IDisposable
 
 <AuthorizeView>
     <Authorized>
@@ -16,23 +19,20 @@
         
         @if (showDropdown)
         {
-            <div class="user-dropdown" style="position: absolute; top: 100%; right: 0; z-index: 1000; margin-top: 8px; min-width: 220px; background: var(--surface); border: 1px solid var(--chip-border); border-radius: var(--radius-md); box-shadow: var(--shadow-2); padding: 6px;">
-                <div style="padding: 12px 14px; border-bottom: 1px solid var(--chip-border);">
-                    <div style="font-weight: var(--font-weight-semibold); color: var(--text);">@(context.User.FindFirst("name")?.Value ?? "User")</div>
-                    <div style="font-size: var(--font-size-sm); color: var(--text-dim); margin-top: 2px;">@(context.User.FindFirst("email")?.Value ?? "")</div>
+            <div class="user-dropdown" @onclick:stopPropagation="true">
+                <div class="user-dropdown-header">
+                    <div class="user-dropdown-name">@(context.User.FindFirst("name")?.Value ?? "User")</div>
+                    <div class="user-dropdown-email">@(context.User.FindFirst("email")?.Value ?? "")</div>
                 </div>
-                <div style="padding: 6px;">
-                    <a href="/profile" style="display: block; width: 100%; text-align: left; padding: 10px; border-radius: var(--radius-sm); background: none; border: none; color: var(--text); cursor: pointer; text-decoration: none; transition: background 0.2s ease;" 
-                       onmouseover="this.style.background='var(--muted)'" onmouseout="this.style.background='none'">
+                <div class="user-dropdown-menu">
+                    <a href="/profile" class="user-dropdown-item">
                         Profile
                     </a>
-                    <a href="/" style="display: block; width: 100%; text-align: left; padding: 10px; border-radius: var(--radius-sm); background: none; border: none; color: var(--text); cursor: pointer; text-decoration: none; transition: background 0.2s ease;"
-                       onmouseover="this.style.background='var(--muted)'" onmouseout="this.style.background='none'">
+                    <a href="/" class="user-dropdown-item">
                         My Boards
                     </a>
-                    <div style="height: 1px; background: var(--chip-border); margin: 6px 0;"></div>
-                    <button type="button" @onclick="Logout" style="display: block; width: 100%; text-align: left; padding: 10px; border-radius: var(--radius-sm); background: none; border: none; color: var(--text); cursor: pointer; transition: background 0.2s ease;"
-                            onmouseover="this.style.background='var(--muted)'" onmouseout="this.style.background='none'">
+                    <div class="user-dropdown-divider"></div>
+                    <button type="button" @onclick="Logout" class="user-dropdown-item">
                         Sign Out
                     </button>
                 </div>
@@ -48,6 +48,26 @@
 
 @code {
     private bool showDropdown = false;
+    private DotNetObjectReference<UserMenu>? dotNetRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            dotNetRef = DotNetObjectReference.Create(this);
+            await JSRuntime.InvokeVoidAsync("window.setupUserMenuClickOutside", dotNetRef);
+        }
+    }
+
+    [JSInvokable]
+    public void CloseDropdown()
+    {
+        if (showDropdown)
+        {
+            showDropdown = false;
+            StateHasChanged();
+        }
+    }
 
     private void Login()
     {
@@ -60,9 +80,17 @@
         Navigation.NavigateTo("/Account/Logout", forceLoad: true);
     }
 
-    private void ShowUserMenu()
+    private async Task ShowUserMenu()
     {
         showDropdown = !showDropdown;
+        if (showDropdown)
+        {
+            await JSRuntime.InvokeVoidAsync("window.setUserMenuOpen", true);
+        }
+        else
+        {
+            await JSRuntime.InvokeVoidAsync("window.setUserMenuOpen", false);
+        }
     }
 
     private string GetInitials(string name)
@@ -81,12 +109,8 @@
         return "?";
     }
 
-    // Close dropdown when clicking outside
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    public void Dispose()
     {
-        if (firstRender)
-        {
-            await Task.CompletedTask;
-        }
+        dotNetRef?.Dispose();
     }
 }

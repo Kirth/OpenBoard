@@ -8,7 +8,7 @@
 
 /* Color Palette */
 .color-transparent { background: linear-gradient(45deg, var(--color-red) 25%, transparent 25%, transparent 75%, var(--color-red) 75%); background-size: 8px 8px; }
-.color-white { background: var(--color-white); border: 1px solid #ccc; }
+.color-white { background: var(--color-white); border: 1px solid var(--border-color); }
 .color-black { background: var(--color-black); }
 .color-red { background: var(--color-red); }
 .color-green { background: var(--color-green); }
@@ -205,12 +205,12 @@
 
 /* Danger menu item styling */
 .board-menu-item.danger {
-    color: #dc3545;
+    color: var(--error);
 }
 
 .board-menu-item.danger:hover {
-    background-color: #f8d7da;
-    color: #721c24;
+    background-color: var(--error-bg);
+    color: var(--error);
 }
 
 .connection-status {
@@ -224,13 +224,13 @@
 }
 
 .connection-status.connected {
-    background: #d4edda;
-    color: #155724;
+    background: var(--success-bg);
+    color: var(--success);
 }
 
 .connection-status.disconnected {
-    background: #f8d7da;
-    color: #721c24;
+    background: var(--error-bg);
+    color: var(--error);
 }
 
 .status-dot {
@@ -377,8 +377,8 @@
     bottom: 2px;
     right: 2px;
     font-size: 8px;
-    color: #666;
-    background: rgba(255, 255, 255, 0.9);
+    color: var(--text-muted);
+    background: var(--surface);
     border-radius: 50%;
     width: 12px;
     height: 12px;
@@ -640,7 +640,7 @@
 }
 
 .delete-item:hover {
-    background: linear-gradient(135deg, var(--error) 0%, #dc2626 100%);
+    background: var(--error);
     color: white;
     transform: translateX(2px);
     box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
@@ -1030,25 +1030,26 @@
 }
 
 .btn-danger {
-    background-color: #dc3545;
+    background-color: var(--error);
     color: white;
 }
 
 .btn-danger:hover {
-    background-color: #c82333;
+    background-color: var(--error);
+    filter: brightness(0.9);
 }
 
 .btn-primary {
-    background-color: #007bff;
+    background: var(--gradient-primary);
     color: white;
 }
 
 .btn-primary:hover {
-    background-color: #0056b3;
+    filter: brightness(0.9);
 }
 
 .btn-primary:disabled {
-    background-color: #6c757d;
+    background-color: var(--muted);
     cursor: not-allowed;
 }
 
@@ -1100,15 +1101,15 @@
     left: 0;
     width: 100%;
     height: 100vh;
-    background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+    background: linear-gradient(135deg, var(--bg) 0%, var(--surface) 100%);
     display: flex;
     flex-direction: column;
     z-index: 1000;
 }
 
 .access-denied-header {
-    background: white;
-    border-bottom: 1px solid #e2e8f0;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border-color);
     box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
     flex-shrink: 0;
 }
@@ -1265,59 +1266,59 @@
 }
 
 /* Dark mode adjustments for access denied page */
-@media (prefers-color-scheme: dark) {
+html[data-theme="dark"] {
     .access-denied-page {
-        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        background: linear-gradient(135deg, var(--bg) 0%, var(--surface) 100%);
     }
     
     .access-denied-header {
-        background: #1e293b;
-        border-bottom: 1px solid #334155;
+        background: var(--surface);
+        border-bottom: 1px solid var(--border-color);
     }
     
     .brand-logo {
-        color: #f1f5f9;
+        color: var(--text);
     }
     
     .brand-logo i {
-        color: #60a5fa;
+        color: var(--primary);
     }
     
     .nav-link {
-        color: #94a3b8;
+        color: var(--text-secondary);
     }
     
     .nav-link:hover {
-        background: #334155;
-        color: #f1f5f9;
+        background: var(--muted);
+        color: var(--text);
     }
     
     .access-denied-content {
-        background: #1e293b;
-        border: 1px solid #334155;
+        background: var(--surface);
+        border: 1px solid var(--border-color);
     }
     
     .access-denied-content h2 {
-        color: #f1f5f9;
+        color: var(--text);
     }
     
     .access-denied-content p {
-        color: #94a3b8;
+        color: var(--text-secondary);
     }
     
     .access-denied-icon i {
-        color: #60a5fa;
+        color: var(--primary);
     }
     
     .access-denied-actions .btn-secondary {
-        background: #334155;
-        color: #e2e8f0;
-        border: 1px solid #475569;
+        background: var(--muted);
+        color: var(--text);
+        border: 1px solid var(--border-color);
     }
     
     .access-denied-actions .btn-secondary:hover {
-        background: #475569;
-        border-color: #64748b;
+        background: var(--bg-hover);
+        border-color: var(--border-color-hover);
     }
 }
 

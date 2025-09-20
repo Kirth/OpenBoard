@@ -7,12 +7,18 @@
         const html = document.documentElement;
         const themeToggle = document.getElementById('themeToggle');
         
-        // Get saved theme or default to dark
-        const savedTheme = localStorage.getItem('openboard-theme') || 'dark';
+        // Get saved theme or detect from browser preference on first visit
+        let currentTheme = localStorage.getItem('openboard-theme');
+        if (!currentTheme) {
+            // First time - detect browser preference
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            currentTheme = prefersDark ? 'dark' : 'light';
+            localStorage.setItem('openboard-theme', currentTheme);
+        }
         
         // Apply theme
-        html.setAttribute('data-theme', savedTheme);
-        updateThemeToggle(savedTheme);
+        html.setAttribute('data-theme', currentTheme);
+        updateThemeToggle(currentTheme);
         
         // Add theme toggle listener
         if (themeToggle) {
@@ -36,11 +42,18 @@
     }
 
     function updateThemeToggle(theme) {
+        // Update home page theme toggle
         const themeToggle = document.getElementById('themeToggle');
         if (themeToggle) {
             themeToggle.textContent = theme === 'dark' ? '🌙' : '☀️';
             themeToggle.setAttribute('aria-pressed', theme === 'dark');
             themeToggle.title = `Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`;
+        }
+        
+        // Update board theme icon
+        const themeIcon = document.getElementById('theme-icon');
+        if (themeIcon) {
+            themeIcon.textContent = theme === 'dark' ? '🌙' : '☀️';
         }
     }
 
