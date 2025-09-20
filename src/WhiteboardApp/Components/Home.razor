@@ -18,21 +18,23 @@
         <div class="logo" aria-hidden="true">OB</div>
         OpenBoard
     </div>
+    <!--
     <nav class="nav" aria-label="Primary">
         <a href="#features">Features</a>
         <a href="#community">Community</a>
         <a href="#">Docs</a>
     </nav>
+    -->
     <div class="user">
         <button id="themeToggle" class="toggle" aria-pressed="true" title="Toggle theme">🌙</button>
-        <span class="chip">v0.1 demo</span>
+        <!--<span class="chip">v0.1 demo</span>-->
         <UserMenu />
     </div>
 </header>
 
 <section class="container hero">
     <div>
-        <h1>Real‑time collaborative whiteboarding</h1>
+        <h1>Real‑Time Collaborative Whiteboarding</h1>
         <p class="sub">Sketch ideas, stack stickies, and plan together from anywhere. Open source and fast.</p>
 
         <form class="join" role="search" aria-label="Join board" @onsubmit="JoinBoard" @onsubmit:preventDefault="true">
@@ -86,12 +88,7 @@
                     <article class="active-board-card" tabindex="0" @onclick="@(async () => await JoinSpecificBoard(board.Id))">
                         <div class="active-thumb" aria-hidden="true">@board.Emoji</div>
                         <div class="active-meta">
-                            <h3>@board.Name</h3>
-                            <div class="active-info">
-                                <span class="live-badge">🔴 Live</span>
-                                <span>•</span>
-                                <span>@(board.Owner?.DisplayName ?? "Unknown")</span>
-                            </div>
+                            <h3>@board.Name <span class="owner-name">• @(board.Owner?.DisplayName ?? "Unknown")</span></h3>
                         </div>
                     </article>
                 }
@@ -101,7 +98,7 @@
 
     <div class="tabs-wrap">
         <nav class="tabs" aria-label="Board sections">
-            <button class="tab @(activeTab == "my" ? "active" : "")" type="button" @onclick="@(() => SetActiveTab("my"))">My boards</button>
+            <button class="tab @(activeTab == "my" ? "active" : "")" type="button" @onclick="@(() => SetActiveTab("my"))">My Boards</button>
             <button class="tab @(activeTab == "public" ? "active" : "")" type="button" @onclick="@(() => SetActiveTab("public"))">Public</button>
             <button class="tab @(activeTab == "recent" ? "active" : "")" type="button" @onclick="@(() => SetActiveTab("recent"))">Recent</button>
         </nav>

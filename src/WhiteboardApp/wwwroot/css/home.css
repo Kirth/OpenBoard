@@ -218,6 +218,7 @@
   background: none;
   border: none;
   font: inherit;
+  font-weight: var(--font-weight-bold);
   transition: color 0.2s ease;
 }
 
@@ -339,23 +340,16 @@
 }
 
 .active-meta h3 {
-  margin: 0 0 4px;
+  margin: 0;
   font-size: var(--font-size-md);
   color: var(--text);
   font-weight: var(--font-weight-semibold);
 }
 
-.active-info {
-  display: flex;
-  gap: 8px;
+.owner-name {
   color: var(--text-dim);
-  font-size: var(--font-size-xs);
-  align-items: center;
-}
-
-.live-badge {
-  color: #22c55e;
-  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-normal);
 }
 
 /* ===== Public Boards Section ===== */
