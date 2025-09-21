@@ -102,6 +102,40 @@ export async function initializeSignalR(boardId) {
 function setupEventHandlers() {
     if (!signalRConnection) return;
 
+    // User presence handlers
+    signalRConnection.on("UserJoined", (userData) => {
+        try {
+            console.log('User joined:', userData);
+            if (userPresenceComponent) {
+                userPresenceComponent.invokeMethodAsync('OnUserJoined', userData);
+            }
+        } catch (error) {
+            console.error('Error handling UserJoined:', error);
+        }
+    });
+
+    signalRConnection.on("UserLeft", (userData) => {
+        try {
+            console.log('User left:', userData);
+            if (userPresenceComponent) {
+                userPresenceComponent.invokeMethodAsync('OnUserLeft', userData);
+            }
+        } catch (error) {
+            console.error('Error handling UserLeft:', error);
+        }
+    });
+
+    signalRConnection.on("ActiveUsersUpdated", (users) => {
+        try {
+            console.log('Active users updated:', users);
+            if (userPresenceComponent) {
+                userPresenceComponent.invokeMethodAsync('OnActiveUsersUpdated');
+            }
+        } catch (error) {
+            console.error('Error handling ActiveUsersUpdated:', error);
+        }
+    });
+
     // Element added handler
     signalRConnection.on("ElementAdded", (elementData, tempId) => {
         try {
@@ -1547,4 +1581,36 @@ if (typeof window !== 'undefined') {
     window.setBlazorReference = setBlazorReference;
     window.addMouseMoveListener = addMouseMoveListener;
     window.updateElementStyle = updateElementStyle;
+    window.subscribeToUserEvents = subscribeToUserEvents;
+    window.unsubscribeFromUserEvents = unsubscribeFromUserEvents;
+    window.getActiveUsers = getActiveUsers;
+}
+
+// User presence tracking for UserPresenceIndicator component
+let userPresenceComponent = null;
+
+// Subscribe to user presence events
+export function subscribeToUserEvents(blazorComponentRef) {
+    userPresenceComponent = blazorComponentRef;
+    console.log('UserPresenceIndicator subscribed to SignalR events');
+}
+
+// Unsubscribe from user presence events
+export function unsubscribeFromUserEvents() {
+    userPresenceComponent = null;
+}
+
+// Get active users from cursor tracking
+export function getActiveUsers() {
+    const users = [];
+    for (const [connectionId, cursor] of cursors.entries()) {
+        users.push({
+            connectionId: connectionId,
+            userName: cursor.userName,
+            cursorX: cursor.x,
+            cursorY: cursor.y,
+            lastUpdate: cursor.lastUpdate
+        });
+    }
+    return users;
 }

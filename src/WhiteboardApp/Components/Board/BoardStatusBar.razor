@@ -76,6 +76,8 @@
     </div>
     <div class="status-right">
         <UserMenu />
+        <UserPresenceIndicator BoardId="@BoardId" 
+                              CurrentUserName="@(currentUser?.DisplayName ?? "Unknown")" />
         <button class="theme-toggle-btn" @onclick="ToggleTheme" @onclick:stopPropagation="true" title="Toggle Dark Mode (Ctrl+Shift+D)">
             <span class="theme-icon" id="theme-icon">🌙</span>
         </button>

@@ -1,0 +1,333 @@
+@using WhiteboardApp.Models
+@using WhiteboardApp.Services
+@inject IUserSessionManager UserSessionManager
+@inject IJSRuntime JSRuntime
+
+<div class="user-presence-indicator">
+    @if (activeUsers.Any())
+    {
+        <div class="presence-avatars">
+            @{
+                var visibleUsers = activeUsers.Take(maxVisibleUsers).ToList();
+                var remainingCount = Math.Max(0, activeUsers.Count - maxVisibleUsers);
+            }
+            
+            @foreach (var user in visibleUsers)
+            {
+                <div class="user-avatar @GetUserStatusClass(user)" 
+                     title="@GetUserTooltip(user)"
+                     @onmouseenter="() => ShowUserDetails(user)"
+                     @onmouseleave="HideUserDetails"
+                     @onclick="() => ShowUserDetails(user)">
+                    <div class="avatar-content">
+                        @GetUserInitials(user.UserName)
+                    </div>
+                    <div class="online-indicator"></div>
+                </div>
+            }
+            
+            @if (remainingCount > 0)
+            {
+                <div class="user-count-indicator" 
+                     title="@GetOverflowTooltip(remainingCount)"
+                     @onmouseenter="ShowOverflowDetails"
+                     @onmouseleave="HideUserDetails">
+                    <div class="avatar-content">
+                        +@remainingCount
+                    </div>
+                </div>
+            }
+        </div>
+        
+        @if (showTooltip && selectedUser != null)
+        {
+            <div class="user-tooltip @tooltipClass" style="@tooltipStyle">
+                <div class="tooltip-content">
+                    <div class="user-info">
+                        <div class="user-name">@selectedUser.UserName</div>
+                        <div class="user-status">
+                            @if (IsAnonymousUser(selectedUser.UserName))
+                            {
+                                <span class="status-badge anonymous">Anonymous</span>
+                            }
+                            else
+                            {
+                                <span class="status-badge authenticated">Authenticated</span>
+                            }
+                        </div>
+                        <div class="user-activity">
+                            <small>Joined @GetTimeAgo(selectedUser.JoinedAt)</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+        
+        @if (showOverflowTooltip)
+        {
+            <div class="user-tooltip overflow-tooltip @tooltipClass" style="@tooltipStyle">
+                <div class="tooltip-content">
+                    <div class="overflow-users">
+                        <div class="tooltip-header">Other Users (@overflowUsers.Count)</div>
+                        @foreach (var user in overflowUsers.Take(5))
+                        {
+                            <div class="overflow-user-item">
+                                <span class="overflow-user-avatar">@GetUserInitials(user.UserName)</span>
+                                <span class="overflow-user-name">@user.UserName</span>
+                                @if (IsAnonymousUser(user.UserName))
+                                {
+                                    <span class="status-badge anonymous mini">Anon</span>
+                                }
+                            </div>
+                        }
+                        @if (overflowUsers.Count > 5)
+                        {
+                            <div class="overflow-more">
+                                and @(overflowUsers.Count - 5) more...
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public string BoardId { get; set; } = string.Empty;
+    [Parameter] public string CurrentUserName { get; set; } = string.Empty;
+
+    private List<UserSession> activeUsers = new();
+    private UserSession? selectedUser = null;
+    private List<UserSession> overflowUsers = new();
+    private bool showTooltip = false;
+    private bool showOverflowTooltip = false;
+    private string tooltipClass = "";
+    private string tooltipStyle = "";
+    private const int maxVisibleUsers = 4;
+    private Timer? refreshTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Console.WriteLine($"[UserPresenceIndicator] OnInitializedAsync - BoardId: {BoardId}, CurrentUserName: {CurrentUserName}");
+        
+        await LoadActiveUsers();
+        
+        // Log initial state
+        Console.WriteLine($"[UserPresenceIndicator] Initialized with {activeUsers.Count} active users");
+        
+        // Set up periodic refresh to update user presence
+        refreshTimer = new Timer(async _ => {
+            await InvokeAsync(async () => {
+                await LoadActiveUsers();
+                StateHasChanged();
+            });
+        }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+        
+        // Subscribe to JavaScript SignalR events
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("subscribeToUserEvents", DotNetObjectReference.Create(this));
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error subscribing to user events: {ex.Message}");
+        }
+    }
+
+    private async Task LoadActiveUsers()
+    {
+        try
+        {
+            if (Guid.TryParse(BoardId, out var boardGuid))
+            {
+                var sessions = await UserSessionManager.GetBoardSessionsAsync(boardGuid);
+                
+                Console.WriteLine($"[UserPresenceIndicator] LoadActiveUsers - BoardId: {BoardId}, Current user: {CurrentUserName}");
+                Console.WriteLine($"[UserPresenceIndicator] Found {sessions.Count()} total sessions from UserSessionManager");
+                
+                // Also try to get active users from JavaScript cursor tracking
+                List<UserSession> jsUsers = new();
+                try
+                {
+                    var jsActiveUsers = await JSRuntime.InvokeAsync<object[]>("getActiveUsers");
+                    Console.WriteLine($"[UserPresenceIndicator] Found {jsActiveUsers?.Length ?? 0} users from JavaScript cursor tracking");
+                    
+                    if (jsActiveUsers != null)
+                    {
+                        foreach (var jsUser in jsActiveUsers)
+                        {
+                            var jsUserJson = System.Text.Json.JsonSerializer.Serialize(jsUser);
+                            var jsUserObj = System.Text.Json.JsonSerializer.Deserialize<dynamic>(jsUserJson);
+                            Console.WriteLine($"[UserPresenceIndicator] JS User: {jsUserObj}");
+                        }
+                    }
+                }
+                catch (Exception jsEx)
+                {
+                    Console.WriteLine($"[UserPresenceIndicator] Error getting JS users: {jsEx.Message}");
+                }
+                
+                // Filter out current user and inactive sessions
+                activeUsers = sessions
+                    .Where(s => s.IsActive && s.UserName != CurrentUserName)
+                    .OrderBy(s => s.JoinedAt)
+                    .ToList();
+                
+                Console.WriteLine($"[UserPresenceIndicator] Active users after filtering: {activeUsers.Count}");
+                foreach (var user in activeUsers)
+                {
+                    Console.WriteLine($"[UserPresenceIndicator] User: {user.UserName}, Active: {user.IsActive}, Joined: {user.JoinedAt}");
+                }
+                
+                // Update overflow users list
+                if (activeUsers.Count > maxVisibleUsers)
+                {
+                    overflowUsers = activeUsers.Skip(maxVisibleUsers).ToList();
+                }
+                else
+                {
+                    overflowUsers.Clear();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading active users: {ex.Message}");
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnUserJoined(object userData)
+    {
+        Console.WriteLine($"[UserPresenceIndicator] OnUserJoined called: {userData}");
+        await LoadActiveUsers();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public async Task OnUserLeft(object userData)
+    {
+        Console.WriteLine($"[UserPresenceIndicator] OnUserLeft called: {userData}");
+        await LoadActiveUsers();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public async Task OnActiveUsersUpdated()
+    {
+        Console.WriteLine($"[UserPresenceIndicator] OnActiveUsersUpdated called");
+        await LoadActiveUsers();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private string GetUserInitials(string userName)
+    {
+        if (string.IsNullOrWhiteSpace(userName))
+            return "?";
+
+        var parts = userName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 1)
+        {
+            var name = parts[0];
+            return name.Length >= 2 ? name.Substring(0, 2).ToUpper() : name.ToUpper();
+        }
+        else
+        {
+            return (parts[0].Substring(0, 1) + parts[1].Substring(0, 1)).ToUpper();
+        }
+    }
+
+    private string GetUserStatusClass(UserSession user)
+    {
+        var classes = new List<string> { "active" };
+        
+        if (IsAnonymousUser(user.UserName))
+            classes.Add("anonymous");
+        else
+            classes.Add("authenticated");
+            
+        return string.Join(" ", classes);
+    }
+
+    private bool IsAnonymousUser(string userName)
+    {
+        return userName.StartsWith("Guest-", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private string GetUserTooltip(UserSession user)
+    {
+        var status = IsAnonymousUser(user.UserName) ? "Anonymous" : "Authenticated";
+        var timeAgo = GetTimeAgo(user.JoinedAt);
+        return $"{user.UserName} ({status}) - Joined {timeAgo}";
+    }
+
+    private string GetOverflowTooltip(int count)
+    {
+        return $"{count} more user{(count > 1 ? "s" : "")} viewing this board";
+    }
+
+    private string GetTimeAgo(DateTime dateTime)
+    {
+        var timeSpan = DateTime.UtcNow - dateTime;
+        
+        if (timeSpan.TotalMinutes < 1)
+            return "just now";
+        else if (timeSpan.TotalMinutes < 60)
+            return $"{(int)timeSpan.TotalMinutes}m ago";
+        else if (timeSpan.TotalHours < 24)
+            return $"{(int)timeSpan.TotalHours}h ago";
+        else
+            return $"{(int)timeSpan.TotalDays}d ago";
+    }
+
+    private async Task ShowUserDetails(UserSession user)
+    {
+        Console.WriteLine($"[UserPresenceIndicator] ShowUserDetails triggered for user: {user.UserName}");
+        selectedUser = user;
+        showTooltip = true;
+        showOverflowTooltip = false;
+        await PositionTooltip();
+        StateHasChanged();
+    }
+
+    private async Task ShowOverflowDetails()
+    {
+        Console.WriteLine($"[UserPresenceIndicator] ShowOverflowDetails triggered");
+        showOverflowTooltip = true;
+        showTooltip = false;
+        await PositionTooltip();
+        StateHasChanged();
+    }
+
+    private void HideUserDetails()
+    {
+        Console.WriteLine($"[UserPresenceIndicator] HideUserDetails triggered");
+        showTooltip = false;
+        showOverflowTooltip = false;
+        selectedUser = null;
+        StateHasChanged();
+    }
+
+    private async Task PositionTooltip()
+    {
+        // Simple positioning - tooltip appears below the indicator
+        tooltipClass = "tooltip-bottom";
+        tooltipStyle = "";
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        refreshTimer?.Dispose();
+        
+        try
+        {
+            JSRuntime.InvokeVoidAsync("unsubscribeFromUserEvents");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error unsubscribing from user events: {ex.Message}");
+        }
+    }
+}
