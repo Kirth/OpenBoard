@@ -1,0 +1,419 @@
+@using WhiteboardApp.Services
+@using WhiteboardApp.Models
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.JSInterop
+@inject BoardService BoardService
+@inject IUserService UserService
+@inject IJSRuntime JSRuntime
+@implements IDisposable
+
+<div class="board-search-container" @onclick:stopPropagation="true">
+    <div class="join" @onfocusin="OnFocusIn">
+        <span class="frog-icon" aria-hidden="true">🐸</span>
+        <input @ref="searchInput"
+               @bind="searchQuery" 
+               @oninput="OnInputChanged"
+               @onkeydown="HandleKeyDown"
+               @onblur="HandleBlur"
+               placeholder="@Placeholder"
+               autocomplete="off"
+               aria-expanded="@(showDropdown && searchResults.Count > 0)"
+               aria-controls="search-results"
+               aria-activedescendant="@(selectedIndex >= 0 ? $"search-option-{selectedIndex}" : "")"
+               role="combobox" />
+        <button class="btn btn-ghost" 
+                type="button" 
+                @onclick="OnJoinClick"
+                disabled="@(string.IsNullOrWhiteSpace(searchQuery) && selectedBoard == null)">
+            Join
+        </button>
+    </div>
+    
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="search-error-message">@errorMessage</div>
+    }
+    
+    @if (showDropdown && searchResults.Count > 0)
+    {
+        <div id="search-results" class="search-dropdown" role="listbox">
+            @for (int i = 0; i < searchResults.Count; i++)
+            {
+                var board = searchResults[i];
+                var index = i; // Capture for closure
+                <div class="search-result-item @(selectedIndex == index ? "selected" : "")"
+                     id="search-option-@index"
+                     role="option"
+                     aria-selected="@(selectedIndex == index)"
+                     @onclick="@(() => SelectBoard(board))"
+                     @onmouseenter="@(() => selectedIndex = index)"
+                     @onmousedown:preventDefault="true">
+                    <div class="search-result-thumb" aria-hidden="true">@board.Emoji</div>
+                    <div class="search-result-content">
+                        <div class="search-result-name">@board.Name</div>
+                        <div class="search-result-meta">
+                            <span class="search-result-owner">@(board.Owner?.DisplayName ?? "Unknown")</span>
+                            <span class="search-result-separator">•</span>
+                            <span class="search-result-access @GetAccessLevelClass(board.AccessLevel)">
+                                @GetAccessLevelIcon(board.AccessLevel) @GetAccessLevelText(board.AccessLevel)
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    
+    @if (showDropdown && !string.IsNullOrWhiteSpace(searchQuery) && searchResults.Count == 0 && !isSearching)
+    {
+        <div class="search-dropdown">
+            <div class="search-no-results">
+                <div class="search-no-results-text">No boards found</div>
+                <div class="search-no-results-hint">
+                    Try searching by board name, or paste a board URL/ID
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Placeholder { get; set; } = "Enter board name, URL, or ID to join… (Use ↑↓ or Tab to navigate)";
+    [Parameter] public EventCallback<WhiteboardApp.Models.Board> OnBoardSelected { get; set; }
+    [Parameter] public EventCallback<string> OnDirectJoin { get; set; }
+    [Parameter] public EventCallback<string> OnError { get; set; }
+    
+    [CascadingParameter] private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
+    private ElementReference searchInput;
+    private string searchQuery = "";
+    private List<WhiteboardApp.Models.Board> searchResults = new();
+    private bool showDropdown = false;
+    private bool isSearching = false;
+    private int selectedIndex = -1;
+    private WhiteboardApp.Models.Board? selectedBoard = null;
+    private string errorMessage = "";
+    private User? currentUser = null;
+    private Timer? searchTimer;
+    private readonly int SearchDebounceMs = 300;
+    private bool suppressBlurOnce = false;
+    private int searchVersion = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Get current user for search context
+        if (AuthenticationStateTask != null)
+        {
+            var authState = await AuthenticationStateTask;
+            if (authState.User.Identity?.IsAuthenticated == true)
+            {
+                try
+                {
+                    currentUser = await UserService.GetOrCreateUserAsync(authState.User);
+                }
+                catch
+                {
+                    currentUser = null;
+                }
+            }
+        }
+    }
+
+    private async Task OnInputChanged(ChangeEventArgs e)
+    {
+        searchQuery = e.Value?.ToString() ?? "";
+        errorMessage = "";
+        selectedBoard = null;
+        selectedIndex = -1;
+
+        // Clear parent error
+        if (OnError.HasDelegate)
+            await OnError.InvokeAsync("");
+
+        // Cancel previous search timer
+        searchTimer?.Dispose();
+
+        if (string.IsNullOrWhiteSpace(searchQuery))
+        {
+            showDropdown = false;
+            searchResults.Clear();
+            StateHasChanged();
+            return;
+        }
+
+        // Set up debounced search with version tracking
+        var version = ++searchVersion;
+        searchTimer = new Timer(async _ => await PerformSearch(version), null, SearchDebounceMs, Timeout.Infinite);
+    }
+
+    private async Task PerformSearch(int version)
+    {
+        if (version != searchVersion) return; // stale
+
+        if (string.IsNullOrWhiteSpace(searchQuery))
+            return;
+
+        await InvokeAsync(async () =>
+        {
+            isSearching = true;
+            StateHasChanged();
+
+            try
+            {
+                // First try to parse as board identifier (URL/ID)
+                var parsedId = BoardService.ParseBoardIdentifier(searchQuery);
+                
+                if (!string.IsNullOrEmpty(parsedId) && Guid.TryParse(parsedId, out var boardGuid))
+                {
+                    // Direct board ID - try to get the specific board
+                    var specificBoard = await BoardService.GetBoardAsync(boardGuid);
+                    if (specificBoard != null)
+                    {
+                        // Check if user can access this board
+                        var canAccess = specificBoard.AccessLevel == BoardAccessLevel.Public ||
+                                       (currentUser != null && (
+                                           specificBoard.OwnerId == currentUser.Id ||
+                                           specificBoard.Collaborators?.Any(c => c.UserId == currentUser.Id) == true ||
+                                           specificBoard.AccessLevel == BoardAccessLevel.Unlisted
+                                       ));
+                        
+                        if (canAccess)
+                        {
+                            // Check version before applying results
+                            if (version != searchVersion) return;
+                            searchResults = new List<WhiteboardApp.Models.Board> { specificBoard };
+                        }
+                        else
+                        {
+                            if (version != searchVersion) return;
+                            searchResults.Clear();
+                            errorMessage = "Board not accessible";
+                        }
+                    }
+                    else
+                    {
+                        if (version != searchVersion) return;
+                        searchResults.Clear();
+                        errorMessage = "Board not found";
+                    }
+                }
+                else
+                {
+                    // Perform name-based search
+                    var results = await BoardService.SearchBoardsAsync(searchQuery, currentUser, 8);
+                    
+                    // Check version before applying results
+                    if (version != searchVersion) return;
+                    searchResults = results;
+                }
+
+                showDropdown = true;
+                selectedIndex = -1; // Don't auto-select first result
+                
+                // Clear parent error on successful search
+                if (OnError.HasDelegate)
+                    await OnError.InvokeAsync("");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Search error: {ex.Message}");
+                if (version != searchVersion) return;
+                searchResults.Clear();
+                errorMessage = "Search failed";
+            }
+            finally
+            {
+                isSearching = false;
+                StateHasChanged();
+            }
+        });
+    }
+
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "ArrowDown":
+                if (searchResults.Count > 0)
+                {
+                    selectedIndex = Math.Min(
+                        selectedIndex < 0 ? 0 : selectedIndex + 1,
+                        searchResults.Count - 1
+                    );
+                    showDropdown = true;
+                    StateHasChanged();
+                }
+                break;
+
+            case "ArrowUp":
+                if (searchResults.Count > 0)
+                {
+                    selectedIndex = Math.Max(
+                        selectedIndex < 0 ? 0 : selectedIndex - 1,
+                        0
+                    );
+                    showDropdown = true;
+                    StateHasChanged();
+                }
+                break;
+
+            case "Enter":
+                if (selectedIndex >= 0 && selectedIndex < searchResults.Count)
+                {
+                    suppressBlurOnce = true;
+                    await SelectBoard(searchResults[selectedIndex]);
+                    await Task.Yield();                 // allow blur to fire
+                    await searchInput.FocusAsync();     // then restore
+                }
+                else
+                {
+                    await OnJoinClick();
+                }
+                break;
+
+            case "Tab":
+                if (selectedIndex >= 0 && selectedIndex < searchResults.Count)
+                {
+                    suppressBlurOnce = true;
+                    await SelectBoard(searchResults[selectedIndex]);
+                    await Task.Yield();
+                    await searchInput.FocusAsync();
+                }
+                // else: let Tab move focus away naturally
+                break;
+
+            case "Escape":
+                showDropdown = false;
+                selectedIndex = -1;
+                StateHasChanged();
+                break;
+        }
+    }
+
+    private async Task HandleBlur(FocusEventArgs e)
+    {
+        if (suppressBlurOnce)
+        {
+            suppressBlurOnce = false; // consume the one-shot
+            return;                   // don't close; focus will be restored
+        }
+
+        // Defer to allow pointerdown + click selection to run first
+        await Task.Delay(150);
+        showDropdown = false;
+        StateHasChanged();
+    }
+
+    private async Task SelectBoard(WhiteboardApp.Models.Board board)
+    {
+        selectedBoard = board;
+        searchQuery = board.Name;
+        showDropdown = false;
+        selectedIndex = -1;
+        errorMessage = "";
+        
+        // Clear parent error on successful selection
+        if (OnError.HasDelegate)
+            await OnError.InvokeAsync("");
+        
+        StateHasChanged();
+        
+        // Notify parent component
+        if (OnBoardSelected.HasDelegate)
+        {
+            await OnBoardSelected.InvokeAsync(board);
+        }
+    }
+
+    private async Task OnJoinClick()
+    {
+        if (selectedBoard != null)
+        {
+            await SelectBoard(selectedBoard);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(searchQuery))
+        {
+            errorMessage = "Please enter a board name, URL, or ID";
+            return;
+        }
+
+        errorMessage = "";
+
+        // Try to parse as direct identifier first
+        var parsedId = BoardService.ParseBoardIdentifier(searchQuery);
+        if (!string.IsNullOrEmpty(parsedId))
+        {
+            if (OnDirectJoin.HasDelegate)
+            {
+                await OnDirectJoin.InvokeAsync(parsedId);
+            }
+            return;
+        }
+
+        // If we have search results, use the first one
+        if (searchResults.Count > 0)
+        {
+            await SelectBoard(searchResults[0]);
+            return;
+        }
+
+        // No valid identifier found
+        errorMessage = "Invalid board identifier. Please enter a valid board name, URL, or ID.";
+        if (OnError.HasDelegate)
+        {
+            await OnError.InvokeAsync(errorMessage);
+        }
+    }
+
+    private void OnFocusIn()
+    {
+        if (!string.IsNullOrWhiteSpace(searchQuery) && searchResults.Count > 0)
+        {
+            showDropdown = true;
+            StateHasChanged();
+        }
+    }
+
+
+    private string GetAccessLevelClass(BoardAccessLevel level)
+    {
+        return level switch
+        {
+            BoardAccessLevel.Public => "public",
+            BoardAccessLevel.Private => "private", 
+            BoardAccessLevel.Unlisted => "unlisted",
+            _ => ""
+        };
+    }
+
+    private string GetAccessLevelIcon(BoardAccessLevel level)
+    {
+        return level switch
+        {
+            BoardAccessLevel.Public => "🌐",
+            BoardAccessLevel.Private => "🔒",
+            BoardAccessLevel.Unlisted => "🔗",
+            _ => ""
+        };
+    }
+
+    private string GetAccessLevelText(BoardAccessLevel level)
+    {
+        return level switch
+        {
+            BoardAccessLevel.Public => "Public",
+            BoardAccessLevel.Private => "Private",
+            BoardAccessLevel.Unlisted => "Unlisted",
+            _ => ""
+        };
+    }
+
+
+    public void Dispose()
+    {
+        searchTimer?.Dispose();
+    }
+}

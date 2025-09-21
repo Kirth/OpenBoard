@@ -37,11 +37,11 @@
         <h1>Real‑Time Collaborative Whiteboarding</h1>
         <p class="sub">Sketch ideas, stack stickies, and plan together from anywhere. Open source and fast.</p>
 
-        <form class="join" role="search" aria-label="Join board" @onsubmit="JoinBoard" @onsubmit:preventDefault="true">
-            <span class="frog-icon" aria-hidden="true">🐸</span>
-            <input @bind="boardId" @oninput="ClearError" placeholder="Enter board ID to join…" autocomplete="off" />
-            <button class="btn btn-ghost" type="button" @onclick="JoinBoard" disabled="@string.IsNullOrWhiteSpace(boardId)">Join</button>
-        </form>
+        <BoardSearchInput 
+            Placeholder="Enter board name, URL, or ID to join…"
+            OnBoardSelected="OnBoardSelected"
+            OnDirectJoin="OnDirectJoin"
+            OnError="OnSearchError" />
         
         @if (!string.IsNullOrEmpty(errorMessage))
         {
@@ -477,7 +477,6 @@
     [CascadingParameter]
     private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
     
-    private string boardId = "";
     private string newBoardTitle = "";
     private string selectedEmoji = "📋";
     private bool showEmojiPicker = false;
@@ -673,21 +672,21 @@
         StateHasChanged(); // Ensure UI updates
     }
 
-    private async Task JoinBoard()
+    private async Task OnBoardSelected(WhiteboardApp.Models.Board board)
     {
-        if (string.IsNullOrEmpty(boardId))
-            return;
+        await JoinSpecificBoard(board.Id);
+    }
 
-        errorMessage = "";
-        
+    private async Task OnDirectJoin(string boardIdentifier)
+    {
         // Validate GUID format
-        if (!Guid.TryParse(boardId, out var boardGuid))
+        if (!Guid.TryParse(boardIdentifier, out var boardGuid))
         {
             errorMessage = "Invalid board ID format";
             return;
         }
 
-        // Check if board exists
+        // Check if board exists and user can access it
         var board = await BoardService.GetBoardAsync(boardGuid);
         if (board == null)
         {
@@ -695,8 +694,10 @@
             return;
         }
 
-        // Track board access for authenticated users
-        if (AuthenticationStateTask != null)
+        // Check access permissions
+        var canAccess = board.AccessLevel == BoardAccessLevel.Public;
+        
+        if (!canAccess && AuthenticationStateTask != null)
         {
             var authState = await AuthenticationStateTask;
             if (authState.User.Identity?.IsAuthenticated == true)
@@ -704,16 +705,30 @@
                 try
                 {
                     var user = await UserService.GetOrCreateUserAsync(authState.User);
-                    await BoardService.TrackBoardAccessAsync(user.Id, boardGuid, isJoin: false);
+                    canAccess = board.OwnerId == user.Id || 
+                               board.Collaborators?.Any(c => c.UserId == user.Id) == true ||
+                               board.AccessLevel == BoardAccessLevel.Unlisted;
                 }
                 catch
                 {
-                    // Ignore tracking errors
+                    // If user service fails, keep canAccess as false
                 }
             }
         }
 
-        Navigation.NavigateTo($"/board/{boardId}");
+        if (!canAccess)
+        {
+            errorMessage = "Access denied to this board";
+            return;
+        }
+
+        await JoinSpecificBoard(boardGuid);
+    }
+
+    private void OnSearchError(string error)
+    {
+        errorMessage = error;
+        StateHasChanged();
     }
 
     private async Task JoinSpecificBoard(Guid id)
@@ -810,10 +825,6 @@
         return date.ToString("M/d");
     }
 
-    private void ClearError()
-    {
-        errorMessage = "";
-    }
 
     private string GetStickyCount(WhiteboardApp.Models.Board board)
     {

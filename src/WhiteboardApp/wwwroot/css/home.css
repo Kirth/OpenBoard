@@ -698,6 +698,203 @@ footer a:hover {
   margin: 6px 0;
 }
 
+/* Board Search Input Styles */
+.board-search-container {
+  position: relative;
+  width: 100%;
+}
+
+.search-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  margin-top: 8px;
+  background: var(--surface);
+  border: 1px solid var(--chip-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-2);
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.search-result-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.2s ease;
+  min-height: 60px;
+}
+
+.search-result-item:hover,
+.search-result-item.selected {
+  background: var(--muted);
+}
+
+.search-result-item.selected {
+  background: rgba(124, 77, 255, 0.1);
+  border: 1px solid rgba(124, 77, 255, 0.2);
+  box-shadow: 0 0 0 2px rgba(124, 77, 255, 0.1);
+}
+
+.search-result-item:focus-visible {
+  outline: none;
+  background: rgba(124, 77, 255, 0.1);
+  border: 1px solid rgba(124, 77, 255, 0.3);
+  box-shadow: 0 0 0 2px rgba(124, 77, 255, 0.2);
+}
+
+.search-result-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, rgba(124,77,255,.25), rgba(34,211,238,.18));
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.search-result-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.search-result-name {
+  font-weight: var(--font-weight-semibold);
+  color: var(--text);
+  font-size: var(--font-size-md);
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-result-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dim);
+  font-size: var(--font-size-xs);
+  flex-wrap: wrap;
+}
+
+.search-result-owner {
+  color: var(--text-dim);
+}
+
+.search-result-separator {
+  color: var(--text-dim);
+}
+
+.search-result-access {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-size-xs);
+  padding: 2px 6px;
+  border-radius: var(--radius-xl);
+  background: var(--chip);
+  border: 1px solid var(--chip-border);
+  white-space: nowrap;
+}
+
+.search-result-access.public {
+  background: var(--success-bg);
+  color: var(--success);
+  border-color: var(--success-border);
+}
+
+.search-result-access.private {
+  background: var(--error-bg);
+  color: var(--error);
+  border-color: var(--error-border);
+}
+
+.search-result-access.unlisted {
+  background: var(--warning-bg);
+  color: var(--warning);
+  border-color: var(--warning-border);
+}
+
+.search-no-results {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-dim);
+}
+
+.search-no-results-text {
+  font-weight: var(--font-weight-medium);
+  margin-bottom: 4px;
+}
+
+.search-no-results-hint {
+  font-size: var(--font-size-sm);
+  opacity: 0.8;
+}
+
+.search-error-message {
+  margin-top: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--error-bg);
+  color: var(--error);
+  border: 1px solid var(--error-border);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+}
+
+/* Scrollbar styling for search dropdown */
+.search-dropdown::-webkit-scrollbar {
+  width: 6px;
+}
+
+.search-dropdown::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.search-dropdown::-webkit-scrollbar-thumb {
+  background: var(--chip-border);
+  border-radius: 3px;
+}
+
+.search-dropdown::-webkit-scrollbar-thumb:hover {
+  background: var(--border-color-hover);
+}
+
+/* Responsive adjustments for search dropdown */
+@media (max-width: 880px) {
+  .search-dropdown {
+    max-height: 240px;
+  }
+  
+  .search-result-item {
+    min-height: 50px;
+    padding: 8px;
+  }
+  
+  .search-result-thumb {
+    width: 32px;
+    height: 32px;
+    font-size: 16px;
+  }
+  
+  .search-result-meta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+  
+  .search-result-separator {
+    display: none;
+  }
+}
+
 /* Emoji picker styles (preserve existing functionality) */
 .emoji-picker-container {
   position: relative;

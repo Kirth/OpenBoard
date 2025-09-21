@@ -368,6 +368,122 @@ public class BoardService
 
         await _context.SaveChangesAsync();
     }
+
+    /// <summary>
+    /// Search for boards by name, ID, or owner. Returns boards the user can access.
+    /// </summary>
+    public async Task<List<Board>> SearchBoardsAsync(string query, User? user = null, int limit = 10)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+            return new List<Board>();
+
+        query = query.Trim();
+        
+        // Start with base query including related data
+        var baseQuery = _context.Boards
+            .Include(b => b.Owner)
+            .Include(b => b.Elements)
+            .Include(b => b.Collaborators)
+                .ThenInclude(c => c.User)
+            .AsQueryable();
+
+        // Apply access filters based on user
+        if (user != null)
+        {
+            // Authenticated user - show boards they can access
+            baseQuery = baseQuery.Where(b => 
+                b.OwnerId == user.Id || // User is owner
+                b.Collaborators.Any(c => c.UserId == user.Id) || // User is collaborator  
+                b.AccessLevel == BoardAccessLevel.Public || // Public boards
+                b.AccessLevel == BoardAccessLevel.Unlisted); // Unlisted boards (if they know the name/ID)
+        }
+        else
+        {
+            // Anonymous user - only public boards
+            baseQuery = baseQuery.Where(b => b.AccessLevel == BoardAccessLevel.Public);
+        }
+
+        // Check if query looks like a GUID (for partial ID matching)
+        var isGuidLike = Guid.TryParse(query, out var exactGuid) || 
+                        query.Length >= 8 && query.All(c => char.IsLetterOrDigit(c) || c == '-');
+
+        // Build search conditions with priority order
+        var searchResults = await baseQuery
+            .Where(b => 
+                // Exact name match (highest priority)
+                b.Name.ToLower() == query.ToLower() ||
+                // Starts with query (high priority)
+                b.Name.ToLower().StartsWith(query.ToLower()) ||
+                // Contains query (medium priority)
+                b.Name.ToLower().Contains(query.ToLower()) ||
+                // Owner name contains query
+                (b.Owner != null && b.Owner.DisplayName.ToLower().Contains(query.ToLower())) ||
+                // Partial GUID match (if query looks like GUID)
+                (isGuidLike && b.Id.ToString().ToLower().Contains(query.ToLower()))
+            )
+            .ToListAsync();
+
+        // Sort results by relevance
+        var sortedResults = searchResults
+            .OrderByDescending(b => 
+                // Exact match gets highest score
+                b.Name.Equals(query, StringComparison.OrdinalIgnoreCase) ? 1000 :
+                // Starts with gets high score
+                b.Name.StartsWith(query, StringComparison.OrdinalIgnoreCase) ? 500 :
+                // Recent activity gets bonus
+                (DateTime.UtcNow - b.UpdatedAt).TotalDays < 7 ? 100 :
+                // Default score for contains match
+                50)
+            .ThenByDescending(b => b.UpdatedAt) // Then by recent activity
+            .Take(limit)
+            .ToList();
+
+        return sortedResults;
+    }
+
+    /// <summary>
+    /// Parse various board identifier formats (URLs, IDs, etc.) and return the board ID
+    /// </summary>
+    public static string? ParseBoardIdentifier(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return null;
+
+        input = input.Trim();
+
+        // Direct GUID check
+        if (Guid.TryParse(input, out var directGuid))
+            return directGuid.ToString();
+
+        // URL patterns to match
+        var urlPatterns = new[]
+        {
+            @"/board/([a-fA-F0-9-]{36})", // /board/uuid
+            @"/board/([a-fA-F0-9-]+)",    // /board/partial-uuid
+            @"board=([a-fA-F0-9-]{36})",  // ?board=uuid
+            @"board=([a-fA-F0-9-]+)",     // ?board=partial-uuid
+            @"id=([a-fA-F0-9-]{36})",     // ?id=uuid
+            @"id=([a-fA-F0-9-]+)"         // ?id=partial-uuid
+        };
+
+        foreach (var pattern in urlPatterns)
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(input, pattern, 
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (match.Success)
+            {
+                var extractedId = match.Groups[1].Value;
+                // Validate extracted ID is a valid GUID
+                if (Guid.TryParse(extractedId, out var parsedGuid))
+                    return parsedGuid.ToString();
+                // Return partial match for further processing
+                return extractedId;
+            }
+        }
+
+        // Return null if no recognizable pattern found
+        return null;
+    }
 }
 
 public class BoardStats
