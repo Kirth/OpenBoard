@@ -4,6 +4,9 @@
 // Dependencies will be injected by main coordinator
 let dependencies = {};
 
+// Shift key state tracking for rotation snapping
+let shiftKeyPressed = false;
+
 export function setDependencies(deps) {
   dependencies = deps;
 }
@@ -56,6 +59,19 @@ export function setupEventHandlers() {
 
   // Add keyboard shortcuts
   document.addEventListener('keydown', handleKeyDown);
+  
+  // Track shift key state for rotation snapping
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Shift') {
+      shiftKeyPressed = true;
+    }
+  });
+  
+  document.addEventListener('keyup', (event) => {
+    if (event.key === 'Shift') {
+      shiftKeyPressed = false;
+    }
+  });
 
   // Set up image upload handler
   const imageInput = document.getElementById('imageUpload');
@@ -267,7 +283,7 @@ function handleMouseMove(event) {
     // Handle element rotation in select mode
     if (dependencies.isRotating && currentTool === 'select') {
       console.log('[MOVE] isRotating=', dependencies.isRotating, 'tool=', currentTool);
-      dependencies.updateElementRotation(worldPos.x, worldPos.y);
+      dependencies.updateElementRotation(worldPos.x, worldPos.y, shiftKeyPressed);
       return;
     }
 
@@ -885,7 +901,7 @@ function handleTouchMove(event) {
 
       // Handle element rotation
       if (dependencies.isRotating && currentTool === 'select') {
-        dependencies.updateElementRotation(worldPos.x, worldPos.y);
+        dependencies.updateElementRotation(worldPos.x, worldPos.y, shiftKeyPressed);
         return;
       }
 

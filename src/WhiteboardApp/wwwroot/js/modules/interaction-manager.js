@@ -624,7 +624,7 @@ export function getElementSelectionRect(element) {
 }
 
 // Rotation handling functions
-export function updateElementRotation(x, y) {
+export function updateElementRotation(x, y, shiftKeyPressed = false) {
   if (!isRotating || !draggedElementId) return false;
   
   const element = dependencies.elementFactory.getElementById(draggedElementId);
@@ -639,16 +639,15 @@ export function updateElementRotation(x, y) {
   const angleDelta = currentAngle - rotationStartAngle;
   let newRotation = rotationElementStartAngle + angleDelta;
   
-  // Optional: Snap to 15-degree increments if shift is held
-  // TODO: Add shift key detection
-  // if (shiftKeyPressed) {
-  //   newRotation = Math.round(newRotation / 15) * 15;
-  // }
+  // Snap to 15-degree increments if shift is held
+  if (shiftKeyPressed) {
+    newRotation = Math.round(newRotation / 15) * 15;
+  }
   
   // Normalize to 0-360 degrees
   newRotation = ((newRotation % 360) + 360) % 360;
   
-  console.log('[ROTATION] update angle ->', newRotation);
+  console.log('[ROTATION] update angle ->', newRotation, shiftKeyPressed ? '(snapped to 15°)' : '(free)');
   
   // Update element rotation
   dependencies.elementFactory.rotateElement(element.id, newRotation);
