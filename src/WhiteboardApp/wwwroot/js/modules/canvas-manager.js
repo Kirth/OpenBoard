@@ -915,7 +915,9 @@ function getElementBounds(element) {
 function drawCollaborativeMultiSelections() {
   try {
     // Access collaborative selections from SignalR client
-    const collaborativeSelections = dependencies.collaborativeSelections || new Map();
+    const collaborativeSelections = dependencies.signalrClient?.collaborativeSelections || new Map();
+    
+    console.log(`[DEBUG RENDER] Drawing collaborative selections: ${collaborativeSelections.size} users`);
     
     if (collaborativeSelections.size === 0) return;
     
@@ -927,27 +929,29 @@ function drawCollaborativeMultiSelections() {
     for (const [connectionId, selectionData] of collaborativeSelections) {
       if (selectionData.elementIds && selectionData.elementIds.size > 0) {
         if (selectionData.elementIds.size === 1) {
-          // Single element selection - draw simple outline
+          // Single element selection - draw prominent outline with user label
           const elementId = Array.from(selectionData.elementIds)[0];
           const element = dependencies.elements?.get(elementId);
           if (element) {
-            drawCollaborativeElementOutline(element, selectionData.color, 1.5 / zoom);
+            drawCollaborativeElementOutline(element, selectionData.color, 3 / zoom);
+            // Add user name label for single selections too
+            drawCollaborativeUserLabel(selectionData.userName, element.x, element.y - 25 / zoom, selectionData.color, zoom);
           }
         } else if (selectionData.elementIds.size > 1) {
           // Multi-element selection - draw group bounding box
           const groupBounds = calculateGroupBoundingBox(selectionData.elementIds);
           if (groupBounds && groupBounds.width > 0 && groupBounds.height > 0) {
-            // Draw group bounding box
+            // Draw group bounding box with enhanced visibility
             ctx.strokeStyle = selectionData.color;
-            ctx.lineWidth = 1.5 / zoom;
-            ctx.setLineDash([6 / zoom, 3 / zoom]);
+            ctx.lineWidth = 3 / zoom;
+            ctx.setLineDash([8 / zoom, 4 / zoom]);
             ctx.strokeRect(groupBounds.x, groupBounds.y, groupBounds.width, groupBounds.height);
             
             // Draw individual element outlines
             for (const elementId of selectionData.elementIds) {
               const element = dependencies.elements?.get(elementId);
               if (element) {
-                drawCollaborativeElementOutline(element, selectionData.color, 1 / zoom);
+                drawCollaborativeElementOutline(element, selectionData.color, 2 / zoom);
               }
             }
             
@@ -970,12 +974,43 @@ function drawCollaborativeElementOutline(element, color, lineWidth) {
     if (!element) return;
     
     ctx.save();
+    
+    // Draw white outline first for contrast
+    ctx.strokeStyle = 'white';
+    ctx.lineWidth = lineWidth + 2;
+    ctx.globalAlpha = 1.0;
+    ctx.setLineDash([]);
+    
+    // Handle rotation if needed for white outline
+    const rotation = element.data?.rotation || 0;
+    if (rotation !== 0) {
+      const centerX = element.x + element.width / 2;
+      const centerY = element.y + element.height / 2;
+      ctx.translate(centerX, centerY);
+      ctx.rotate((rotation * Math.PI) / 180);
+      ctx.translate(-centerX, -centerY);
+    }
+    
+    if (element.type === 'Line') {
+      ctx.beginPath();
+      ctx.moveTo(element.x, element.y);
+      ctx.lineTo(element.x + element.width, element.y + element.height);
+      ctx.stroke();
+    } else {
+      ctx.strokeRect(element.x, element.y, element.width, element.height);
+    }
+    
+    // Reset transformation for colored outline
+    ctx.restore();
+    ctx.save();
+    
+    // Draw colored dashed outline on top
     ctx.strokeStyle = color;
     ctx.lineWidth = lineWidth;
-    ctx.globalAlpha = 0.7; // Make it slightly transparent to distinguish from local selections
+    ctx.globalAlpha = 1.0; // Full opacity for maximum visibility
+    ctx.setLineDash([8, 4]); // Dashed pattern to distinguish from local selections
     
-    // Handle rotation if needed
-    const rotation = element.data?.rotation || 0;
+    // Handle rotation if needed (reuse the rotation variable from above)
     if (rotation !== 0) {
       const centerX = element.x + element.width / 2;
       const centerY = element.y + element.height / 2;
@@ -1005,11 +1040,12 @@ function drawCollaborativeUserLabel(userName, x, y, color, zoom) {
   try {
     if (!userName) return;
     
-    const fontSize = 12 / zoom;
-    const padding = 4 / zoom;
+    const fontSize = Math.max(12 / zoom, 8); // Minimum 8px font size
+    const padding = Math.max(6 / zoom, 3);   // Minimum 3px padding
+    const borderRadius = Math.max(4 / zoom, 2);
     
     ctx.save();
-    ctx.font = `${fontSize}px Arial`;
+    ctx.font = `bold ${fontSize}px Arial`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     
@@ -1018,12 +1054,26 @@ function drawCollaborativeUserLabel(userName, x, y, color, zoom) {
     const textWidth = textMetrics.width;
     const textHeight = fontSize;
     
-    // Draw background
-    ctx.fillStyle = color;
-    ctx.fillRect(x, y, textWidth + 2 * padding, textHeight + 2 * padding);
+    const labelWidth = textWidth + 2 * padding;
+    const labelHeight = textHeight + 2 * padding;
     
-    // Draw text
+    // Draw drop shadow for better visibility
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+    ctx.fillRect(x + 2, y + 2, labelWidth, labelHeight);
+    
+    // Draw white border for contrast
     ctx.fillStyle = 'white';
+    ctx.fillRect(x, y, labelWidth, labelHeight);
+    
+    // Draw colored background (slightly inset)
+    ctx.fillStyle = color;
+    ctx.fillRect(x + 1, y + 1, labelWidth - 2, labelHeight - 2);
+    
+    // Draw text with high contrast
+    ctx.fillStyle = 'white';
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 0.5;
+    ctx.strokeText(userName, x + padding, y + padding);
     ctx.fillText(userName, x + padding, y + padding);
     
     ctx.restore();

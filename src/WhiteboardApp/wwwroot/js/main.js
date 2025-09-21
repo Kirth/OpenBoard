@@ -235,10 +235,11 @@ function setupModuleDependencies() {
     viewportManager
   });
 
-  // Update canvas manager dependencies (add groupManager)
+  // Update canvas manager dependencies (add groupManager and signalrClient)
   canvasManager.setDependencies({
     groupManager,
-    elementFactory
+    elementFactory,
+    signalrClient
   });
 
   // Set up element factory dependencies (add groupManager and interactionManager)

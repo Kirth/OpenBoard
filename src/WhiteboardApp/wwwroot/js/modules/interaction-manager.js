@@ -152,17 +152,9 @@ export function finishSelectionRectangle() {
     console.log(`Multiple elements selected: ${selectedElementIds.size}`);
   }
   
-  // Broadcast multi-selection state to other clients
-  if (dependencies.signalrClient && selectedElementIds.size > 0) {
-    const boardId = dependencies.signalrClient.getCurrentBoardId();
-    if (boardId) {
-      if (selectedElementIds.size > 0) {
-        dependencies.signalrClient.sendSelectionUpdate(boardId, selectedElementIds);
-      } else {
-        dependencies.signalrClient.sendSelectionClear(boardId);
-      }
-    }
-  }
+  // Broadcast selection state to other clients (handles both selection and clear)
+  console.log(`[DEBUG] Broadcasting selection from finishSelectionRectangle: ${selectedElementIds.size} elements`);
+  broadcastSelectionState();
   
   isSelectionDragging = false;
   dependencies.canvasManager.redrawCanvas();
@@ -379,7 +371,9 @@ export function handleSelectMouseDown(x, y, event) {
         }
       }
 
-      // Don't broadcast yet - wait until after drag logic determines final state
+      // Broadcast selection state after all selection logic is complete
+      console.log(`[DEBUG] About to broadcast selection state after selection logic`);
+      broadcastSelectionState();
 
       // Check for line handles if it's a line
       if (element.type === 'Line') {
@@ -723,14 +717,22 @@ function broadcastSelectionState() {
   try {
     console.log(`[DEBUG BROADCAST] Broadcasting selection state: ${selectedElementIds.size} elements:`, Array.from(selectedElementIds));
     if (dependencies.signalrClient) {
+      console.log(`[DEBUG BROADCAST] signalrClient exists, checking board ID...`);
       const boardId = dependencies.signalrClient.getCurrentBoardId();
+      console.log(`[DEBUG BROADCAST] boardId: ${boardId}`);
       if (boardId) {
         if (selectedElementIds.size > 0) {
+          console.log(`[DEBUG BROADCAST] Sending selection update for ${selectedElementIds.size} elements`);
           dependencies.signalrClient.sendSelectionUpdate(boardId, selectedElementIds);
         } else {
+          console.log(`[DEBUG BROADCAST] Sending selection clear`);
           dependencies.signalrClient.sendSelectionClear(boardId);
         }
+      } else {
+        console.log(`[DEBUG BROADCAST] No board ID available`);
       }
+    } else {
+      console.log(`[DEBUG BROADCAST] No signalrClient available`);
     }
   } catch (error) {
     console.error('Error broadcasting selection state:', error);
