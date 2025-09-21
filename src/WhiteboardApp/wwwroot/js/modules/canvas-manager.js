@@ -1487,10 +1487,10 @@ function renderMarkdownLine(text, x, y, fontSize) {
   ctx.restore();
 }
 
-// Helper function to check if a line is a bullet point
+// Helper function to check if a line is a bullet point (but not a checkbox)
 function isBulletLine(line) {
   const trimmed = line.trim();
-  return trimmed.startsWith('- ') || trimmed.startsWith('* ');
+  return (trimmed.startsWith('- ') || trimmed.startsWith('* ')) && !isCheckboxLine(line);
 }
 
 // Check if line is a numbered list item
@@ -1513,6 +1513,140 @@ function parseNumberedItem(line) {
     };
   }
   return null;
+}
+
+// Check if line is a checkbox item
+function isCheckboxLine(line) {
+  const trimmed = line.trim();
+  return trimmed.startsWith('- [ ]') || trimmed.startsWith('- [x]') || 
+         trimmed.startsWith('- [X]') || trimmed.startsWith('* [ ]') || 
+         trimmed.startsWith('* [x]') || trimmed.startsWith('* [X]');
+}
+
+// Parse checkbox item
+function parseCheckbox(line) {
+  const match = line.match(/^\s*[-*]\s*\[([xX\s])\]\s*(.*)$/);
+  if (match) {
+    const state = match[1].toLowerCase();
+    return {
+      checked: state === 'x',
+      text: match[2]
+    };
+  }
+  return null;
+}
+
+// Check if a click is on a checkbox within a sticky note
+export function getCheckboxClickInfo(stickyNote, clickX, clickY) {
+  if (!stickyNote || stickyNote.type !== 'StickyNote') {
+    return null;
+  }
+
+  const padding = 12;
+  const fontSize = 12;
+  const lineHeight = fontSize * 1.2;
+  
+  // Calculate relative click position within the sticky note
+  const relativeX = clickX - stickyNote.x;
+  const relativeY = clickY - stickyNote.y;
+  
+  // Check if click is within the content area
+  if (relativeX < padding || relativeY < padding) {
+    return null;
+  }
+  
+  // Split content into lines
+  const content = stickyNote.data?.content || '';
+  const lines = content.split('\n');
+  
+  let currentY = padding + fontSize; // Start from first line baseline
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    if (isCheckboxLine(line)) {
+      const checkboxSize = fontSize * 0.8;
+      const checkboxX = padding;
+      const checkboxY = currentY - fontSize * 0.7;
+      
+      // Check if click is within checkbox bounds
+      if (relativeX >= checkboxX && 
+          relativeX <= checkboxX + checkboxSize &&
+          relativeY >= checkboxY && 
+          relativeY <= checkboxY + checkboxSize) {
+        
+        return {
+          lineIndex: i,
+          line: line,
+          checkbox: parseCheckbox(line)
+        };
+      }
+    }
+    
+    // Calculate how many visual lines this content line takes up
+    let linesUsed = 1;
+    if (isCheckboxLine(line)) {
+      const checkbox = parseCheckbox(line);
+      const checkboxWidth = fontSize * 0.8 + 8;
+      const availableWidth = stickyNote.width - padding * 2 - checkboxWidth;
+      // Simplified line calculation for checkbox text
+      const estimatedCharsPerLine = Math.floor(availableWidth / (fontSize * 0.6));
+      linesUsed = Math.max(1, Math.ceil((checkbox?.text || '').length / estimatedCharsPerLine));
+    } else if (isBulletLine(line)) {
+      const bulletText = line.replace(/^\s*[-*]\s/, '');
+      // Approximate bullet width for line calculation
+      const bulletWidth = fontSize * 0.8; // Approximate width of bullet and space
+      const availableWidth = stickyNote.width - padding * 2 - bulletWidth;
+      // Simplified line calculation without requiring ctx for measurement
+      const estimatedCharsPerLine = Math.floor(availableWidth / (fontSize * 0.6));
+      linesUsed = Math.max(1, Math.ceil(bulletText.length / estimatedCharsPerLine));
+    } else if (isNumberedLine(line)) {
+      const numberedItem = parseNumberedItem(line);
+      if (numberedItem) {
+        // Approximate number width
+        const numberWidth = fontSize * (numberedItem.number.length + 2); // number + ". "
+        const availableWidth = stickyNote.width - padding * 2 - numberWidth;
+        // Simplified line calculation
+        const estimatedCharsPerLine = Math.floor(availableWidth / (fontSize * 0.6));
+        linesUsed = Math.max(1, Math.ceil(numberedItem.text.length / estimatedCharsPerLine));
+      }
+    }
+    
+    currentY += linesUsed * lineHeight;
+  }
+  
+  return null;
+}
+
+// Toggle checkbox state in sticky note content
+export function toggleCheckboxInStickyNote(stickyNote, lineIndex) {
+  if (!stickyNote || stickyNote.type !== 'StickyNote') {
+    return null;
+  }
+  
+  const content = stickyNote.data?.content || '';
+  const lines = content.split('\n');
+  
+  if (lineIndex < 0 || lineIndex >= lines.length) {
+    return null;
+  }
+  
+  const line = lines[lineIndex];
+  if (!isCheckboxLine(line)) {
+    return null;
+  }
+  
+  const checkbox = parseCheckbox(line);
+  if (!checkbox) {
+    return null;
+  }
+  
+  // Toggle the checkbox state
+  const newState = checkbox.checked ? ' ' : 'x';
+  const newLine = line.replace(/\[([xX\s])\]/, `[${newState}]`);
+  lines[lineIndex] = newLine;
+  
+  return lines.join('\n');
 }
 
 // Word wrap a line of text to fit within maxWidth, preserving markdown
@@ -1592,6 +1726,54 @@ function renderLineWithBullet(line, x, y, fontSize, maxWidth) {
 
       ctx.restore();
       return 1; // Headers always use exactly 1 line
+    }
+  } else if (isCheckboxLine(line)) {
+    // Handle checkbox rendering
+    const checkbox = parseCheckbox(line);
+    if (checkbox) {
+      ctx.save();
+      
+      // Draw checkbox square
+      const checkboxSize = fontSize * 0.8;
+      const checkboxY = y - fontSize * 0.7; // Center with text baseline
+      
+      // Draw checkbox background
+      ctx.fillStyle = ctx.fillStyle; // Use current text color for border
+      ctx.strokeStyle = ctx.fillStyle;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x, checkboxY, checkboxSize, checkboxSize);
+      
+      // Fill with background color if checked
+      if (checkbox.checked) {
+        ctx.fillStyle = ctx.fillStyle;
+        ctx.fillRect(x + 1, checkboxY + 1, checkboxSize - 2, checkboxSize - 2);
+        
+        // Draw checkmark
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = Math.max(1, checkboxSize / 8);
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(x + checkboxSize * 0.25, checkboxY + checkboxSize * 0.5);
+        ctx.lineTo(x + checkboxSize * 0.45, checkboxY + checkboxSize * 0.7);
+        ctx.lineTo(x + checkboxSize * 0.75, checkboxY + checkboxSize * 0.3);
+        ctx.stroke();
+      }
+      
+      const checkboxWidth = checkboxSize + 8; // 8px spacing after checkbox
+      ctx.restore();
+      
+      // Word wrap the checkbox text
+      const availableWidth = maxWidth - checkboxWidth;
+      const wrappedLines = wrapTextWithMarkdown(checkbox.text, availableWidth, fontSize);
+      
+      // Render each wrapped line with markdown
+      const lineHeight = fontSize * 1.2;
+      for (let i = 0; i < wrappedLines.length; i++) {
+        renderMarkdownLine(wrappedLines[i], x + checkboxWidth, y + i * lineHeight, fontSize);
+      }
+      
+      return wrappedLines.length; // Return number of lines used
     }
   } else if (isBulletLine(line)) {
     // Extract bullet text (remove bullet marker)

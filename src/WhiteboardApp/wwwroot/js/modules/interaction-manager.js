@@ -309,6 +309,33 @@ export function handleSelectMouseDown(x, y, event) {
     if (element) {
       console.log(`[SELECT MOUSE] Found element: ${element.id} (${element.type})`);
 
+      // Special handling for checkbox clicks in sticky notes
+      if (element.type === 'StickyNote') {
+        const checkboxInfo = dependencies.canvasManager.getCheckboxClickInfo(element, x, y);
+        if (checkboxInfo) {
+          console.log(`[CHECKBOX] Clicked checkbox on line ${checkboxInfo.lineIndex}`);
+          
+          // Toggle the checkbox state
+          const newContent = dependencies.canvasManager.toggleCheckboxInStickyNote(element, checkboxInfo.lineIndex);
+          if (newContent) {
+            // Update the element content
+            element.data.content = newContent;
+            
+            // Send update to server via SignalR if available
+            if (dependencies.signalRClient && dependencies.signalRClient.updateStickyNote) {
+              dependencies.signalRClient.updateStickyNote(element.id, newContent);
+            }
+            
+            // Request redraw to show the updated checkbox
+            if (dependencies.canvasManager && dependencies.canvasManager.requestRedraw) {
+              dependencies.canvasManager.requestRedraw();
+            }
+          }
+          
+          return; // Don't process as regular element selection
+        }
+      }
+
       // Check if element is part of a group
       const isInGroup = dependencies.groupManager && dependencies.groupManager.isElementInGroup(element.id);
       const groupId = isInGroup ? dependencies.groupManager.getElementGroupId(element.id) : null;
