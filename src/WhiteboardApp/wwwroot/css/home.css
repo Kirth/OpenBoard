@@ -138,9 +138,8 @@
 .hero-art {
   position: relative;
   height: 330px;
-  border-radius: 18px;
   background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
-  border: 1px solid var(--chip-border);
+  border: none;
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -174,6 +173,16 @@
   color: var(--text-dim);
   font-size: 48px;
   opacity: 0.3;
+}
+
+.hero-image {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+/*  border-radius: 12px; */ 
+  border: 0;
 }
 
 /* Error message */

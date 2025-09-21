@@ -294,7 +294,13 @@ select {
 /* Ensure all interactive elements have pointer cursor */
 [role="button"],
 [tabindex]:not([tabindex="-1"]),
-.clickable {
+.clickable,
+div[onclick],
+[data-onclick],
+.site-branding,
+.template-menu,
+.user-info,
+.brand {
   cursor: pointer !important;
 }
 

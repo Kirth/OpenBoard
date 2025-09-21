@@ -51,12 +51,13 @@
         <div class="cta-row">
             <button class="btn btn-primary" type="button" @onclick="ShowCreateModal">Create board</button>
             <div class="template-dropdown">
+
+                @if (showTemplateMenu)
+                {
                 <button class="btn btn-ghost" type="button" @onclick="ToggleTemplateMenu" 
                         aria-expanded="@showTemplateMenu" aria-controls="templateMenu">
                     New from template ▾
                 </button>
-                @if (showTemplateMenu)
-                {
                     <div id="templateMenu" class="template-menu" @onclick:stopPropagation="true">
                         <button type="button" @onclick="@(() => CreateFromTemplate("kanban"))">Kanban</button>
                         <button type="button" @onclick="@(() => CreateFromTemplate("retrospective"))">Retrospective</button>
@@ -69,7 +70,7 @@
     </div>
 
     <div class="hero-art" aria-hidden="true">
-        <div class="hero-placeholder">🎨</div>
+        <img src="img/intro.png" alt="Whiteboard collaboration illustration" class="hero-image" />
     </div>
 </section>
 
@@ -784,7 +785,7 @@
 
     private void ToggleTemplateMenu()
     {
-        showTemplateMenu = !showTemplateMenu;
+        showTemplateMenu = false; // !showTemplateMenu;
     }
 
 
