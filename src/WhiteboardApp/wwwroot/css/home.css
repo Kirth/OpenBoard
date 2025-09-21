@@ -323,8 +323,8 @@
 }
 
 .active-board-card:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 8px 24px rgba(0,0,0,.2);
+  transform: translateY(-0.5px);
+  box-shadow: 0 4px 12px rgba(0,0,0,.1);
   text-decoration: none;
 }
 
@@ -419,8 +419,8 @@
 }
 
 .card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 14px 36px rgba(0,0,0,.35);
+  transform: translateY(-1px);
+  box-shadow: 0 7px 18px rgba(0,0,0,.175);
   text-decoration: none;
 }
 

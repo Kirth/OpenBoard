@@ -295,7 +295,7 @@ select {
 [role="button"],
 [tabindex]:not([tabindex="-1"]),
 .clickable {
-  cursor: pointer;
+  cursor: pointer !important;
 }
 
 /* Motion preferences */

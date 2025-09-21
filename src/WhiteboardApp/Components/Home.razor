@@ -15,7 +15,7 @@
 
 <header class="container topbar" role="banner">
     <div class="brand">
-        <div class="logo" aria-hidden="true">OB</div>
+        <!-- <div class="logo" aria-hidden="true">OB</div> --> 
         OpenBoard
     </div>
     <!--
@@ -35,7 +35,7 @@
 <section class="container hero">
     <div>
         <h1>Real‑Time Collaborative Whiteboarding</h1>
-        <p class="sub">Sketch ideas, stack stickies, and plan together from anywhere. Open source and fast.</p>
+        <p class="sub">Sketch ideas, stack stickies, and plan together from anywhere.</p>
 
         <BoardSearchInput 
             Placeholder="Enter board name, URL, or ID to join…"
@@ -96,25 +96,24 @@
         </section>
     }
 
-    <div class="tabs-wrap">
-        <nav class="tabs" aria-label="Board sections">
-            <button class="tab @(activeTab == "my" ? "active" : "")" type="button" @onclick="@(() => SetActiveTab("my"))">My Boards</button>
-            <button class="tab @(activeTab == "public" ? "active" : "")" type="button" @onclick="@(() => SetActiveTab("public"))">Public</button>
-            <button class="tab @(activeTab == "recent" ? "active" : "")" type="button" @onclick="@(() => SetActiveTab("recent"))">Recent</button>
-        </nav>
-        <div class="toolbar" role="region" aria-label="Filters">
-            <input class="input" @bind="searchQuery" @oninput="FilterBoards" placeholder="Search boards" />
-            <select @bind="sortOrder" aria-label="Sort">
-                <option value="updated">Updated</option>
-                <option value="alphabetical">Alphabetical</option>
-                <option value="created">Created</option>
-            </select>
-        </div>
-    </div>
-
     <section class="grid" aria-label="Boards list">
         <AuthorizeView>
             <Authorized>
+                <div class="tabs-wrap">
+                    <nav class="tabs" aria-label="Board sections">
+                        <button class="tab @(activeTab == "my" ? "active" : "")" type="button" @onclick="@(() => SetActiveTab("my"))">My Boards</button>
+                        <button class="tab @(activeTab == "public" ? "active" : "")" type="button" @onclick="@(() => SetActiveTab("public"))">Public</button>
+                        <button class="tab @(activeTab == "recent" ? "active" : "")" type="button" @onclick="@(() => SetActiveTab("recent"))">Recent</button>
+                    </nav>
+                    <div class="toolbar" role="region" aria-label="Filters">
+                        <input class="input" @bind="searchQuery" @oninput="FilterBoards" placeholder="Search boards" />
+                        <select @bind="sortOrder" aria-label="Sort">
+                            <option value="updated">Updated</option>
+                            <option value="alphabetical">Alphabetical</option>
+                            <option value="created">Created</option>
+                        </select>
+                    </div>
+                </div>
                 @if (activeTab == "my")
                 {
                     @if (displayedBoards != null && displayedBoards.Count > 0)
@@ -343,7 +342,7 @@
     </section>
 
     <footer class="container" id="community">
-        <p>OpenBoard is open source. <a href="#">View on GitHub</a></p>
+        <p>OpenBoard is open source. <a href="https://github.com/Kirth/OpenBoard">View on GitHub</a></p>
     </footer>
 </main>
 
