@@ -1735,7 +1735,7 @@ function renderLineWithBullet(line, x, y, fontSize, maxWidth) {
       
       // Draw checkbox square
       const checkboxSize = fontSize * 0.8;
-      const checkboxY = y - fontSize * 0.7; // Center with text baseline
+      const checkboxY = y + (fontSize - checkboxSize) / 2; // Center checkbox with text height
       
       // Draw checkbox background
       ctx.fillStyle = ctx.fillStyle; // Use current text color for border
