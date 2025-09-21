@@ -123,6 +123,43 @@ public class UserSessionManager : IUserSessionManager
         return session?.BoardId == boardId && session.IsActive;
     }
 
+    public async Task UpdateSelectionAsync(string connectionId, string[] elementIds)
+    {
+        var session = await GetSessionAsync(connectionId);
+        if (session != null)
+        {
+            session.SelectedElementIds = elementIds?.ToList() ?? new List<string>();
+            session.LastSelectionUpdate = DateTime.UtcNow;
+            session.LastActivity = DateTime.UtcNow;
+
+            // Update both individual session and board sessions
+            var sessionKey = GetSessionKey(connectionId);
+            _cache.Set(sessionKey, session, TimeSpan.FromMinutes(SessionExpirationMinutes));
+
+            var boardSessions = GetBoardSessionsFromCache(session.BoardId);
+            if (boardSessions.ContainsKey(connectionId))
+            {
+                boardSessions[connectionId] = session;
+                var boardSessionsKey = GetBoardSessionsKey(session.BoardId);
+                _cache.Set(boardSessionsKey, boardSessions, TimeSpan.FromMinutes(SessionExpirationMinutes));
+            }
+
+            _logger.LogDebug("Updated selection for user {UserName}: {ElementCount} elements", 
+                session.UserName, session.SelectedElementIds.Count);
+        }
+    }
+
+    public async Task ClearSelectionAsync(string connectionId)
+    {
+        await UpdateSelectionAsync(connectionId, Array.Empty<string>());
+    }
+
+    public async Task<IEnumerable<UserSession>> GetBoardSessionsWithSelectionsAsync(Guid boardId)
+    {
+        var sessions = await GetBoardSessionsAsync(boardId);
+        return sessions.Where(s => s.SelectedElementIds.Any()).ToList();
+    }
+
     private string GetSessionKey(string connectionId) => $"{SessionKeyPrefix}{connectionId}";
     
     private string GetBoardSessionsKey(Guid boardId) => $"{BoardSessionsKey}{boardId}";

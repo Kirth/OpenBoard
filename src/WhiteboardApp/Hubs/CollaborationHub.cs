@@ -155,6 +155,9 @@ public class CollaborationHub : Hub
                 isOwner = user?.Id == board.OwnerId
             });
 
+            // Send current collaborative state (selections and cursors) to the new user
+            await SendCurrentStateToUser(boardId, boardGuid);
+
             _logger.LogInformation("User {DisplayName} joined board {BoardId}", displayName, boardId);
         }
         catch (Exception ex)
@@ -185,6 +188,45 @@ public class CollaborationHub : Hub
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error leaving board {BoardId}", boardId);
+        }
+    }
+
+    private async Task SendCurrentStateToUser(string boardId, Guid boardGuid)
+    {
+        try
+        {
+            // Get all current user sessions with their selections and cursors
+            var activeSessions = await _userSessionManager.GetBoardSessionsAsync(boardGuid);
+            var currentCollaborativeState = new List<object>();
+
+            foreach (var session in activeSessions.Where(s => s.ConnectionId != Context.ConnectionId))
+            {
+                // Only include users who have active selections or cursors
+                if (session.SelectedElementIds.Any() || session.CursorX != 0 || session.CursorY != 0)
+                {
+                    currentCollaborativeState.Add(new
+                    {
+                        connectionId = session.ConnectionId,
+                        userName = session.UserName,
+                        selectedElementIds = session.SelectedElementIds.ToArray(),
+                        cursorX = session.CursorX,
+                        cursorY = session.CursorY,
+                        lastSelectionUpdate = session.LastSelectionUpdate,
+                        lastActivity = session.LastActivity
+                    });
+                }
+            }
+
+            if (currentCollaborativeState.Any())
+            {
+                await Clients.Caller.SendAsync("CurrentStateUpdate", currentCollaborativeState);
+                _logger.LogDebug("Sent current collaborative state to new user: {StateCount} active users", 
+                    currentCollaborativeState.Count);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error sending current state to user in board {BoardId}", boardId);
         }
     }
 
@@ -404,6 +446,10 @@ public class CollaborationHub : Hub
             var userSession = await _userSessionManager.GetSessionAsync(Context.ConnectionId);
             if (userSession != null)
             {
+                // Persist selection state in session manager
+                await _userSessionManager.UpdateSelectionAsync(Context.ConnectionId, elementIds);
+                
+                // Broadcast to other users
                 await Clients.OthersInGroup($"Board_{boardId}").SendAsync("SelectionUpdated",
                     elementIds, userSession.UserName, Context.ConnectionId);
             }
@@ -422,6 +468,9 @@ public class CollaborationHub : Hub
             if (!await ValidateBoardAccess(boardId))
                 return;
 
+            // Clear selection state in session manager
+            await _userSessionManager.ClearSelectionAsync(Context.ConnectionId);
+            
             await Clients.OthersInGroup($"Board_{boardId}").SendAsync("SelectionCleared", Context.ConnectionId);
         }
         catch (Exception ex)

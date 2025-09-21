@@ -316,6 +316,49 @@ function setupEventHandlers() {
         }
     });
 
+    // Current state update handler for new users joining
+    signalRConnection.on("CurrentStateUpdate", (collaborativeStateList) => {
+        try {
+            console.log(`[CURRENT STATE] Received current collaborative state for ${collaborativeStateList.length} users`);
+            
+            // Process each user's current state
+            for (const userState of collaborativeStateList) {
+                const { connectionId, userName, selectedElementIds, cursorX, cursorY } = userState;
+                
+                // Update collaborative selections if user has selections
+                if (selectedElementIds && selectedElementIds.length > 0) {
+                    collaborativeSelections.set(connectionId, {
+                        elementIds: new Set(selectedElementIds),
+                        userName: userName,
+                        connectionId: connectionId,
+                        color: getColorForConnection(connectionId)
+                    });
+                    console.log(`[CURRENT STATE] ${userName} has ${selectedElementIds.length} elements selected`);
+                }
+                
+                // Update cursor position if available
+                if (cursorX !== 0 || cursorY !== 0) {
+                    cursors.set(connectionId, {
+                        x: cursorX,
+                        y: cursorY,
+                        color: getColorForConnection(connectionId),
+                        userName: userName
+                    });
+                    console.log(`[CURRENT STATE] ${userName} cursor at (${cursorX}, ${cursorY})`);
+                }
+            }
+            
+            // Redraw canvas to show current collaborative state
+            if (dependencies.redrawCanvas) {
+                dependencies.redrawCanvas();
+            }
+            
+            console.log(`[CURRENT STATE] Applied current state: ${collaborativeSelections.size} selections, ${cursors.size} cursors`);
+        } catch (error) {
+            console.error('Error handling CurrentStateUpdate:', error);
+        }
+    });
+
     // Legacy handlers for backward compatibility - map to new multi-select model
     signalRConnection.on("ElementSelected", (elementId, userName, connectionId) => {
         try {
@@ -668,23 +711,30 @@ function setupEventHandlers() {
             console.log(`User ${userName} left`);
             
             // Clean up collaborative selections for this user
-            if (dependencies.collaborativeSelections) {
-                for (const [elementId, selections] of dependencies.collaborativeSelections) {
-                    if (selections.has(connectionId)) {
-                        selections.delete(connectionId);
-                        console.log(`Removed collaborative selection for ${userName} on element ${elementId}`);
-                    }
-                    // If no more selections for this element, remove the element entry
-                    if (selections.size === 0) {
-                        dependencies.collaborativeSelections.delete(elementId);
-                    }
-                }
-                
-                // Redraw to update collaborative selections
-                if (dependencies.redrawCanvas) {
-                    dependencies.redrawCanvas();
-                }
+            // collaborativeSelections structure: Map<connectionId, selectionData>
+            if (collaborativeSelections.has(connectionId)) {
+                collaborativeSelections.delete(connectionId);
+                console.log(`Removed collaborative selections for ${userName} (${connectionId})`);
             }
+            
+            // Clean up cursor for this user
+            if (cursors.has(connectionId)) {
+                cursors.delete(connectionId);
+                console.log(`Removed cursor for ${userName} (${connectionId})`);
+            }
+            
+            // Clean up user session tracking
+            if (userSessions.has(connectionId)) {
+                userSessions.delete(connectionId);
+                console.log(`Removed user session for ${userName} (${connectionId})`);
+            }
+            
+            // Redraw to update collaborative state
+            if (dependencies.redrawCanvas) {
+                dependencies.redrawCanvas();
+            }
+            
+            console.log(`Successfully cleaned up all data for disconnected user ${userName}`);
         } catch (error) {
             console.error('Error handling UserLeft:', error);
         }

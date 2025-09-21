@@ -10,4 +10,8 @@ public class UserSession
     public bool IsActive { get; set; }
     public DateTime JoinedAt { get; set; } = DateTime.UtcNow;
     public DateTime LastActivity { get; set; } = DateTime.UtcNow;
+    
+    // Selection state tracking
+    public List<string> SelectedElementIds { get; set; } = new List<string>();
+    public DateTime? LastSelectionUpdate { get; set; }
 }

@@ -941,11 +941,31 @@ function drawCollaborativeMultiSelections() {
           // Multi-element selection - draw group bounding box
           const groupBounds = calculateGroupBoundingBox(selectionData.elementIds);
           if (groupBounds && groupBounds.width > 0 && groupBounds.height > 0) {
-            // Draw group bounding box with enhanced visibility
+            // Draw elegant group bounding box
+            ctx.save();
+            
+            // Subtle shadow
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+            ctx.lineWidth = 2 / zoom;
+            ctx.setLineDash([]);
+            ctx.strokeRect(groupBounds.x + 1, groupBounds.y + 1, groupBounds.width, groupBounds.height);
+            
+            // Main group outline with elegant styling
             ctx.strokeStyle = selectionData.color;
-            ctx.lineWidth = 3 / zoom;
-            ctx.setLineDash([8 / zoom, 4 / zoom]);
+            ctx.lineWidth = 2.5 / zoom;
+            ctx.setLineDash([15 / zoom, 8 / zoom]);
+            ctx.lineCap = 'round';
+            ctx.globalAlpha = 0.8;
             ctx.strokeRect(groupBounds.x, groupBounds.y, groupBounds.width, groupBounds.height);
+            
+            // Subtle glow
+            ctx.strokeStyle = selectionData.color;
+            ctx.lineWidth = 5 / zoom;
+            ctx.globalAlpha = 0.1;
+            ctx.setLineDash([]);
+            ctx.strokeRect(groupBounds.x, groupBounds.y, groupBounds.width, groupBounds.height);
+            
+            ctx.restore();
             
             // Draw individual element outlines
             for (const elementId of selectionData.elementIds) {
@@ -975,60 +995,79 @@ function drawCollaborativeElementOutline(element, color, lineWidth) {
     
     ctx.save();
     
-    // Draw white outline first for contrast
-    ctx.strokeStyle = 'white';
-    ctx.lineWidth = lineWidth + 2;
-    ctx.globalAlpha = 1.0;
-    ctx.setLineDash([]);
-    
-    // Handle rotation if needed for white outline
     const rotation = element.data?.rotation || 0;
-    if (rotation !== 0) {
-      const centerX = element.x + element.width / 2;
-      const centerY = element.y + element.height / 2;
-      ctx.translate(centerX, centerY);
-      ctx.rotate((rotation * Math.PI) / 180);
-      ctx.translate(-centerX, -centerY);
-    }
     
-    if (element.type === 'Line') {
-      ctx.beginPath();
-      ctx.moveTo(element.x, element.y);
-      ctx.lineTo(element.x + element.width, element.y + element.height);
-      ctx.stroke();
-    } else {
-      ctx.strokeRect(element.x, element.y, element.width, element.height);
-    }
+    // Function to draw element shape (for reuse)
+    const drawElementShape = () => {
+      if (element.type === 'Line') {
+        ctx.beginPath();
+        ctx.moveTo(element.x, element.y);
+        ctx.lineTo(element.x + element.width, element.y + element.height);
+        ctx.stroke();
+      } else {
+        // Add subtle rounded corners for better aesthetics
+        const radius = Math.min(2, Math.min(element.width, element.height) * 0.05);
+        if (radius > 0 && element.width > 4 && element.height > 4) {
+          roundedRect(element.x, element.y, element.width, element.height, radius);
+          ctx.stroke();
+        } else {
+          ctx.strokeRect(element.x, element.y, element.width, element.height);
+        }
+      }
+    };
     
-    // Reset transformation for colored outline
+    // Handle rotation setup
+    const applyRotation = () => {
+      if (rotation !== 0) {
+        const centerX = element.x + element.width / 2;
+        const centerY = element.y + element.height / 2;
+        ctx.translate(centerX, centerY);
+        ctx.rotate((rotation * Math.PI) / 180);
+        ctx.translate(-centerX, -centerY);
+      }
+    };
+    
+    // Draw subtle shadow for depth
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.15)';
+    ctx.lineWidth = lineWidth + 1;
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1.0;
+    applyRotation();
+    ctx.translate(1, 1);
+    drawElementShape();
+    
     ctx.restore();
     ctx.save();
     
-    // Draw colored dashed outline on top
+    // Draw white base outline for contrast
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.lineWidth = lineWidth + 1;
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1.0;
+    applyRotation();
+    drawElementShape();
+    
+    ctx.restore();
+    ctx.save();
+    
+    // Draw main colored outline with elegant dashed pattern
     ctx.strokeStyle = color;
     ctx.lineWidth = lineWidth;
-    ctx.globalAlpha = 1.0; // Full opacity for maximum visibility
-    ctx.setLineDash([8, 4]); // Dashed pattern to distinguish from local selections
+    ctx.globalAlpha = 0.8;
+    ctx.setLineDash([12, 6]); // More elegant dash pattern
+    ctx.lineCap = 'round'; // Rounded line caps for smoother appearance
+    applyRotation();
+    drawElementShape();
     
-    // Handle rotation if needed (reuse the rotation variable from above)
-    if (rotation !== 0) {
-      const centerX = element.x + element.width / 2;
-      const centerY = element.y + element.height / 2;
-      ctx.translate(centerX, centerY);
-      ctx.rotate((rotation * Math.PI) / 180);
-      ctx.translate(-centerX, -centerY);
-    }
-    
-    if (element.type === 'Line') {
-      // Draw line outline
-      ctx.beginPath();
-      ctx.moveTo(element.x, element.y);
-      ctx.lineTo(element.x + element.width, element.y + element.height);
-      ctx.stroke();
-    } else {
-      // Draw rectangle outline
-      ctx.strokeRect(element.x, element.y, element.width, element.height);
-    }
+    // Add subtle glow effect
+    ctx.restore();
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lineWidth * 2;
+    ctx.globalAlpha = 0.15;
+    ctx.setLineDash([]);
+    applyRotation();
+    drawElementShape();
     
     ctx.restore();
   } catch (e) {
@@ -1036,16 +1075,27 @@ function drawCollaborativeElementOutline(element, color, lineWidth) {
   }
 }
 
+// Helper function for rounded rectangles
+function roundedRect(x, y, width, height, radius) {
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + width, y, x + width, y + height, radius);
+  ctx.arcTo(x + width, y + height, x, y + height, radius);
+  ctx.arcTo(x, y + height, x, y, radius);
+  ctx.arcTo(x, y, x + width, y, radius);
+  ctx.closePath();
+}
+
 function drawCollaborativeUserLabel(userName, x, y, color, zoom) {
   try {
     if (!userName) return;
     
-    const fontSize = Math.max(12 / zoom, 8); // Minimum 8px font size
-    const padding = Math.max(6 / zoom, 3);   // Minimum 3px padding
-    const borderRadius = Math.max(4 / zoom, 2);
+    const fontSize = Math.max(11 / zoom, 9); // Slightly smaller, more elegant
+    const padding = Math.max(8 / zoom, 4);   // More generous padding
+    const borderRadius = Math.max(6 / zoom, 3);
     
     ctx.save();
-    ctx.font = `bold ${fontSize}px Arial`;
+    ctx.font = `600 ${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     
@@ -1057,29 +1107,54 @@ function drawCollaborativeUserLabel(userName, x, y, color, zoom) {
     const labelWidth = textWidth + 2 * padding;
     const labelHeight = textHeight + 2 * padding;
     
-    // Draw drop shadow for better visibility
+    // Draw subtle drop shadow
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+    roundedRect(x + 1, y + 2, labelWidth, labelHeight, borderRadius);
+    ctx.fill();
+    
+    // Draw main label background with gradient effect
+    const gradient = ctx.createLinearGradient(x, y, x, y + labelHeight);
+    gradient.addColorStop(0, color);
+    gradient.addColorStop(1, adjustColorBrightness(color, -0.1));
+    
+    ctx.fillStyle = gradient;
+    roundedRect(x, y, labelWidth, labelHeight, borderRadius);
+    ctx.fill();
+    
+    // Add subtle inner border
+    ctx.strokeStyle = adjustColorBrightness(color, 0.2);
+    ctx.lineWidth = 1;
+    roundedRect(x + 0.5, y + 0.5, labelWidth - 1, labelHeight - 1, borderRadius - 0.5);
+    ctx.stroke();
+    
+    // Draw text with subtle shadow
     ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-    ctx.fillRect(x + 2, y + 2, labelWidth, labelHeight);
+    ctx.fillText(userName, x + padding + 0.5, y + padding + 0.5);
     
-    // Draw white border for contrast
     ctx.fillStyle = 'white';
-    ctx.fillRect(x, y, labelWidth, labelHeight);
-    
-    // Draw colored background (slightly inset)
-    ctx.fillStyle = color;
-    ctx.fillRect(x + 1, y + 1, labelWidth - 2, labelHeight - 2);
-    
-    // Draw text with high contrast
-    ctx.fillStyle = 'white';
-    ctx.strokeStyle = 'black';
-    ctx.lineWidth = 0.5;
-    ctx.strokeText(userName, x + padding, y + padding);
     ctx.fillText(userName, x + padding, y + padding);
     
     ctx.restore();
   } catch (e) {
     console.error('Failed to draw collaborative user label:', e);
   }
+}
+
+// Helper function to adjust color brightness
+function adjustColorBrightness(color, amount) {
+  // Convert hex to RGB
+  const hex = color.replace('#', '');
+  const r = parseInt(hex.substr(0, 2), 16);
+  const g = parseInt(hex.substr(2, 2), 16);
+  const b = parseInt(hex.substr(4, 2), 16);
+  
+  // Adjust brightness
+  const newR = Math.min(255, Math.max(0, r + (r * amount)));
+  const newG = Math.min(255, Math.max(0, g + (g * amount)));
+  const newB = Math.min(255, Math.max(0, b + (b * amount)));
+  
+  // Convert back to hex
+  return `#${Math.round(newR).toString(16).padStart(2, '0')}${Math.round(newG).toString(16).padStart(2, '0')}${Math.round(newB).toString(16).padStart(2, '0')}`;
 }
 
 function drawCursors() {

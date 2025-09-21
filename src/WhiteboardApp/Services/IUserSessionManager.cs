@@ -10,4 +10,9 @@ public interface IUserSessionManager
     Task UpdateCursorPositionAsync(string connectionId, double x, double y);
     Task RemoveSessionAsync(string connectionId);
     Task<bool> IsUserInBoardAsync(string connectionId, Guid boardId);
+    
+    // Selection state management
+    Task UpdateSelectionAsync(string connectionId, string[] elementIds);
+    Task ClearSelectionAsync(string connectionId);
+    Task<IEnumerable<UserSession>> GetBoardSessionsWithSelectionsAsync(Guid boardId);
 }
