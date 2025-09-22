@@ -1,0 +1,179 @@
+@using Microsoft.JSInterop
+@using WhiteboardApp.Services
+@inject IJSRuntime JSRuntime
+@inject IUserService UserService
+@inject ILogger<AnonymousUserProvider> Logger
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public EventCallback<string> OnAnonymousUserIdChanged { get; set; }
+
+    private string? _currentAnonymousUserId;
+    private bool _isInitialized = false;
+
+    public string? CurrentAnonymousUserId => _currentAnonymousUserId;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_isInitialized)
+        {
+            await InitializeAnonymousUserAsync();
+            _isInitialized = true;
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// Initialize anonymous user identification
+    /// </summary>
+    private async Task InitializeAnonymousUserAsync()
+    {
+        try
+        {
+            // Get anonymous user ID from browser fingerprinting
+            _currentAnonymousUserId = await JSRuntime.InvokeAsync<string>("getAnonymousUserId");
+            
+            if (!string.IsNullOrEmpty(_currentAnonymousUserId))
+            {
+                // Validate that this is an anonymous GUID
+                if (Guid.TryParse(_currentAnonymousUserId, out var guid) && 
+                    AnonymousUserService.IsAnonymousGuid(guid))
+                {
+                    Logger.LogInformation("Anonymous user initialized: {UserId}", _currentAnonymousUserId);
+                    
+                    // Notify parent component
+                    if (OnAnonymousUserIdChanged.HasDelegate)
+                    {
+                        await OnAnonymousUserIdChanged.InvokeAsync(_currentAnonymousUserId);
+                    }
+                }
+                else
+                {
+                    Logger.LogWarning("Invalid anonymous user ID format: {UserId}", _currentAnonymousUserId);
+                    _currentAnonymousUserId = null;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to initialize anonymous user");
+            _currentAnonymousUserId = null;
+        }
+    }
+
+    /// <summary>
+    /// Get or create anonymous user from fingerprint
+    /// </summary>
+    /// <param name="fingerprint">Browser fingerprint hash (optional)</param>
+    /// <returns>Anonymous user GUID</returns>
+    public async Task<string?> GetOrCreateAnonymousUserAsync(string? fingerprint = null)
+    {
+        try
+        {
+            var user = await UserService.GetOrCreateAnonymousUserAsync(fingerprint);
+            _currentAnonymousUserId = user.Id.ToString();
+            
+            Logger.LogInformation("Anonymous user created/retrieved: {UserId}", _currentAnonymousUserId);
+            
+            // Notify parent component
+            if (OnAnonymousUserIdChanged.HasDelegate)
+            {
+                await OnAnonymousUserIdChanged.InvokeAsync(_currentAnonymousUserId);
+            }
+            
+            return _currentAnonymousUserId;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to get or create anonymous user");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Check privacy consent status
+    /// </summary>
+    /// <returns>Privacy status object</returns>
+    public async Task<object?> GetPrivacyStatusAsync()
+    {
+        try
+        {
+            return await JSRuntime.InvokeAsync<object>("getFingerprintPrivacyStatus");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to get privacy status");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Set fingerprinting consent
+    /// </summary>
+    /// <param name="consent">Whether user consents to fingerprinting</param>
+    public async Task SetFingerprintConsentAsync(bool consent)
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("setFingerprintConsent", consent);
+            
+            if (!consent)
+            {
+                // If consent is revoked, reinitialize with session-only ID
+                _currentAnonymousUserId = null;
+                await InitializeAnonymousUserAsync();
+            }
+            
+            Logger.LogInformation("Fingerprint consent set to: {Consent}", consent);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to set fingerprint consent");
+        }
+    }
+
+    /// <summary>
+    /// Clear anonymous user data
+    /// </summary>
+    public async Task ClearAnonymousDataAsync()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("clearAnonymousData");
+            _currentAnonymousUserId = null;
+            
+            Logger.LogInformation("Anonymous user data cleared");
+            
+            // Notify parent component
+            if (OnAnonymousUserIdChanged.HasDelegate)
+            {
+                await OnAnonymousUserIdChanged.InvokeAsync(null);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to clear anonymous data");
+        }
+    }
+
+    /// <summary>
+    /// Refresh anonymous user ID (useful after consent changes)
+    /// </summary>
+    public async Task RefreshAnonymousUserIdAsync()
+    {
+        _currentAnonymousUserId = null;
+        _isInitialized = false;
+        await InitializeAnonymousUserAsync();
+    }
+}
+
+@if (_isInitialized)
+{
+    @ChildContent
+}
+else
+{
+    <div class="loading-anonymous-user">
+        <span>Initializing...</span>
+    </div>
+}

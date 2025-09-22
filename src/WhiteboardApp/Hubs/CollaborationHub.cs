@@ -32,7 +32,7 @@ public class CollaborationHub : Hub
     /// <summary>
     /// Derives display name from claims for authenticated users or generates anonymous name
     /// </summary>
-    private static string GetDisplayName(ClaimsPrincipal? user, string connectionId)
+    private static string GetDisplayName(ClaimsPrincipal? user, string connectionId, string? anonymousUserId = null)
     {
         if (user?.Identity?.IsAuthenticated == true)
         {
@@ -46,15 +46,23 @@ public class CollaborationHub : Hub
                    ?? "Unknown User";
         }
         
-        // Generate deterministic anonymous name using last 4 chars of connection ID
+        // Use fingerprint-based anonymous user ID if provided and valid
+        if (!string.IsNullOrEmpty(anonymousUserId) && 
+            Guid.TryParse(anonymousUserId, out var anonymousGuid) && 
+            AnonymousUserService.IsAnonymousGuid(anonymousGuid))
+        {
+            return AnonymousUserService.GenerateAnonymousDisplayName(anonymousGuid);
+        }
+        
+        // Fallback: Generate deterministic anonymous name using last 4 chars of connection ID
         return $"Guest-{connectionId[^4..]}";
     }
 
-    public async Task JoinBoard(string boardId)
+    public async Task JoinBoard(string boardId, string? anonymousUserId = null)
     {
         try
         {
-            _logger.LogInformation("JoinBoard called with boardId: {BoardId}", boardId);
+            _logger.LogInformation("JoinBoard called with boardId: {BoardId}, anonymousUserId: {AnonymousUserId}", boardId, anonymousUserId);
             _logger.LogInformation("Context.User.Identity.IsAuthenticated: {IsAuthenticated}", Context.User?.Identity?.IsAuthenticated);
             _logger.LogInformation("Context.User.Identity.Name: '{Name}'", Context.User?.Identity?.Name);
             
@@ -73,7 +81,7 @@ public class CollaborationHub : Hub
             }
 
             // Get display name from server-side logic (never trust client)
-            var displayName = GetDisplayName(Context.User, Context.ConnectionId);
+            var displayName = GetDisplayName(Context.User, Context.ConnectionId, anonymousUserId);
             _logger.LogInformation("User '{DisplayName}' joining board {BoardId} (Authenticated: {IsAuthenticated})", 
                 displayName, boardId, Context.User?.Identity?.IsAuthenticated);
 

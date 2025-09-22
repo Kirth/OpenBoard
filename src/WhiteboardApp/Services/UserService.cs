@@ -17,6 +17,7 @@ public interface IUserService
     Task<bool> HasBoardAccessAsync(Guid userId, Guid boardId, BoardRole minimumRole = BoardRole.Viewer);
     Task<BoardRole?> GetUserBoardRoleAsync(Guid userId, Guid boardId);
     Task<User> GetAnonymousUserAsync();
+    Task<User> GetOrCreateAnonymousUserAsync(string? fingerprint = null);
     Task<UserStatistics> GetUserStatisticsAsync(Guid userId);
     Task<List<Board>> GetUserRecentBoardsAsync(Guid userId, int limit = 10);
 }
@@ -180,14 +181,16 @@ public class UserService : IUserService
 
     public async Task<User> GetAnonymousUserAsync()
     {
+        // This method now returns the legacy anonymous user for backward compatibility
         const string anonymousSubjectId = "anonymous-user";
         
         var anonymousUser = await GetUserBySubjectIdAsync(anonymousSubjectId);
         if (anonymousUser == null)
         {
-            // Create the anonymous user
+            // Create the legacy anonymous user with the reserved GUID
             anonymousUser = new User
             {
+                Id = AnonymousUserService.LegacyAnonymousGuid,
                 SubjectId = anonymousSubjectId,
                 Username = "anonymous",
                 Email = null,
@@ -201,6 +204,54 @@ public class UserService : IUserService
             _context.Users.Add(anonymousUser);
             await _context.SaveChangesAsync();
         }
+
+        return anonymousUser;
+    }
+
+    public async Task<User> GetOrCreateAnonymousUserAsync(string? fingerprint = null)
+    {
+        Guid anonymousGuid;
+        string displayName;
+
+        if (!string.IsNullOrEmpty(fingerprint) && AnonymousUserService.IsValidFingerprint(fingerprint))
+        {
+            // Generate deterministic GUID from fingerprint
+            anonymousGuid = AnonymousUserService.GenerateAnonymousGuid(fingerprint);
+            displayName = AnonymousUserService.GenerateAnonymousDisplayName(anonymousGuid);
+        }
+        else
+        {
+            // Fallback to session-only anonymous GUID
+            anonymousGuid = AnonymousUserService.GenerateSessionAnonymousGuid();
+            displayName = AnonymousUserService.GenerateAnonymousDisplayName(anonymousGuid);
+        }
+
+        // Check if this anonymous user already exists
+        var existingUser = await GetUserByIdAsync(anonymousGuid);
+        if (existingUser != null)
+        {
+            // Update last login for existing anonymous user
+            existingUser.LastLoginAt = DateTime.UtcNow;
+            await UpdateUserAsync(existingUser);
+            return existingUser;
+        }
+
+        // Create new anonymous user
+        var anonymousUser = new User
+        {
+            Id = anonymousGuid,
+            SubjectId = $"anonymous-{anonymousGuid:N}",
+            Username = null,
+            Email = null,
+            Name = displayName,
+            DisplayName = displayName,
+            CreatedAt = DateTime.UtcNow,
+            LastLoginAt = DateTime.UtcNow,
+            IsActive = true
+        };
+
+        _context.Users.Add(anonymousUser);
+        await _context.SaveChangesAsync();
 
         return anonymousUser;
     }

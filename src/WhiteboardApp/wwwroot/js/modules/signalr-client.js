@@ -80,8 +80,22 @@ export async function initializeSignalR(boardId) {
 
         // Join board group
         if (boardId) {
-            await signalRConnection.invoke("JoinBoard", boardId);
-            console.log(`Joined board: ${boardId}`);
+            // Get anonymous user ID for persistent identification
+            let anonymousUserId = null;
+            try {
+                if (window.getAnonymousUserId) {
+                    anonymousUserId = await window.getAnonymousUserId();
+                    console.log(`Using anonymous user ID: ${anonymousUserId}`);
+                } else {
+                    console.log("Anonymous user ID function not available (script may be blocked)");
+                }
+            } catch (error) {
+                console.warn("Failed to get anonymous user ID:", error);
+            }
+            
+            // Always pass both parameters (boardId and anonymousUserId, even if null)
+            await signalRConnection.invoke("JoinBoard", boardId, anonymousUserId);
+            console.log(`Joined board: ${boardId} with anonymous ID: ${anonymousUserId || 'null (fallback)'}`);
             
             // Load existing board elements
             console.log("About to load existing elements...");
@@ -791,8 +805,21 @@ function setupEventHandlers() {
         // Rejoin board if we have one
         if (currentBoardId) {
             try {
-                await signalRConnection.invoke("JoinBoard", currentBoardId);
-                console.log("Rejoined board after reconnection");
+                // Get anonymous user ID for persistent identification
+                let anonymousUserId = null;
+                try {
+                    if (window.getAnonymousUserId) {
+                        anonymousUserId = await window.getAnonymousUserId();
+                    } else {
+                        console.log("Anonymous user ID function not available on reconnection (script may be blocked)");
+                    }
+                } catch (error) {
+                    console.warn("Failed to get anonymous user ID on reconnection:", error);
+                }
+                
+                // Always pass both parameters
+                await signalRConnection.invoke("JoinBoard", currentBoardId, anonymousUserId);
+                console.log(`Rejoined board after reconnection with anonymous ID: ${anonymousUserId || 'null (fallback)'}`);
                 
                 // Wait a moment for Blazor connection to stabilize before reloading elements
                 await new Promise(resolve => setTimeout(resolve, 1000));
