@@ -4,6 +4,7 @@
 // SignalR connection state
 let signalRConnection = null;
 let currentBoardId = null;
+let isIntentionalDisconnect = false;
 
 // Cursor tracking
 export let cursors = new Map();
@@ -798,6 +799,8 @@ function setupEventHandlers() {
 
     signalRConnection.onreconnected(async () => {
         console.log("SignalR reconnected");
+        // Reset intentional disconnect flag on reconnection
+        isIntentionalDisconnect = false;
         if (dependencies.showNotification) {
             dependencies.showNotification("Connection restored", "success");
         }
@@ -865,8 +868,17 @@ function setupEventHandlers() {
 
     signalRConnection.onclose(() => {
         console.log("SignalR connection closed");
-        if (dependencies.showNotification) {
-            dependencies.showNotification("Connection lost", "error");
+        
+        if (isIntentionalDisconnect) {
+            // This was an intentional disconnect (navigation, etc.)
+            console.log("SignalR connection closed intentionally");
+            isIntentionalDisconnect = false; // Reset flag
+        } else {
+            // This was an unexpected disconnect (network error, server restart, etc.)
+            console.log("SignalR connection lost unexpectedly");
+            if (dependencies.showNotification) {
+                dependencies.showNotification("Connection lost", "error");
+            }
         }
     });
 
@@ -1572,11 +1584,15 @@ export function getConnectionState() {
 export async function disconnect() {
     try {
         if (signalRConnection) {
+            // Mark this as an intentional disconnect
+            isIntentionalDisconnect = true;
             await signalRConnection.stop();
-            console.log('SignalR disconnected');
+            console.log('SignalR disconnected intentionally');
         }
     } catch (error) {
         console.error('Failed to disconnect SignalR:', error);
+        // Reset flag on error since disconnect failed
+        isIntentionalDisconnect = false;
     }
 }
 
