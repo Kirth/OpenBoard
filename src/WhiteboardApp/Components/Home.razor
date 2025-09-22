@@ -49,10 +49,11 @@
         }
 
 
-        @if (showTemplateMenu)
-        {
         <div class="cta-row">
             <button class="btn btn-primary" type="button" @onclick="ShowCreateModal">Create board</button>
+
+        @if (showTemplateMenu)
+        {
             <div class="template-dropdown">
 
                 <button class="btn btn-ghost" type="button" @onclick="ToggleTemplateMenu" 
@@ -66,9 +67,10 @@
                         <button type="button" @onclick="@(() => CreateFromTemplate("blank"))">Blank</button>
                     </div>
             </div>
-        </div>
+
 
         }
+        </div>
     </div>
 
     <div class="hero-art" aria-hidden="true">
@@ -108,12 +110,14 @@
                     <button class="tab @(activeTab == "recent" ? "active" : "")" type="button" @onclick="@(() => SetActiveTab("recent"))">Recent</button>
                 </nav>
                 <div class="toolbar" role="region" aria-label="Filters">
+                <!-- TODO: implement this :) 
                     <input class="input" @bind="searchQuery" @oninput="FilterBoards" placeholder="Search boards" />
                     <select @bind="sortOrder" aria-label="Sort">
                         <option value="updated">Updated</option>
                         <option value="alphabetical">Alphabetical</option>
                         <option value="created">Created</option>
                     </select>
+                  -->
                 </div>
             </div>
         </Authorized>
