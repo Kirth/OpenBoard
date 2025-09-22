@@ -2508,7 +2508,7 @@ function isDarkModeActive() {
   }
 
   // Also check the actual DOM state as a fallback
-  console.log('isDarkModeActive check - theme:', currentTheme, 'hasDataThemeDark:', hasDataThemeDark);
+  //console.log('isDarkModeActive check - theme:', currentTheme, 'hasDataThemeDark:', hasDataThemeDark);
   return hasDataThemeDark;
 }
 
