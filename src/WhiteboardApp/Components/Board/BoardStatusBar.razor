@@ -77,7 +77,7 @@
     <div class="status-right">
         <UserMenu />
         <UserPresenceIndicator BoardId="@BoardId" 
-                              CurrentUserName="@(currentUser?.DisplayName ?? "Unknown")" />
+                              CurrentUserName="@GetCurrentUserDisplayName()" />
         <button class="theme-toggle-btn" @onclick="ToggleTheme" @onclick:stopPropagation="true" title="Toggle Dark Mode (Ctrl+Shift+D)">
             <span class="theme-icon" id="theme-icon">🌙</span>
         </button>
@@ -425,22 +425,67 @@
             var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
             if (authState.User.Identity?.IsAuthenticated == true)
             {
-                currentUser = await UserService.GetOrCreateUserAsync(authState.User);
+                try
+                {
+                    currentUser = await UserService.GetOrCreateUserAsync(authState.User);
+                    Console.WriteLine($"[BoardStatusBar] Loaded authenticated user: {currentUser?.DisplayName}");
+                }
+                catch (Exception userEx)
+                {
+                    Console.WriteLine($"[BoardStatusBar] Error loading authenticated user: {userEx.Message}");
+                    // Fall back to anonymous user for authenticated sessions with issues
+                    currentUser = await UserService.GetAnonymousUserAsync();
+                    currentUser.DisplayName = $"Guest-{DateTime.UtcNow.Ticks % 10000}";
+                }
                 
                 // Check if user is owner of this board
-                if (Guid.TryParse(BoardId, out var boardGuid))
+                if (Guid.TryParse(BoardId, out var boardGuid) && currentUser != null)
                 {
                     var board = await BoardService.GetBoardAsync(boardGuid);
                     isOwner = board != null && board.OwnerId == currentUser.Id;
                 }
             }
+            else
+            {
+                // For unauthenticated users, create a guest user
+                Console.WriteLine("[BoardStatusBar] User not authenticated, creating guest user");
+                currentUser = await UserService.GetAnonymousUserAsync();
+                currentUser.DisplayName = $"Guest-{DateTime.UtcNow.Ticks % 10000}";
+                isOwner = false;
+            }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error loading user role: {ex.Message}");
-            currentUser = null;
+            Console.WriteLine($"[BoardStatusBar] Error loading user role: {ex.Message}");
+            // Final fallback - create a basic guest user
+            currentUser = new User 
+            { 
+                DisplayName = $"Guest-{DateTime.UtcNow.Ticks % 10000}",
+                Username = "guest"
+            };
             isOwner = false;
         }
+    }
+
+    private string GetCurrentUserDisplayName()
+    {
+        if (currentUser?.DisplayName != null && !string.IsNullOrWhiteSpace(currentUser.DisplayName))
+        {
+            return currentUser.DisplayName;
+        }
+        
+        if (currentUser?.Username != null && !string.IsNullOrWhiteSpace(currentUser.Username))
+        {
+            return currentUser.Username;
+        }
+        
+        if (currentUser?.Email != null && !string.IsNullOrWhiteSpace(currentUser.Email))
+        {
+            return currentUser.Email.Split('@')[0];
+        }
+        
+        // Generate a guest name if all else fails
+        return $"Guest-{DateTime.UtcNow.Ticks % 10000}";
     }
 
     private void ShowBoardSettings()

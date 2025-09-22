@@ -127,11 +127,22 @@
         // Subscribe to JavaScript SignalR events
         try
         {
-            await JSRuntime.InvokeVoidAsync("subscribeToUserEvents", DotNetObjectReference.Create(this));
+            if (JSRuntime != null)
+            {
+                await JSRuntime.InvokeVoidAsync("subscribeToUserEvents", DotNetObjectReference.Create(this));
+            }
+        }
+        catch (ObjectDisposedException)
+        {
+            Console.WriteLine($"[UserPresenceIndicator] Circuit disconnected, skipping JS event subscription");
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("circuit has disconnected"))
+        {
+            Console.WriteLine($"[UserPresenceIndicator] Circuit disconnected, skipping JS event subscription");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error subscribing to user events: {ex.Message}");
+            Console.WriteLine($"[UserPresenceIndicator] Error subscribing to user events: {ex.Message}");
         }
     }
 
@@ -150,18 +161,30 @@
                 List<UserSession> jsUsers = new();
                 try
                 {
-                    var jsActiveUsers = await JSRuntime.InvokeAsync<object[]>("getActiveUsers");
-                    Console.WriteLine($"[UserPresenceIndicator] Found {jsActiveUsers?.Length ?? 0} users from JavaScript cursor tracking");
-                    
-                    if (jsActiveUsers != null)
+                    // Check if the circuit is still connected before calling JS
+                    if (JSRuntime != null)
                     {
-                        foreach (var jsUser in jsActiveUsers)
+                        var jsActiveUsers = await JSRuntime.InvokeAsync<object[]>("getActiveUsers");
+                        Console.WriteLine($"[UserPresenceIndicator] Found {jsActiveUsers?.Length ?? 0} users from JavaScript cursor tracking");
+                        
+                        if (jsActiveUsers != null)
                         {
-                            var jsUserJson = System.Text.Json.JsonSerializer.Serialize(jsUser);
-                            var jsUserObj = System.Text.Json.JsonSerializer.Deserialize<dynamic>(jsUserJson);
-                            Console.WriteLine($"[UserPresenceIndicator] JS User: {jsUserObj}");
+                            foreach (var jsUser in jsActiveUsers)
+                            {
+                                var jsUserJson = System.Text.Json.JsonSerializer.Serialize(jsUser);
+                                var jsUserObj = System.Text.Json.JsonSerializer.Deserialize<dynamic>(jsUserJson);
+                                Console.WriteLine($"[UserPresenceIndicator] JS User: {jsUserObj}");
+                            }
                         }
                     }
+                }
+                catch (ObjectDisposedException)
+                {
+                    Console.WriteLine($"[UserPresenceIndicator] Circuit disconnected, skipping JS user fetch");
+                }
+                catch (InvalidOperationException ex) when (ex.Message.Contains("circuit has disconnected"))
+                {
+                    Console.WriteLine($"[UserPresenceIndicator] Circuit disconnected, skipping JS user fetch");
                 }
                 catch (Exception jsEx)
                 {
@@ -323,11 +346,22 @@
         
         try
         {
-            JSRuntime.InvokeVoidAsync("unsubscribeFromUserEvents");
+            if (JSRuntime != null)
+            {
+                _ = JSRuntime.InvokeVoidAsync("unsubscribeFromUserEvents");
+            }
+        }
+        catch (ObjectDisposedException)
+        {
+            // Circuit already disposed, ignore
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("circuit has disconnected"))
+        {
+            // Circuit disconnected, ignore
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error unsubscribing from user events: {ex.Message}");
+            Console.WriteLine($"[UserPresenceIndicator] Error unsubscribing from user events: {ex.Message}");
         }
     }
 }

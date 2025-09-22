@@ -41,6 +41,9 @@ public class UserSessionManager : IUserSessionManager
         var boardSessions = GetBoardSessionsFromCache(boardId);
         boardSessions[connectionId] = session;
         _cache.Set(boardSessionsKey, boardSessions, TimeSpan.FromMinutes(SessionExpirationMinutes));
+        
+        _logger.LogDebug("Stored board sessions cache with type {Type} for board {BoardId}", 
+            boardSessions.GetType().Name, boardId);
 
         _logger.LogInformation("Created session for user {UserName} in board {BoardId}", userName, boardId);
         
@@ -55,16 +58,28 @@ public class UserSessionManager : IUserSessionManager
 
     public async Task<IEnumerable<UserSession>> GetBoardSessionsAsync(Guid boardId)
     {
+        _logger.LogDebug("Getting board sessions for board {BoardId}", boardId);
+        
         var boardSessions = GetBoardSessionsFromCache(boardId);
+        
+        _logger.LogDebug("Retrieved {TotalSessions} sessions from cache for board {BoardId}", 
+            boardSessions.Count, boardId);
         
         // Filter out expired sessions
         var activeSessions = boardSessions.Values
             .Where(s => s.IsActive && DateTime.UtcNow - s.JoinedAt < TimeSpan.FromMinutes(SessionExpirationMinutes))
             .ToList();
 
+        _logger.LogDebug("Found {ActiveSessions} active sessions after filtering for board {BoardId}", 
+            activeSessions.Count, boardId);
+
         // Clean up expired sessions from cache
         if (activeSessions.Count != boardSessions.Count)
         {
+            var expiredCount = boardSessions.Count - activeSessions.Count;
+            _logger.LogInformation("Cleaned up {ExpiredCount} expired sessions for board {BoardId}", 
+                expiredCount, boardId);
+                
             var cleanedSessions = activeSessions.ToDictionary(s => s.ConnectionId, s => s);
             var boardSessionsKey = GetBoardSessionsKey(boardId);
             _cache.Set(boardSessionsKey, cleanedSessions, TimeSpan.FromMinutes(SessionExpirationMinutes));
@@ -167,7 +182,38 @@ public class UserSessionManager : IUserSessionManager
     private ConcurrentDictionary<string, UserSession> GetBoardSessionsFromCache(Guid boardId)
     {
         var boardSessionsKey = GetBoardSessionsKey(boardId);
-        return _cache.GetOrCreate(boardSessionsKey, _ => new ConcurrentDictionary<string, UserSession>()) 
-               ?? new ConcurrentDictionary<string, UserSession>();
+        var cached = _cache.Get(boardSessionsKey);
+        
+        if (cached == null)
+        {
+            var newDict = new ConcurrentDictionary<string, UserSession>();
+            _cache.Set(boardSessionsKey, newDict, TimeSpan.FromMinutes(SessionExpirationMinutes));
+            return newDict;
+        }
+        
+        // Handle both Dictionary and ConcurrentDictionary types
+        if (cached is ConcurrentDictionary<string, UserSession> concurrentDict)
+        {
+            return concurrentDict;
+        }
+        else if (cached is Dictionary<string, UserSession> regularDict)
+        {
+            // Convert Dictionary to ConcurrentDictionary
+            var newConcurrentDict = new ConcurrentDictionary<string, UserSession>(regularDict);
+            _cache.Set(boardSessionsKey, newConcurrentDict, TimeSpan.FromMinutes(SessionExpirationMinutes));
+            return newConcurrentDict;
+        }
+        else if (cached is IDictionary<string, UserSession> genericDict)
+        {
+            // Handle any other IDictionary implementation
+            var newConcurrentDict = new ConcurrentDictionary<string, UserSession>(genericDict);
+            _cache.Set(boardSessionsKey, newConcurrentDict, TimeSpan.FromMinutes(SessionExpirationMinutes));
+            return newConcurrentDict;
+        }
+        
+        _logger.LogWarning("Unexpected type in cache for board sessions: {Type}. Creating new ConcurrentDictionary.", cached.GetType().Name);
+        var fallbackDict = new ConcurrentDictionary<string, UserSession>();
+        _cache.Set(boardSessionsKey, fallbackDict, TimeSpan.FromMinutes(SessionExpirationMinutes));
+        return fallbackDict;
     }
 }
