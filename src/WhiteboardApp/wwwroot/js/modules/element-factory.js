@@ -1874,7 +1874,7 @@ export function updateElementResize(currentX, currentY) {
   const deltaY = currentY - resizeStartBounds.mouseY;
 
   // Calculate new bounds based on handle type
-  const newBounds = calculateNewBounds(resizeStartBounds, activeResizeHandle, deltaX, deltaY);
+  const newBounds = calculateNewBounds(resizeStartBounds, activeResizeHandle, deltaX, deltaY, window.isShiftHeld);
 
   // Apply snap-to-grid if enabled
   if (window.canvasManager && window.canvasManager.isSnapToGridEnabled()) {
@@ -1947,51 +1947,119 @@ export function finishElementResize() {
 }
 
 // Calculate new bounds based on resize handle and mouse delta
-function calculateNewBounds(originalBounds, handleType, deltaX, deltaY) {
+function calculateNewBounds(originalBounds, handleType, deltaX, deltaY, isShiftHeld = false) {
   let { x, y, width, height } = originalBounds;
 
-  switch (handleType) {
-    case 'nw': // Top-left
-      x += deltaX;
-      y += deltaY;
-      width -= deltaX;
-      height -= deltaY;
-      break;
+  // Calculate original aspect ratio for proportional resizing
+  const originalAspectRatio = originalBounds.width / originalBounds.height;
+  
+  // Corner handles support proportional resizing when shift is held
+  const isCornerHandle = ['nw', 'ne', 'sw', 'se'].includes(handleType);
+  
+  if (isShiftHeld && isCornerHandle) {
+    // For proportional resizing, determine which delta is larger to drive the resize
+    const absDeltaX = Math.abs(deltaX);
+    const absDeltaY = Math.abs(deltaY);
+    
+    let newWidth, newHeight;
+    
+    // Use the larger delta to determine the primary resize direction
+    if (absDeltaX >= absDeltaY) {
+      // X-direction drives the resize
+      switch (handleType) {
+        case 'nw':
+        case 'sw':
+          newWidth = originalBounds.width - deltaX;
+          break;
+        case 'ne':
+        case 'se':
+          newWidth = originalBounds.width + deltaX;
+          break;
+      }
+      newHeight = newWidth / originalAspectRatio;
+    } else {
+      // Y-direction drives the resize
+      switch (handleType) {
+        case 'nw':
+        case 'ne':
+          newHeight = originalBounds.height - deltaY;
+          break;
+        case 'sw':
+        case 'se':
+          newHeight = originalBounds.height + deltaY;
+          break;
+      }
+      newWidth = newHeight * originalAspectRatio;
+    }
+    
+    // Calculate position changes based on handle type
+    switch (handleType) {
+      case 'nw': // Top-left
+        x = originalBounds.x + (originalBounds.width - newWidth);
+        y = originalBounds.y + (originalBounds.height - newHeight);
+        width = newWidth;
+        height = newHeight;
+        break;
+      case 'ne': // Top-right
+        y = originalBounds.y + (originalBounds.height - newHeight);
+        width = newWidth;
+        height = newHeight;
+        break;
+      case 'sw': // Bottom-left
+        x = originalBounds.x + (originalBounds.width - newWidth);
+        width = newWidth;
+        height = newHeight;
+        break;
+      case 'se': // Bottom-right
+        width = newWidth;
+        height = newHeight;
+        break;
+    }
+  } else {
+    // Non-proportional resizing (default behavior)
+    switch (handleType) {
+      case 'nw': // Top-left
+        x += deltaX;
+        y += deltaY;
+        width -= deltaX;
+        height -= deltaY;
+        break;
 
-    case 'ne': // Top-right
-      y += deltaY;
-      width += deltaX;
-      height -= deltaY;
-      break;
+      case 'ne': // Top-right
+        y += deltaY;
+        width += deltaX;
+        height -= deltaY;
+        break;
 
-    case 'sw': // Bottom-left
-      x += deltaX;
-      width -= deltaX;
-      height += deltaY;
-      break;
+      case 'sw': // Bottom-left
+        x += deltaX;
+        width -= deltaX;
+        height += deltaY;
+        break;
 
-    case 'se': // Bottom-right
-      width += deltaX;
-      height += deltaY;
-      break;
+      case 'se': // Bottom-right
+        width += deltaX;
+        height += deltaY;
+        break;
 
-    case 'n': // Top-center
-      y += deltaY;
-      height -= deltaY;
-      break;
+      case 'n': // Top-center
+        y += deltaY;
+        height -= deltaY;
+        break;
 
-    case 's': // Bottom-center
-      height += deltaY;
-      break;
+      case 's': // Bottom-center
+        height += deltaY;
+        break;
 
-    case 'w': // Left-center
-      x += deltaX;
-      width -= deltaX;
-      break;
+      case 'w': // Left-center
+        x += deltaX;
+        width -= deltaX;
+        break;
 
-    case 'e': // Right-center
-      width += deltaX;
-      break;
+      case 'e': // Right-center
+        width += deltaX;
+        break;
+    }
   }
 
   return { x, y, width, height };
