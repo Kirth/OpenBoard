@@ -895,7 +895,7 @@ export function startLine(x, y) {
   }
 }
 
-// Screen coordinate version - eliminates double conversion  
+// TODO: Maybe also dead 
 export function updateLineScreen(startScreenX, startScreenY, currentScreenX, currentScreenY) {
   try {
     if (!dependencies.tempCtx || !dependencies.tempCanvas) {
@@ -975,7 +975,7 @@ export function updateLine(startX, startY, currentX, currentY) {
     const endScreen = dependencies.worldToScreen ? dependencies.worldToScreen(endX, endY) : { x: endX, y: endY };
 
     // Set drawing style - no transforms needed since we're drawing in screen space
-    dependencies.tempCtx.strokeStyle = '#000000';
+    dependencies.tempCtx.strokeStyle = window.invertBlackToWhite('#000000');
     dependencies.tempCtx.lineWidth = 2;
 
     // Draw line preview in screen coordinates
