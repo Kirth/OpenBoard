@@ -8,71 +8,7 @@
         <a href="/" class="home-btn" title="Back to Home">
             <span class="home-icon">«</span>
         </a>
-        <div class="board-menu-container">
-            <button class="board-menu-trigger" @onclick="ToggleBoardMenu" @onclick:stopPropagation="true">
-                <span class="board-title">@BoardName</span>
-                <span class="dropdown-arrow">▼</span>
-            </button>
-            <div class="board-menu @(showBoardMenu ? "show" : "")" @onclick:stopPropagation="true">
-                <!-- Board Information Section -->
-                <div class="board-menu-section">
-                    <div class="board-menu-section-title">Board Information</div>
-                    <div class="board-menu-item" @onclick="ShowBoardInfo">
-                        <span class="menu-icon">ℹ️</span>
-                        View Details
-                    </div>
-                </div>
-                
-                <!-- Board Management Section - Only for Board Owners -->
-                @if (currentUser != null && isOwner)
-                {
-                    <div class="board-menu-section">
-                        <div class="board-menu-section-title">Board Management</div>
-                        <div class="board-menu-item" @onclick="ShowBoardSettings">
-                            <span class="menu-icon">⚙️</span>
-                            Board Settings
-                        </div>
-                        <div class="board-menu-item" @onclick="ShowCollaboratorManagement">
-                            <span class="menu-icon">👥</span>
-                            Manage Collaborators
-                        </div>
-                    </div>
-                }
-                
-                <!-- Board Actions Section -->
-                <div class="board-menu-section">
-                    <div class="board-menu-section-title">Board Actions</div>
-                    <div class="board-menu-item" @onclick="OnDuplicateBoardFromMenu">
-                        <span class="menu-icon">📋</span>
-                        Duplicate Board
-                    </div>
-                    @if (currentUser != null && isOwner)
-                    {
-                        <div class="board-menu-item danger" @onclick="ShowClearConfirmation">
-                            <span class="menu-icon">🗑️</span>
-                            Clear Board
-                        </div>
-                    }
-                </div>
-
-                <!-- Export Section -->
-                <div class="board-menu-section">
-                    <div class="board-menu-section-title">Export Options</div>
-                    <div class="board-menu-item" @onclick="ExportAsPngFromMenu">
-                        <span class="menu-icon">🖼️</span>
-                        Export as PNG
-                    </div>
-                    <div class="board-menu-item" @onclick="ExportAsPdfFromMenu">
-                        <span class="menu-icon">📄</span>
-                        Export as PDF
-                    </div>
-                    <div class="board-menu-item" @onclick="ExportAsHighResPngFromMenu">
-                        <span class="menu-icon">🎯</span>
-                        Export HD PNG
-                    </div>
-                </div>
-            </div>
-        </div>
+        <span class="board-title clickable" @onclick="ShowBoardOverview">@BoardName</span>
     </div>
     <div class="status-right">
         <UserMenu />
@@ -88,65 +24,147 @@
     </div>
 </div>
 
-<!-- Board Info Modal -->
-@if (showBoardInfoModal && boardStats != null)
+
+<!-- Board Overview Modal -->
+@if (showBoardOverviewModal && boardStats != null)
 {
-    <div class="modal" @onclick="HideBoardInfoModal">
-        <div class="modal-content" @onclick:stopPropagation="true">
+    <div class="modal board-overview-modal" @onclick="HideBoardOverviewModal">
+        <div class="modal-content board-overview-content" @onclick:stopPropagation="true">
             <div class="modal-header">
-                <h3>Board Information</h3>
-                <button class="modal-close" @onclick="HideBoardInfoModal">&times;</button>
+                <h3>@boardStats.BoardName</h3>
+                <button class="modal-close" @onclick="HideBoardOverviewModal">&times;</button>
             </div>
             
             <div class="modal-body">
-                <div class="board-info-section">
-                    <h4>Board Details</h4>
-                    <div class="info-row">
-                        <span class="info-label">Name:</span>
-                        <span class="info-value">@boardStats.BoardName</span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Created:</span>
-                        <span class="info-value">@boardStats.CreatedAt.ToString("MMM dd, yyyy 'at' h:mm tt")</span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Last Modified:</span>
-                        <span class="info-value">@boardStats.UpdatedAt.ToString("MMM dd, yyyy 'at' h:mm tt")</span>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Visibility:</span>
-                        <span class="info-value">@GetBoardAccessLevelDisplay(boardStats)</span>
-                    </div>
-                    @if (boardStats.HasAdminPin)
-                    {
-                        <div class="info-row">
-                            <span class="info-label">Admin Protected:</span>
-                            <span class="info-value">Yes</span>
+                <!-- Board Statistics Hero Section -->
+                <div class="overview-section stats-hero-section">
+                    <div class="stats-hero">
+                        <div class="main-stat">
+                            <span class="main-stat-number">@boardStats.TotalElements</span>
+                            <span class="main-stat-label">Total Elements</span>
                         </div>
-                    }
-                </div>
-                
-                <div class="board-info-section">
-                    <h4>Content Statistics</h4>
-                    <div class="info-row">
-                        <span class="info-label">Total Elements:</span>
-                        <span class="info-value">@boardStats.TotalElements</span>
+                        <div class="sub-stats">
+                            <div class="sub-stat">
+                                <span class="sub-stat-label">Created</span>
+                                <span class="sub-stat-value">@boardStats.CreatedAt.ToString("MMM dd, yyyy")</span>
+                            </div>
+                            <div class="sub-stat">
+                                <span class="sub-stat-label">Last Modified</span>
+                                <span class="sub-stat-value">@boardStats.UpdatedAt.ToString("MMM dd, yyyy")</span>
+                            </div>
+                            <div class="sub-stat">
+                                <span class="sub-stat-label">Visibility</span>
+                                <span class="sub-stat-value">@GetBoardAccessLevelDisplay(boardStats)</span>
+                            </div>
+                        </div>
                     </div>
-                    @if (boardStats.ElementsByType.Any())
-                    {
-                        @foreach (var elementType in boardStats.ElementsByType.OrderByDescending(kvp => kvp.Value))
+                </div>
+
+                <!-- Content Breakdown Statistics -->
+                @if (boardStats.ElementsByType.Any())
+                {
+                    <div class="overview-section content-stats-section">
+                        <div class="section-header">
+                            <span class="section-icon">📊</span>
+                            <h4>Content Breakdown</h4>
+                        </div>
+                        <div class="content-stats-grid">
+                            @foreach (var elementType in boardStats.ElementsByType.OrderByDescending(kvp => kvp.Value))
+                            {
+                                <div class="content-stat-card">
+                                    <div class="content-stat-icon">@GetElementTypeIcon(elementType.Key)</div>
+                                    <div class="content-stat-info">
+                                        <span class="content-stat-number">@elementType.Value</span>
+                                        <span class="content-stat-type">@elementType.Key</span>
+                                    </div>
+                                    <div class="content-stat-bar">
+                                        <div class="content-stat-progress" style="width: @(Math.Round((double)elementType.Value / boardStats.TotalElements * 100, 1))%"></div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+
+                <!-- Manage Board Row -->
+                <div class="overview-section manage-row-section">
+                    <div class="section-header">
+                        <span class="section-icon">⚙️</span>
+                        <h4>Manage Board</h4>
+                    </div>
+                    <div class="actions-row">
+                        <!-- General Management -->
+                        <div class="action-group">
+                            <span class="action-group-label">General</span>
+                            <div class="action-buttons">
+                                <button class="action-btn" @onclick="DuplicateBoardFromOverview">
+                                    <span class="action-btn-icon">📋</span>
+                                    <span class="action-btn-label">Duplicate Board</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Owner Management (Owner Only) -->
+                        @if (currentUser != null && isOwner)
                         {
-                            <div class="info-row">
-                                <span class="info-label">@elementType.Key:</span>
-                                <span class="info-value">@elementType.Value</span>
+                            <div class="action-group">
+                                <span class="action-group-label">Owner Controls</span>
+                                <div class="action-buttons">
+                                    <button class="action-btn" @onclick="ShowBoardSettingsFromOverview">
+                                        <span class="action-btn-icon">⚙️</span>
+                                        <span class="action-btn-label">Board Settings</span>
+                                    </button>
+                                    <button class="action-btn" @onclick="ShowCollaboratorManagementFromOverview">
+                                        <span class="action-btn-icon">👥</span>
+                                        <span class="action-btn-label">Manage Collaborators</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Danger Zone (Owner Only) -->
+                            <div class="action-group danger-group">
+                                <span class="action-group-label">Danger Zone</span>
+                                <div class="action-buttons">
+                                    <button class="action-btn danger" @onclick="ShowClearConfirmationFromOverview">
+                                        <span class="action-btn-icon">🗑️</span>
+                                        <span class="action-btn-label">Clear All Content</span>
+                                    </button>
+                                </div>
                             </div>
                         }
-                    }
+                    </div>
+                </div>
+
+                <!-- Export Board Row -->
+                <div class="overview-section export-row-section">
+                    <div class="section-header">
+                        <span class="section-icon">📤</span>
+                        <h4>Export Board</h4>
+                    </div>
+                    <div class="actions-row">
+                        <div class="action-group export-group">
+                            <span class="action-group-label">Export Board to...</span>
+                            <div class="action-buttons horizontal">
+                                <button class="action-btn" @onclick="ExportAsPngFromOverview">
+                                    <span class="action-btn-icon">🖼️</span>
+                                    <span class="action-btn-label">PNG Image</span>
+                                </button>
+                                <button class="action-btn" @onclick="ExportAsPdfFromOverview">
+                                    <span class="action-btn-icon">📄</span>
+                                    <span class="action-btn-label">PDF Document</span>
+                                </button>
+                                <button class="action-btn" @onclick="ExportAsHighResPngFromOverview">
+                                    <span class="action-btn-icon">🎯</span>
+                                    <span class="action-btn-label">High-Res PNG</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
             
             <div class="modal-footer">
-                <button class="btn btn-secondary" @onclick="HideBoardInfoModal">Close</button>
+                <button class="btn btn-secondary" @onclick="HideBoardOverviewModal">Close</button>
             </div>
         </div>
     </div>
@@ -231,8 +249,7 @@
     [Parameter] public EventCallback OnClearBoard { get; set; }
     [Parameter] public EventCallback<string> OnDuplicateBoard { get; set; }
 
-    private bool showBoardMenu = false;
-    private bool showBoardInfoModal = false;
+    private bool showBoardOverviewModal = false;
     private bool showClearConfirmModal = false;
     private bool showDuplicateModal = false;
     private bool showBoardSettingsModal = false;
@@ -243,39 +260,113 @@
     private User? currentUser = null;
     private bool isOwner = false;
 
-    private void ToggleBoardMenu()
-    {
-        showBoardMenu = !showBoardMenu;
-    }
 
-    private async Task ShowBoardInfo()
+    private async Task ShowBoardOverview()
     {
-        showBoardMenu = false;
         try
         {
             if (Guid.TryParse(BoardId, out var boardGuid))
             {
                 boardStats = await BoardService.GetBoardStatsAsync(boardGuid);
-                showBoardInfoModal = true;
+                showBoardOverviewModal = true;
                 StateHasChanged();
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error loading board stats: {ex.Message}");
+            Console.WriteLine($"Error loading board stats for overview: {ex.Message}");
         }
     }
 
-    private void HideBoardInfoModal()
+    private void HideBoardOverviewModal()
     {
-        showBoardInfoModal = false;
+        showBoardOverviewModal = false;
         boardStats = null;
+    }
+
+    private async Task DuplicateBoardFromOverview()
+    {
+        showBoardOverviewModal = false;
+        ShowDuplicateModal();
+    }
+
+    private async Task ExportAsPngFromOverview()
+    {
+        showBoardOverviewModal = false;
+        try
+        {
+            if (Guid.TryParse(BoardId, out var boardGuid))
+            {
+                await ExportService.ExportBoardAsPngAsync(boardGuid);
+                await JSRuntime.InvokeVoidAsync("showNotification", "Board exported as PNG successfully!", "success");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error exporting PNG: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("showNotification", "Failed to export board as PNG", "error");
+        }
+    }
+
+    private async Task ExportAsPdfFromOverview()
+    {
+        showBoardOverviewModal = false;
+        try
+        {
+            if (Guid.TryParse(BoardId, out var boardGuid))
+            {
+                await ExportService.ExportBoardAsPdfAsync(boardGuid);
+                await JSRuntime.InvokeVoidAsync("showNotification", "Board exported as PDF successfully!", "success");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error exporting PDF: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("showNotification", "Failed to export board as PDF", "error");
+        }
+    }
+
+    private async Task ExportAsHighResPngFromOverview()
+    {
+        showBoardOverviewModal = false;
+        try
+        {
+            if (Guid.TryParse(BoardId, out var boardGuid))
+            {
+                // Export at 2x resolution
+                var board = await BoardService.GetBoardAsync(boardGuid);
+                var filename = $"{board?.Name ?? "Board"}_HD_{DateTime.Now:yyyyMMdd_HHmmss}.png";
+                await JSRuntime.InvokeVoidAsync("exportHighResPng", filename, 2);
+                await JSRuntime.InvokeVoidAsync("showNotification", "Board exported as HD PNG successfully!", "success");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error exporting HD PNG: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("showNotification", "Failed to export board as HD PNG", "error");
+        }
+    }
+
+    private void ShowBoardSettingsFromOverview()
+    {
+        showBoardOverviewModal = false;
+        ShowBoardSettings();
+    }
+
+    private void ShowCollaboratorManagementFromOverview()
+    {
+        showBoardOverviewModal = false;
+        ShowCollaboratorManagement();
+    }
+
+    private void ShowClearConfirmationFromOverview()
+    {
+        showBoardOverviewModal = false;
+        ShowClearConfirmation();
     }
 
     private void ShowClearConfirmation()
     {
-        showBoardMenu = false;
-        
         // Double-check permissions before showing clear confirmation
         if (currentUser != null && isOwner)
         {
@@ -317,11 +408,6 @@
         }
     }
 
-    private void OnDuplicateBoardFromMenu()
-    {
-        showBoardMenu = false;
-        ShowDuplicateModal();
-    }
 
     private void ShowDuplicateModal()
     {
@@ -347,62 +433,6 @@
         newBoardName = string.Empty;
     }
 
-    private async Task ExportAsPngFromMenu()
-    {
-        showBoardMenu = false;
-        try
-        {
-            if (Guid.TryParse(BoardId, out var boardGuid))
-            {
-                await ExportService.ExportBoardAsPngAsync(boardGuid);
-                await JSRuntime.InvokeVoidAsync("showNotification", "Board exported as PNG successfully!", "success");
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error exporting PNG: {ex.Message}");
-            await JSRuntime.InvokeVoidAsync("showNotification", "Failed to export board as PNG", "error");
-        }
-    }
-
-    private async Task ExportAsPdfFromMenu()
-    {
-        showBoardMenu = false;
-        try
-        {
-            if (Guid.TryParse(BoardId, out var boardGuid))
-            {
-                await ExportService.ExportBoardAsPdfAsync(boardGuid);
-                await JSRuntime.InvokeVoidAsync("showNotification", "Board exported as PDF successfully!", "success");
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error exporting PDF: {ex.Message}");
-            await JSRuntime.InvokeVoidAsync("showNotification", "Failed to export board as PDF", "error");
-        }
-    }
-
-    private async Task ExportAsHighResPngFromMenu()
-    {
-        showBoardMenu = false;
-        try
-        {
-            if (Guid.TryParse(BoardId, out var boardGuid))
-            {
-                // Export at 2x resolution
-                var board = await BoardService.GetBoardAsync(boardGuid);
-                var filename = $"{board?.Name ?? "Board"}_HD_{DateTime.Now:yyyyMMdd_HHmmss}.png";
-                await JSRuntime.InvokeVoidAsync("exportHighResPng", filename, 2);
-                await JSRuntime.InvokeVoidAsync("showNotification", "Board exported as HD PNG successfully!", "success");
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error exporting HD PNG: {ex.Message}");
-            await JSRuntime.InvokeVoidAsync("showNotification", "Failed to export board as HD PNG", "error");
-        }
-    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -490,8 +520,6 @@
 
     private void ShowBoardSettings()
     {
-        showBoardMenu = false;
-        
         // Double-check permissions before opening modal
         if (currentUser != null && isOwner)
         {
@@ -517,8 +545,6 @@
 
     private void ShowCollaboratorManagement()
     {
-        showBoardMenu = false;
-        
         // Double-check permissions before opening modal
         if (currentUser != null && isOwner)
         {
@@ -549,6 +575,20 @@
             BoardAccessLevel.Unlisted => "Unlisted", 
             BoardAccessLevel.Public => "Public",
             _ => "Unknown"
+        };
+    }
+
+    private string GetElementTypeIcon(string elementType)
+    {
+        return elementType.ToLower() switch
+        {
+            "drawing" => "✏️",
+            "text" => "📝",
+            "shape" => "🔵",
+            "line" => "📏",
+            "stickynote" => "🗒️",
+            "image" => "🖼️",
+            _ => "📄"
         };
     }
 }
