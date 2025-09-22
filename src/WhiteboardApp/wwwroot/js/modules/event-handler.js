@@ -642,8 +642,20 @@ function handleMouseUp(event) {
       case 'line':
         if (dependencies.toolManager.isCurrentlyDrawingShape()) {
           // Calculate line endpoints
-          const endX = worldPos.x;
-          const endY = worldPos.y;
+          let endX = worldPos.x;
+          let endY = worldPos.y;
+          
+          // Apply shift-key snapping (same logic as preview)
+          if (window.isShiftHeld) {
+            const snapped = dependencies.toolManager.snapLineToAngle(
+              dependencies.startX, 
+              dependencies.startY, 
+              worldPos.x, 
+              worldPos.y
+            );
+            endX = snapped.x;
+            endY = snapped.y;
+          }
           
           // Only create line if it has meaningful length (at least 5 units)
           const length = Math.sqrt(Math.pow(endX - dependencies.startX, 2) + Math.pow(endY - dependencies.startY, 2));
