@@ -754,6 +754,9 @@
                 {
                     var user = await UserService.GetOrCreateUserAsync(authState.User);
                     await BoardService.TrackBoardAccessAsync(user.Id, id, isJoin: false);
+                    
+                    // Refresh recent boards data so it's updated when user returns to home
+                    recentBoards = await UserService.GetUserRecentBoardsAsync(user.Id, 5);
                 }
                 catch
                 {

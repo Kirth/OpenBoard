@@ -656,8 +656,8 @@ export function createShapeElement(shapeType, startX, startY, endX, endY) {
   return element;
 }
 
-export function createLineElement(startX, startY, endX, endY) {
-  const element = ElementFactory.createLineElement(startX, startY, endX, endY);
+export function createLineElement(startX, startY, endX, endY, style = {}) {
+  const element = ElementFactory.createLineElement(startX, startY, endX, endY, style);
   elements.set(element.id, element);
   saveCanvasState('Create Line');
   return element;
@@ -761,6 +761,22 @@ export function drawElement(id, x, y, type, data, width, height) {
   };
 
   elements.set(id, element);
+
+  // Restore line connections for real-time elements (not during bulk page load)
+  // The bulk restoration after page load is handled separately in signalr-client.js
+  if (type === 'Line' && data && (data.startConnection || data.endConnection)) {
+    console.log(`[DRAW-ELEMENT] Restoring connections for real-time line ${id}`, {
+      startConnection: data.startConnection,
+      endConnection: data.endConnection
+    });
+    
+    // Small delay to ensure connected elements exist
+    setTimeout(() => {
+      if (window.connectionManager && window.connectionManager.updateLineConnections) {
+        window.connectionManager.updateLineConnections(element);
+      }
+    }, 10);
+  }
 
   if (elementsToSelect.has(id)) {
     selectedElementId = id;
