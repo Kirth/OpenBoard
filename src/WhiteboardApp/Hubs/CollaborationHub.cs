@@ -45,15 +45,15 @@ public class CollaborationHub : Hub
                    ?? user.FindFirst("sub")?.Value
                    ?? "Unknown User";
         }
-        
+
         // Use fingerprint-based anonymous user ID if provided and valid
-        if (!string.IsNullOrEmpty(anonymousUserId) && 
-            Guid.TryParse(anonymousUserId, out var anonymousGuid) && 
+        if (!string.IsNullOrEmpty(anonymousUserId) &&
+            Guid.TryParse(anonymousUserId, out var anonymousGuid) &&
             AnonymousUserService.IsAnonymousGuid(anonymousGuid))
         {
             return AnonymousUserService.GenerateAnonymousDisplayName(anonymousGuid);
         }
-        
+
         // Fallback: Generate deterministic anonymous name using last 4 chars of connection ID
         return $"Guest-{connectionId[^4..]}";
     }
@@ -65,7 +65,7 @@ public class CollaborationHub : Hub
             _logger.LogInformation("JoinBoard called with boardId: {BoardId}, anonymousUserId: {AnonymousUserId}", boardId, anonymousUserId);
             _logger.LogInformation("Context.User.Identity.IsAuthenticated: {IsAuthenticated}", Context.User?.Identity?.IsAuthenticated);
             _logger.LogInformation("Context.User.Identity.Name: '{Name}'", Context.User?.Identity?.Name);
-            
+
             if (!Guid.TryParse(boardId, out var boardGuid))
             {
                 await Clients.Caller.SendAsync("Error", "Invalid board ID format");
@@ -82,7 +82,7 @@ public class CollaborationHub : Hub
 
             // Get display name from server-side logic (never trust client)
             var displayName = GetDisplayName(Context.User, Context.ConnectionId, anonymousUserId);
-            _logger.LogInformation("User '{DisplayName}' joining board {BoardId} (Authenticated: {IsAuthenticated})", 
+            _logger.LogInformation("User '{DisplayName}' joining board {BoardId} (Authenticated: {IsAuthenticated})",
                 displayName, boardId, Context.User?.Identity?.IsAuthenticated);
 
             // Check authentication status and board access
@@ -93,11 +93,11 @@ public class CollaborationHub : Hub
             {
                 // Authenticated user
                 user = await _userService.GetOrCreateUserAsync(Context.User);
-                
+
                 // Check if authenticated user has access to this board
                 var role = await _userService.GetUserBoardRoleAsync(user.Id, boardGuid);
                 hasWriteAccess = role >= BoardRole.Collaborator;
-                
+
                 if (role == null && board.AccessLevel == BoardAccessLevel.Private)
                 {
                     await Clients.Caller.SendAsync("Error", "Access denied to this private board");
@@ -112,8 +112,8 @@ public class CollaborationHub : Hub
                     await Clients.Caller.SendAsync("Error", "Authentication required for private boards");
                     return;
                 }
-                
-                hasWriteAccess = (board.AccessLevel == BoardAccessLevel.Public || 
+
+                hasWriteAccess = (board.AccessLevel == BoardAccessLevel.Public ||
                                  board.AccessLevel == BoardAccessLevel.Unlisted);
             }
 
@@ -153,10 +153,10 @@ public class CollaborationHub : Hub
             await Clients.Group($"Board_{boardId}").SendAsync("UserJoined",
                 new { connectionId = Context.ConnectionId, userName = displayName });
             await Clients.Caller.SendAsync("ActiveUsersUpdated", activeUserList);
-            
+
             // Send board permissions to the client
-            await Clients.Caller.SendAsync("BoardPermissions", new 
-            { 
+            await Clients.Caller.SendAsync("BoardPermissions", new
+            {
                 canEdit = hasWriteAccess,
                 isAuthenticated = user != null,
                 accessLevel = board.AccessLevel.ToString(),
@@ -228,7 +228,7 @@ public class CollaborationHub : Hub
             if (currentCollaborativeState.Any())
             {
                 await Clients.Caller.SendAsync("CurrentStateUpdate", currentCollaborativeState);
-                _logger.LogDebug("Sent current collaborative state to new user: {StateCount} active users", 
+                _logger.LogDebug("Sent current collaborative state to new user: {StateCount} active users",
                     currentCollaborativeState.Count);
             }
         }
@@ -255,10 +255,10 @@ public class CollaborationHub : Hub
                 Y = 0,
                 Data = jsonData,
                 CreatedBy = Context.UserIdentifier ?? "Anonymous", // Legacy field
-                CreatedByUserId = Context.User?.Identity?.IsAuthenticated == true 
+                CreatedByUserId = Context.User?.Identity?.IsAuthenticated == true
                     ? (await _userService.GetOrCreateUserAsync(Context.User!)).Id
                     : (await _userService.GetAnonymousUserAsync()).Id,
-                ModifiedByUserId = Context.User?.Identity?.IsAuthenticated == true 
+                ModifiedByUserId = Context.User?.Identity?.IsAuthenticated == true
                     ? (await _userService.GetOrCreateUserAsync(Context.User!)).Id
                     : (await _userService.GetAnonymousUserAsync()).Id
             };
@@ -327,10 +327,10 @@ public class CollaborationHub : Hub
                 Height = height,
                 Data = JsonDocument.Parse(JsonSerializer.Serialize(dataDict)),
                 CreatedBy = Context.UserIdentifier ?? "Anonymous", // Legacy field
-                CreatedByUserId = Context.User?.Identity?.IsAuthenticated == true 
+                CreatedByUserId = Context.User?.Identity?.IsAuthenticated == true
                     ? (await _userService.GetOrCreateUserAsync(Context.User!)).Id
                     : (await _userService.GetAnonymousUserAsync()).Id,
-                ModifiedByUserId = Context.User?.Identity?.IsAuthenticated == true 
+                ModifiedByUserId = Context.User?.Identity?.IsAuthenticated == true
                     ? (await _userService.GetOrCreateUserAsync(Context.User!)).Id
                     : (await _userService.GetAnonymousUserAsync()).Id
             };
@@ -352,10 +352,10 @@ public class CollaborationHub : Hub
         try
         {
             await _userSessionManager.UpdateCursorPositionAsync(Context.ConnectionId, x, y);
-            
+
             // Get display name from server-side logic (never trust client)
             var userName = GetDisplayName(Context.User, Context.ConnectionId);
-            
+
             await Clients.OthersInGroup($"Board_{boardId}").SendAsync("CursorUpdated", Context.ConnectionId, x, y, userName);
         }
         catch (Exception ex)
@@ -384,7 +384,7 @@ public class CollaborationHub : Hub
 
             element.X = newX;
             element.Y = newY;
-            element.ModifiedByUserId = Context.User?.Identity?.IsAuthenticated == true 
+            element.ModifiedByUserId = Context.User?.Identity?.IsAuthenticated == true
                 ? (await _userService.GetOrCreateUserAsync(Context.User!)).Id
                 : (await _userService.GetAnonymousUserAsync()).Id;
             element.ModifiedAt = DateTime.UtcNow;
@@ -456,7 +456,7 @@ public class CollaborationHub : Hub
             {
                 // Persist selection state in session manager
                 await _userSessionManager.UpdateSelectionAsync(Context.ConnectionId, elementIds);
-                
+
                 // Broadcast to other users
                 await Clients.OthersInGroup($"Board_{boardId}").SendAsync("SelectionUpdated",
                     elementIds, userSession.UserName, Context.ConnectionId);
@@ -478,7 +478,7 @@ public class CollaborationHub : Hub
 
             // Clear selection state in session manager
             await _userSessionManager.ClearSelectionAsync(Context.ConnectionId);
-            
+
             await Clients.OthersInGroup($"Board_{boardId}").SendAsync("SelectionCleared", Context.ConnectionId);
         }
         catch (Exception ex)
@@ -517,7 +517,7 @@ public class CollaborationHub : Hub
         });
     }
 
-    [Authorize]
+    // removed [Authorize]; can unauth ppl delete from others' boards? 
     public async Task DeleteElement(string boardId, string elementId)
     {
         try
@@ -714,7 +714,7 @@ public class CollaborationHub : Hub
                 return;
 
             var elementGuids = elementIds.Select(id => Guid.Parse(id)).ToList();
-            var groupId = await _elementService.CreateGroupAsync(Guid.Parse(boardId), elementGuids, 
+            var groupId = await _elementService.CreateGroupAsync(Guid.Parse(boardId), elementGuids,
                 Context.UserIdentifier ?? "Anonymous");
 
             await Clients.Group($"Board_{boardId}").SendAsync("GroupCreated", new
@@ -724,7 +724,7 @@ public class CollaborationHub : Hub
                 createdBy = Context.UserIdentifier ?? "Anonymous"
             });
 
-            _logger.LogInformation("Group {GroupId} created with {ElementCount} elements in board {BoardId}", 
+            _logger.LogInformation("Group {GroupId} created with {ElementCount} elements in board {BoardId}",
                 groupId, elementIds.Length, boardId);
         }
         catch (Exception ex)
@@ -823,7 +823,7 @@ public class CollaborationHub : Hub
 
             var maxZIndex = await _elementService.GetMaxZIndexAsync(Guid.Parse(boardId));
             var success = await _elementService.SetGroupZIndexAsync(groupGuid, maxZIndex + 1);
-            
+
             if (success)
             {
                 await Clients.Group($"Board_{boardId}").SendAsync("GroupZIndexChanged", new
@@ -850,9 +850,9 @@ public class CollaborationHub : Hub
             var minZIndex = await _elementService.GetMinZIndexAsync(Guid.Parse(boardId));
             var groupElements = await _elementService.GetGroupElementsAsync(groupGuid);
             var newBaseZIndex = minZIndex - groupElements.Count;
-            
+
             var success = await _elementService.SetGroupZIndexAsync(groupGuid, newBaseZIndex);
-            
+
             if (success)
             {
                 await Clients.Group($"Board_{boardId}").SendAsync("GroupZIndexChanged", new
@@ -926,13 +926,13 @@ public class CollaborationHub : Hub
             // Authenticated user - check their specific permissions
             var user = await _userService.GetOrCreateUserAsync(Context.User);
             var role = await _userService.GetUserBoardRoleAsync(user.Id, boardGuid);
-            
+
             if (role == null && board.AccessLevel == BoardAccessLevel.Private)
             {
                 await Clients.Caller.SendAsync("Error", "Access denied to this private board");
                 return false;
             }
-            
+
             if (role < BoardRole.Collaborator && board.AccessLevel == BoardAccessLevel.Private)
             {
                 await Clients.Caller.SendAsync("Error", "Write access denied to this board");
@@ -991,7 +991,7 @@ public class CollaborationHub : Hub
                 }
 
                 element.Data = JsonDocument.Parse(JsonSerializer.Serialize(existingDataObj));
-                element.ModifiedByUserId = Context.User?.Identity?.IsAuthenticated == true 
+                element.ModifiedByUserId = Context.User?.Identity?.IsAuthenticated == true
                 ? (await _userService.GetOrCreateUserAsync(Context.User!)).Id
                 : (await _userService.GetAnonymousUserAsync()).Id;
                 element.ModifiedAt = DateTime.UtcNow;

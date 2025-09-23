@@ -56,7 +56,7 @@ export async function initializeSignalRConnection(boardId) {
     if (dependencies.elementFactory && typeof dependencies.elementFactory.setDependencies === 'function') {
       dependencies.elementFactory.setDependencies({
         signalRConnection: dependencies.signalrClient.getConnection(),
-        currentBoardId: dependencies.signalrClient.getCurrentBoardId(),
+        currentBoardId: dependencies.signalrClient.getCurrentBoardId,
         updateStickyNoteContent: dependencies.signalrClient.updateStickyNoteContent,
         updateTextElementContent: dependencies.signalrClient.updateTextElementContent
       });

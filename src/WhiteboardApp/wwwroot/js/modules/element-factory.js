@@ -259,7 +259,10 @@ export class ElementFactory {
         // Arrow head properties
         startArrow: style.startArrow || 'none',
         endArrow: style.endArrow || 'none',
-        arrowSize: style.arrowSize || 10
+        arrowSize: style.arrowSize || 10,
+        // Connection point properties
+        startConnection: style.startConnection || null,
+        endConnection: style.endConnection || null
       }
     };
   }
@@ -1092,8 +1095,19 @@ export function updateElementPosition(id, newX, newY) {
   // Path elements now use relative coordinates, so no need to update path data
   // Line elements use x,y,width,height so they move correctly by default
 
+  // Update any lines connected to this element
+  if (window.connectionManager && window.connectionManager.updateConnectedLines) {
+    console.log(`[ELEMENT-FACTORY] Calling updateConnectedLines for element ${id}`);
+    window.connectionManager.updateConnectedLines(id);
+  } else {
+    console.warn(`[ELEMENT-FACTORY] connectionManager not available for element ${id}`);
+  }
+
   if (dependencies.sendElementMove && dependencies.currentBoardId) {
-    dependencies.sendElementMove(dependencies.currentBoardId, id, newX, newY);
+    const boardId = dependencies.currentBoardId();
+    if (boardId) {
+      dependencies.sendElementMove(boardId, id, newX, newY);
+    }
   }
 
   if (dependencies.redrawCanvas) {
@@ -1297,6 +1311,11 @@ export function deleteSelectedElement() {
     dependencies.addPoofEffectToElement(element);
   }
 
+  // Remove any connections to this element before deleting
+  if (window.connectionManager && window.connectionManager.removeConnectionsToElement) {
+    window.connectionManager.removeConnectionsToElement(elementIdToDelete);
+  }
+
   // Delete locally for immediate feedback
   elements.delete(selectedElementId);
   selectedElementId = null;
@@ -1307,14 +1326,17 @@ export function deleteSelectedElement() {
 
   // Send deletion to server to sync with other clients and persist to database
   if (dependencies.sendElementDelete && dependencies.currentBoardId) {
-    dependencies.sendElementDelete(dependencies.currentBoardId, elementIdToDelete)
-      .catch(error => {
-        console.error('Failed to delete element on server:', error);
-        // Could optionally restore element locally if server deletion fails
-        if (dependencies.showNotification) {
-          dependencies.showNotification('Failed to delete element - other clients may not see the change', 'warning');
-        }
-      });
+    const boardId = dependencies.currentBoardId();
+    if (boardId) {
+      dependencies.sendElementDelete(boardId, elementIdToDelete)
+        .catch(error => {
+          console.error('Failed to delete element on server:', error);
+          // Could optionally restore element locally if server deletion fails
+          if (dependencies.showNotification) {
+            dependencies.showNotification('Failed to delete element - other clients may not see the change', 'warning');
+          }
+        });
+    }
   } else {
     console.warn('Cannot delete element on server - SignalR not available or board ID missing');
     if (dependencies.showNotification) {
@@ -1395,8 +1417,10 @@ export function deleteMultipleElements(elementIds) {
 
   // Send deletions to server to sync with other clients and persist to database
   if (dependencies.sendElementDelete && dependencies.currentBoardId) {
-    const deletionPromises = elementIdsToDelete.map(elementId => 
-      dependencies.sendElementDelete(dependencies.currentBoardId, elementId)
+    const boardId = dependencies.currentBoardId();
+    if (boardId) {
+      const deletionPromises = elementIdsToDelete.map(elementId => 
+        dependencies.sendElementDelete(boardId, elementId)
         .catch(error => {
           console.error(`Failed to delete element ${elementId} on server:`, error);
           return { elementId, error };
@@ -1418,6 +1442,7 @@ export function deleteMultipleElements(elementIds) {
           console.log(`Successfully deleted ${elementIdsToDelete.length} elements on server`);
         }
       });
+    }
   } else {
     console.warn('Cannot delete elements on server - SignalR not available or board ID missing');
     if (dependencies.showNotification) {
@@ -1529,7 +1554,10 @@ export function bringElementToFront(elementId) {
 
   // Send to server for synchronization
   if (dependencies.sendBringToFront && dependencies.currentBoardId) {
-    dependencies.sendBringToFront(dependencies.currentBoardId, elementId);
+    const boardId = dependencies.currentBoardId();
+    if (boardId) {
+      dependencies.sendBringToFront(boardId, elementId);
+    }
   }
 
   // Redraw canvas to reflect new z-order
@@ -1574,7 +1602,10 @@ export function sendElementToBack(elementId) {
 
   // Send to server for synchronization
   if (dependencies.sendElementToBack && dependencies.currentBoardId) {
-    dependencies.sendElementToBack(dependencies.currentBoardId, elementId);
+    const boardId = dependencies.currentBoardId();
+    if (boardId) {
+      dependencies.sendElementToBack(boardId, elementId);
+    }
   }
 
   // Redraw canvas to reflect new z-order
@@ -1924,16 +1955,24 @@ export function finishElementResize() {
   resizeStartBounds = null;
 
   if (wasResizing && hasResized && element) {
+    // Update any lines connected to this element after resizing
+    if (window.connectionManager && window.connectionManager.updateConnectedLines) {
+      window.connectionManager.updateConnectedLines(selectedElementId);
+    }
+
     // Send resize to SignalR for network sync
     if (dependencies.sendElementResize && dependencies.currentBoardId) {
-      dependencies.sendElementResize(
-        dependencies.currentBoardId,
-        selectedElementId,
-        element.x,
-        element.y,
-        element.width,
-        element.height
-      );
+      const boardId = dependencies.currentBoardId();
+      if (boardId) {
+        dependencies.sendElementResize(
+          boardId,
+          selectedElementId,
+          element.x,
+          element.y,
+          element.width,
+          element.height
+        );
+      }
     }
 
     // Save state for undo/redo
@@ -2103,8 +2142,11 @@ export function pasteElement() {
 
   // Send element to server for persistence and synchronization
   if (dependencies.sendElement && dependencies.currentBoardId) {
-    dependencies.sendElement(dependencies.currentBoardId, duplicate, duplicate.id);
-    markElementForSelection(duplicate.id);
+    const boardId = dependencies.currentBoardId();
+    if (boardId) {
+      dependencies.sendElement(boardId, duplicate, duplicate.id);
+      markElementForSelection(duplicate.id);
+    }
   }
 
   if (dependencies.redrawCanvas) {

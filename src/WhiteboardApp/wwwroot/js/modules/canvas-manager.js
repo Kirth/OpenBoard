@@ -287,6 +287,9 @@ export function redrawCanvas() {
     // Draw group bounds for selected groups
     drawGroupBounds();
     
+    // Draw connection points if in line drawing mode
+    drawConnectionPointsIfNeeded();
+    
     ctx.restore();            // back to DPR baseline
 
     // 3) Draw screen-space overlays/UI
@@ -2715,6 +2718,29 @@ function drawGroupBounds() {
       dependencies.groupManager.drawGroupBounds(group, ctx);
     }
   });
+}
+
+function drawConnectionPointsIfNeeded() {
+  // Draw connection points when in line drawing mode OR when a line is selected
+  if (dependencies.toolManager && dependencies.connectionManager) {
+    const currentTool = dependencies.toolManager.getTool ? dependencies.toolManager.getTool() : null;
+    
+    // Show connection points when drawing lines
+    if (currentTool === 'line' && dependencies.connectionManager.drawAllConnectionPoints) {
+      dependencies.connectionManager.drawAllConnectionPoints();
+    }
+    
+    // Show connection points when a line is selected (for endpoint manipulation)
+    if (currentTool === 'select' && dependencies.connectionManager.drawAllConnectionPoints) {
+      const selectedId = dependencies.getSelectedElementId ? dependencies.getSelectedElementId() : null;
+      if (selectedId && dependencies.elements) {
+        const selectedElement = dependencies.elements.get(selectedId);
+        if (selectedElement && selectedElement.type === 'Line') {
+          dependencies.connectionManager.drawAllConnectionPoints();
+        }
+      }
+    }
+  }
 }
 
 // --- Backward compatibility -------------------------------------------------

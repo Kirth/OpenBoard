@@ -238,34 +238,63 @@ function handleMouseMove(event) {
     if (dependencies.isDraggingLineHandle && dependencies.draggedElementId && currentTool === 'select') {
       const element = dependencies.elementFactory.getElementById(dependencies.draggedElementId);
       if (element && element.type === 'Line') {
+        // Check for connection snapping
+        let snapX = worldPos.x;
+        let snapY = worldPos.y;
+        let newConnection = null;
+        
+        if (window.connectionManager) {
+          const snapPoint = window.connectionManager.getConnectionSnapPoint(worldPos.x, worldPos.y);
+          if (snapPoint) {
+            snapX = snapPoint.x;
+            snapY = snapPoint.y;
+            newConnection = snapPoint.connection;
+          }
+        }
+
         // Update the specific handle position
         if (dependencies.draggedLineHandle === 'start') {
           // Moving start point - update element.x and element.y
-          element.x = worldPos.x;
-          element.y = worldPos.y;
+          element.x = snapX;
+          element.y = snapY;
           // Update width and height to maintain end point
-          element.width = dependencies.lineOriginalEnd.x - worldPos.x;
-          element.height = dependencies.lineOriginalEnd.y - worldPos.y;
+          element.width = dependencies.lineOriginalEnd.x - snapX;
+          element.height = dependencies.lineOriginalEnd.y - snapY;
 
           // Update absolute coordinates in data for backend compatibility
           if (element.data) {
-            element.data.startX = worldPos.x;
-            element.data.startY = worldPos.y;
+            element.data.startX = snapX;
+            element.data.startY = snapY;
             element.data.endX = dependencies.lineOriginalEnd.x;
             element.data.endY = dependencies.lineOriginalEnd.y;
+            // Update connection data
+            element.data.startConnection = newConnection;
           }
         } else if (dependencies.draggedLineHandle === 'end') {
           // Moving end point - keep start point, update width and height
-          element.width = worldPos.x - element.x;
-          element.height = worldPos.y - element.y;
+          element.width = snapX - element.x;
+          element.height = snapY - element.y;
 
           // Update absolute coordinates in data for backend compatibility
           if (element.data) {
             element.data.startX = element.x;
             element.data.startY = element.y;
-            element.data.endX = worldPos.x;
-            element.data.endY = worldPos.y;
+            element.data.endX = snapX;
+            element.data.endY = snapY;
+            // Update connection data
+            element.data.endConnection = newConnection;
           }
+        }
+
+        // Draw connection point preview if in world space
+        const tempCtx = dependencies.canvasManager.getTempContext();
+        if (tempCtx && window.connectionManager) {
+          tempCtx.save();
+          if (dependencies.canvasManager.applyViewportTransform) {
+            dependencies.canvasManager.applyViewportTransform(tempCtx);
+          }
+          window.connectionManager.drawConnectionPointPreview(worldPos.x, worldPos.y);
+          tempCtx.restore();
         }
 
         dependencies.canvasManager.redrawCanvas();
@@ -327,6 +356,12 @@ function handleMouseMove(event) {
       }
 
       dependencies.elementFactory.updateElementPositionLocal(dependencies.draggedElementId, newX, newY);
+      
+      // Update any lines connected to this element
+      if (window.connectionManager && window.connectionManager.updateConnectedLines) {
+        window.connectionManager.updateConnectedLines(dependencies.draggedElementId);
+      }
+      
       dependencies.canvasManager.redrawCanvas();
       return;
     }
@@ -366,6 +401,11 @@ function handleMouseMove(event) {
           const newX = initialPos.x + deltaX + snapDeltaX;
           const newY = initialPos.y + deltaY + snapDeltaY;
           dependencies.elementFactory.updateElementPositionLocal(id, newX, newY);
+          
+          // Update any lines connected to this element
+          if (window.connectionManager && window.connectionManager.updateConnectedLines) {
+            window.connectionManager.updateConnectedLines(id);
+          }
         }
       } else {
         // No snapping: move all elements by exact delta
@@ -373,6 +413,11 @@ function handleMouseMove(event) {
           const newX = initialPos.x + deltaX;
           const newY = initialPos.y + deltaY;
           dependencies.elementFactory.updateElementPositionLocal(id, newX, newY);
+          
+          // Update any lines connected to this element
+          if (window.connectionManager && window.connectionManager.updateConnectedLines) {
+            window.connectionManager.updateConnectedLines(id);
+          }
         }
       }
       
@@ -660,12 +705,40 @@ function handleMouseUp(event) {
           // Only create line if it has meaningful length (at least 5 units)
           const length = Math.sqrt(Math.pow(endX - dependencies.startX, 2) + Math.pow(endY - dependencies.startY, 2));
           if (length > 5) {
+            // Check for connection points at start and end positions
+            let startConnection = null;
+            let endConnection = null;
+            
+            if (window.connectionManager) {
+              // Check for start connection
+              const startSnapPoint = window.connectionManager.getConnectionSnapPoint(dependencies.startX, dependencies.startY);
+              if (startSnapPoint) {
+                startConnection = startSnapPoint.connection;
+                dependencies.startX = startSnapPoint.x;
+                dependencies.startY = startSnapPoint.y;
+              }
+              
+              // Check for end connection
+              const endSnapPoint = window.connectionManager.getConnectionSnapPoint(endX, endY);
+              if (endSnapPoint) {
+                endConnection = endSnapPoint.connection;
+                endX = endSnapPoint.x;
+                endY = endSnapPoint.y;
+              }
+            }
+            
+            // Create style object with connection data
+            const lineStyle = {};
+            if (startConnection) lineStyle.startConnection = startConnection;
+            if (endConnection) lineStyle.endConnection = endConnection;
+            
             // Create the line element
             const element = dependencies.elementFactory.createLineElement(
               dependencies.startX,
               dependencies.startY,
               endX,
-              endY
+              endY,
+              lineStyle
             );
             
             // Send to server
@@ -875,29 +948,58 @@ function handleTouchMove(event) {
       if (dependencies.isDraggingLineHandle && dependencies.draggedElementId && currentTool === 'select') {
         const element = dependencies.elementFactory.getElementById(dependencies.draggedElementId);
         if (element && element.type === 'Line') {
+          // Check for connection snapping
+          let snapX = worldPos.x;
+          let snapY = worldPos.y;
+          let newConnection = null;
+          
+          if (window.connectionManager) {
+            const snapPoint = window.connectionManager.getConnectionSnapPoint(worldPos.x, worldPos.y);
+            if (snapPoint) {
+              snapX = snapPoint.x;
+              snapY = snapPoint.y;
+              newConnection = snapPoint.connection;
+            }
+          }
+
           // Update the specific handle position
           if (dependencies.draggedLineHandle === 'start') {
-            element.x = worldPos.x;
-            element.y = worldPos.y;
-            element.width = dependencies.lineOriginalEnd.x - worldPos.x;
-            element.height = dependencies.lineOriginalEnd.y - worldPos.y;
+            element.x = snapX;
+            element.y = snapY;
+            element.width = dependencies.lineOriginalEnd.x - snapX;
+            element.height = dependencies.lineOriginalEnd.y - snapY;
 
             if (element.data) {
-              element.data.startX = worldPos.x;
-              element.data.startY = worldPos.y;
+              element.data.startX = snapX;
+              element.data.startY = snapY;
               element.data.endX = dependencies.lineOriginalEnd.x;
               element.data.endY = dependencies.lineOriginalEnd.y;
+              // Update connection data
+              element.data.startConnection = newConnection;
             }
           } else if (dependencies.draggedLineHandle === 'end') {
-            element.width = worldPos.x - element.x;
-            element.height = worldPos.y - element.y;
+            element.width = snapX - element.x;
+            element.height = snapY - element.y;
 
             if (element.data) {
               element.data.startX = element.x;
               element.data.startY = element.y;
-              element.data.endX = worldPos.x;
-              element.data.endY = worldPos.y;
+              element.data.endX = snapX;
+              element.data.endY = snapY;
+              // Update connection data
+              element.data.endConnection = newConnection;
             }
+          }
+
+          // Draw connection point preview if in world space
+          const tempCtx = dependencies.canvasManager.getTempContext();
+          if (tempCtx && window.connectionManager) {
+            tempCtx.save();
+            if (dependencies.canvasManager.applyViewportTransform) {
+              dependencies.canvasManager.applyViewportTransform(tempCtx);
+            }
+            window.connectionManager.drawConnectionPointPreview(worldPos.x, worldPos.y);
+            tempCtx.restore();
           }
 
           dependencies.canvasManager.redrawCanvas();
@@ -947,6 +1049,12 @@ function handleTouchMove(event) {
         }
 
         dependencies.elementFactory.updateElementPositionLocal(dependencies.draggedElementId, newX, newY);
+        
+        // Update any lines connected to this element
+        if (window.connectionManager && window.connectionManager.updateConnectedLines) {
+          window.connectionManager.updateConnectedLines(dependencies.draggedElementId);
+        }
+        
         dependencies.canvasManager.redrawCanvas();
         return;
       }

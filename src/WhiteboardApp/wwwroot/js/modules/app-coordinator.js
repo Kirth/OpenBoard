@@ -10,6 +10,7 @@ import * as viewportManager from './viewport-manager.js';
 import * as uiFeatures from './ui-features.js';
 import * as sparkleEffects from './sparkle-effects.js';
 import * as interactionManager from './interaction-manager.js';
+import * as connectionManager from './connection-manager.js';
 
 // Initialize all modules and set up dependencies
 export async function initializeApplication() {
@@ -23,6 +24,7 @@ export async function initializeApplication() {
     signalrClient.init();
     viewportManager.init();
     sparkleEffects.init();
+    connectionManager.init();
 
     // Initialize core functionality first
     const canvasInitialized = canvasManager.initializeCanvas();
@@ -68,7 +70,9 @@ export function setupDependencies() {
     getViewportY: viewportManager.getViewportY,
     getZoomLevel: viewportManager.getZoomLevel,
     renderSparkleEffects: sparkleEffects.renderSparkleEffects,
-    requestRedraw: canvasManager.requestRedraw // expose a throttled version
+    requestRedraw: canvasManager.requestRedraw, // expose a throttled version
+    toolManager: toolManager,
+    connectionManager: connectionManager
   });
 
   // Tool Manager Dependencies
@@ -105,7 +109,7 @@ export function setupDependencies() {
     duplicateSelectedElement: elementFactory.duplicateSelectedElement,
     undo: elementFactory.undo,
     redo: elementFactory.redo,
-    currentBoardId: null, // Will be set by SignalR
+    currentBoardId: signalrClient.getCurrentBoardId, // Function reference
     startX: 0,
     startY: 0
   });
@@ -129,7 +133,7 @@ export function setupDependencies() {
     redrawCanvas: canvasManager.redrawCanvas,
     requestRedraw: canvasManager.requestRedraw,
     signalRConnection: signalrClient.getConnection(),
-    currentBoardId: signalrClient.getCurrentBoardId(),
+    currentBoardId: signalrClient.getCurrentBoardId,
     sendElement: signalrClient.sendElement,
     sendElementMove: signalrClient.sendElementMove,
     sendElementSelect: signalrClient.sendElementSelect,
@@ -147,7 +151,20 @@ export function setupDependencies() {
     showNotification: uiFeatures.showNotification,
     addSparkleEffectsToElements: sparkleEffects.addSparkleEffectsToElements,
     addPoofEffectToElement: sparkleEffects.addPoofEffectToElement,
-    addPoofEffectsToElements: sparkleEffects.addPoofEffectsToElements
+    addPoofEffectsToElements: sparkleEffects.addPoofEffectsToElements,
+    connectionManager: connectionManager
+  });
+
+  // Connection Manager Dependencies
+  connectionManager.setDependencies({
+    elements: elementFactory.elements,
+    getZoomLevel: viewportManager.getZoomLevel,
+    worldToScreen: canvasManager.worldToScreen,
+    screenToWorld: canvasManager.screenToWorld,
+    redrawCanvas: canvasManager.redrawCanvas,
+    ctx: canvasManager.getContext(),
+    tempCtx: canvasManager.getTempContext(),
+    signalrClient: signalrClient
   });
 
   // SignalR Client Dependencies

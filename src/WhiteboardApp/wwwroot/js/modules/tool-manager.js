@@ -309,7 +309,10 @@ function handleDeleteKey() {
 
           // Broadcast clear selection to other clients
           if (dependencies.signalrClient && dependencies.currentBoardId) {
-            dependencies.signalrClient.sendSelectionClear(dependencies.currentBoardId);
+            const boardId = dependencies.currentBoardId();
+            if (boardId) {
+              dependencies.signalrClient.sendSelectionClear(boardId);
+            }
           }
         }
       } else {
@@ -960,12 +963,23 @@ export function updateLine(startX, startY, currentX, currentY) {
     // Clear temporary canvas
     dependencies.tempCtx.clearRect(0, 0, dependencies.tempCanvas.width, dependencies.tempCanvas.height);
 
-    // Snap to angle if shift is held (in world coordinates)
+    // Check for connection snapping at end point
     let endX = currentX;
     let endY = currentY;
+    let endConnection = null;
 
-    if (window.isShiftHeld) {
-      const snapped = snapLineToAngle(startX, startY, currentX, currentY);
+    if (window.connectionManager && window.connectionManager.getConnectionSnapPoint) {
+      const snapPoint = window.connectionManager.getConnectionSnapPoint(currentX, currentY);
+      if (snapPoint) {
+        endX = snapPoint.x;
+        endY = snapPoint.y;
+        endConnection = snapPoint.connection;
+      }
+    }
+
+    // Snap to angle if shift is held (in world coordinates) - but only if no connection snap
+    if (!endConnection && window.isShiftHeld) {
+      const snapped = snapLineToAngle(startX, startY, endX, endY);
       endX = snapped.x;
       endY = snapped.y;
     }
@@ -973,6 +987,16 @@ export function updateLine(startX, startY, currentX, currentY) {
     // Convert world coordinates to screen coordinates using the same coordinate system as final placement
     const startScreen = dependencies.worldToScreen ? dependencies.worldToScreen(startX, startY) : { x: startX, y: startY };
     const endScreen = dependencies.worldToScreen ? dependencies.worldToScreen(endX, endY) : { x: endX, y: endY };
+
+    // Draw connection point preview in world space if needed
+    if (window.connectionManager && window.connectionManager.drawConnectionPointPreview) {
+      dependencies.tempCtx.save();
+      if (dependencies.applyViewportTransform) {
+        dependencies.applyViewportTransform(dependencies.tempCtx);
+      }
+      window.connectionManager.drawConnectionPointPreview(currentX, currentY);
+      dependencies.tempCtx.restore();
+    }
 
     // Set drawing style - no transforms needed since we're drawing in screen space
     dependencies.tempCtx.strokeStyle = window.invertBlackToWhite('#000000');

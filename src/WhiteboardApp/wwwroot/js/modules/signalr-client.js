@@ -1004,6 +1004,12 @@ async function loadExistingElements(boardId) {
             }
         }
 
+        // Restore line connections after all elements are loaded
+        if (window.connectionManager && window.connectionManager.restoreAllConnections) {
+            console.log('[SIGNALR] Restoring line connections after element load');
+            window.connectionManager.restoreAllConnections();
+        }
+
     } catch (error) {
         console.error('Failed to load existing board elements:', error);
     }
