@@ -706,24 +706,28 @@ function handleMouseUp(event) {
           const length = Math.sqrt(Math.pow(endX - dependencies.startX, 2) + Math.pow(endY - dependencies.startY, 2));
           if (length > 5) {
             // Check for connection points at start and end positions
-            let startConnection = null;
+            let startConnection = dependencies.startConnection || null;
             let endConnection = null;
             
             if (window.connectionManager) {
-              // Check for start connection
-              const startSnapPoint = window.connectionManager.getConnectionSnapPoint(dependencies.startX, dependencies.startY);
-              if (startSnapPoint) {
-                startConnection = startSnapPoint.connection;
-                dependencies.startX = startSnapPoint.x;
-                dependencies.startY = startSnapPoint.y;
+              // Start connection already handled in startLine if available
+              if (!startConnection) {
+                const startSnapPoint = window.connectionManager.getConnectionSnapPoint(dependencies.startX, dependencies.startY);
+                if (startSnapPoint) {
+                  startConnection = startSnapPoint.connection;
+                  dependencies.startX = startSnapPoint.x;
+                  dependencies.startY = startSnapPoint.y;
+                }
               }
               
-              // Check for end connection
-              const endSnapPoint = window.connectionManager.getConnectionSnapPoint(endX, endY);
-              if (endSnapPoint) {
-                endConnection = endSnapPoint.connection;
-                endX = endSnapPoint.x;
-                endY = endSnapPoint.y;
+              // Check for end connection with shift-key snapping coordination
+              if (!window.isShiftHeld) {
+                const endSnapPoint = window.connectionManager.getConnectionSnapPoint(endX, endY);
+                if (endSnapPoint) {
+                  endConnection = endSnapPoint.connection;
+                  endX = endSnapPoint.x;
+                  endY = endSnapPoint.y;
+                }
               }
             }
             
@@ -753,6 +757,9 @@ function handleMouseUp(event) {
               dependencies.canvasManager.redrawCanvas();
             }
           }
+          
+          // Clean up stored start connection
+          dependencies.startConnection = null;
           dependencies.toolManager.finishLine();
         }
         break;

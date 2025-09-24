@@ -39,6 +39,11 @@ export function getElementConnectionPoints(element) {
   // Only provide connection points for connectable elements
   if (!isElementConnectable(element)) return [];
 
+  // Handle line elements differently - they have endpoint connections
+  if (element.type === 'Line') {
+    return getLineEndpointConnectionPoints(element);
+  }
+
   const points = [];
   const centerX = element.x + element.width / 2;
   const centerY = element.y + element.height / 2;
@@ -82,6 +87,40 @@ export function getElementConnectionPoints(element) {
   return points;
 }
 
+// Get connection points for line endpoints
+export function getLineEndpointConnectionPoints(element) {
+  if (!element || element.type !== 'Line') return [];
+  
+  const points = [];
+  
+  // Get line endpoints from data or fallback to element bounds
+  const data = element.data || {};
+  const startX = data.startX !== undefined ? data.startX : element.x;
+  const startY = data.startY !== undefined ? data.startY : element.y;
+  const endX = data.endX !== undefined ? data.endX : (element.x + element.width);
+  const endY = data.endY !== undefined ? data.endY : (element.y + element.height);
+
+  // Start endpoint
+  points.push({
+    id: 'start',
+    x: startX,
+    y: startY,
+    element: element,
+    type: 'line-endpoint'
+  });
+
+  // End endpoint  
+  points.push({
+    id: 'end',
+    x: endX,
+    y: endY,
+    element: element,
+    type: 'line-endpoint'
+  });
+
+  return points;
+}
+
 // Check if an element type supports connections
 export function isElementConnectable(element) {
   if (!element) return false;
@@ -95,7 +134,8 @@ export function isElementConnectable(element) {
     'Star', 'star',
     'StickyNote',
     'Text',
-    'Image'
+    'Image',
+    'Line' // Lines can now be connected to at their endpoints
   ];
   
   return connectableTypes.includes(element.type);
@@ -155,9 +195,10 @@ export function drawConnectionPointIndicators(element, highlightPoint = null) {
       highlightPoint.element === element && 
       highlightPoint.id === point.id;
 
-    // Set colors
+    // Set colors - use slightly different style for line endpoints
+    const isLineEndpoint = point.type === 'line-endpoint';
     const fillColor = isHighlighted ? CONNECTION_POINT_HOVER_COLOR : CONNECTION_POINT_COLOR;
-    const strokeColor = '#ffffff';
+    const strokeColor = isLineEndpoint ? CONNECTION_POINT_COLOR : '#ffffff';
 
     ctx.fillStyle = fillColor;
     ctx.strokeStyle = strokeColor;
@@ -168,6 +209,14 @@ export function drawConnectionPointIndicators(element, highlightPoint = null) {
     ctx.arc(point.x, point.y, pointSize / 2, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
+
+    // Add a small inner dot for line endpoints to distinguish them
+    if (isLineEndpoint) {
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, (pointSize / 4), 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   ctx.restore();
@@ -317,14 +366,20 @@ export function updateLineConnections(lineElement) {
   return updated;
 }
 
-// Update all lines connected to a specific element
-export function updateConnectedLines(elementId) {
+// Update all lines connected to a specific element (with recursion protection)
+export function updateConnectedLines(elementId, visited = new Set()) {
   console.log(`[CONNECTION] Checking for lines connected to element ${elementId}`);
   
   if (!dependencies.elements) {
     console.warn('[CONNECTION] No elements dependency available');
-    return;
+    return [];
   }
+
+  // Prevent infinite recursion in line-to-line connections
+  if (visited.has(elementId)) {
+    return [];
+  }
+  visited.add(elementId);
 
   const updatedLines = [];
 
@@ -349,6 +404,10 @@ export function updateConnectedLines(elementId) {
         if (wasUpdated) {
           updatedLines.push(element.id);
           
+          // Recursively update lines connected to this line (cascade update with protection)
+          const cascadeUpdates = updateConnectedLines(element.id, visited);
+          updatedLines.push(...cascadeUpdates);
+          
           // Send line endpoint update to server for synchronization
           if (dependencies.signalrClient && dependencies.signalrClient.sendLineEndpointUpdate) {
             const currentBoardId = dependencies.signalrClient.getCurrentBoardId ? dependencies.signalrClient.getCurrentBoardId() : null;
@@ -370,8 +429,8 @@ export function updateConnectedLines(elementId) {
     }
   }
 
-  // Trigger redraw if any lines were updated
-  if (updatedLines.length > 0 && dependencies.redrawCanvas) {
+  // Trigger redraw if any lines were updated (only on the root call)
+  if (visited.size === 1 && updatedLines.length > 0 && dependencies.redrawCanvas) {
     dependencies.redrawCanvas();
   }
 
@@ -466,6 +525,7 @@ export function init() {
 if (typeof window !== 'undefined') {
   window.connectionManager = {
     getElementConnectionPoints,
+    getLineEndpointConnectionPoints,
     isElementConnectable,
     findNearestConnectionPoint,
     drawConnectionPointIndicators,

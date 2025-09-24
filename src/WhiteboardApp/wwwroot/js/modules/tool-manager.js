@@ -887,10 +887,28 @@ export function finishShape() {
 export function startLine(x, y) {
   try {
     isDrawingShape = true;
-    dependencies.startX = x;
-    dependencies.startY = y;
+    
+    // Check for connection snapping at start point
+    let startX = x;
+    let startY = y;
+    let startConnection = null;
 
-    // console.log(`Started drawing line at (${x}, ${y})`);
+    if (window.connectionManager && window.connectionManager.getConnectionSnapPoint) {
+      const snapPoint = window.connectionManager.getConnectionSnapPoint(x, y);
+      if (snapPoint) {
+        startX = snapPoint.x;
+        startY = snapPoint.y;
+        startConnection = snapPoint.connection;
+        console.log('Line start snapped to connection point:', snapPoint.connection);
+      }
+    }
+    
+    dependencies.startX = startX;
+    dependencies.startY = startY;
+    // Store start connection for later use when creating the line
+    dependencies.startConnection = startConnection;
+
+    // console.log(`Started drawing line at (${startX}, ${startY})`);
     return true;
   } catch (error) {
     console.error('Failed to start line:', error);
