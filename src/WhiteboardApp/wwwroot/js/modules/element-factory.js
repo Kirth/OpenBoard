@@ -2453,6 +2453,24 @@ export function lockElement(elementId) {
 
   saveCanvasState('Lock Element');
 
+  // Send lock state to server for real-time sync
+  if (dependencies.sendElementLock && dependencies.currentBoardId) {
+    const boardId = dependencies.currentBoardId();
+    if (boardId) {
+      dependencies.sendElementLock(boardId, elementId, true).catch(error => {
+        console.error(`Failed to send lock state to server for element ${elementId}:`, error);
+        if (dependencies.showNotification) {
+          dependencies.showNotification('Failed to sync lock state with other clients', 'warning');
+        }
+      });
+    }
+  }
+
+  // Show success notification
+  if (dependencies.showNotification) {
+    dependencies.showNotification(`🔒 ${element.type} element locked`, 'success');
+  }
+
   if (dependencies.redrawCanvas) {
     dependencies.redrawCanvas();
   }
@@ -2468,6 +2486,24 @@ export function unlockElement(elementId) {
   element.data.locked = false;
 
   saveCanvasState('Unlock Element');
+
+  // Send unlock state to server for real-time sync
+  if (dependencies.sendElementLock && dependencies.currentBoardId) {
+    const boardId = dependencies.currentBoardId();
+    if (boardId) {
+      dependencies.sendElementLock(boardId, elementId, false).catch(error => {
+        console.error(`Failed to send unlock state to server for element ${elementId}:`, error);
+        if (dependencies.showNotification) {
+          dependencies.showNotification('Failed to sync unlock state with other clients', 'warning');
+        }
+      });
+    }
+  }
+
+  // Show success notification
+  if (dependencies.showNotification) {
+    dependencies.showNotification(`🔓 ${element.type} element unlocked`, 'success');
+  }
 
   if (dependencies.redrawCanvas) {
     dependencies.redrawCanvas();

@@ -387,7 +387,7 @@ export function renderExistingElement(element) {
   }
 }
 
-// Render lock icons for locked elements
+// Render lock icons and visual indicators for locked elements
 function renderLockIcons(elements) {
   if (!ctx) return;
 
@@ -400,12 +400,23 @@ function renderLockIcons(elements) {
     if (element.data && element.data.locked === true) {
       ctx.save();
 
+      // Add subtle overlay to indicate locked state (optional visual enhancement)
+      ctx.fillStyle = 'rgba(255, 165, 0, 0.1)'; // Light orange tint
+      ctx.fillRect(element.x, element.y, element.width, element.height);
+
+      // Add dashed border to indicate locked state
+      ctx.strokeStyle = 'rgba(255, 165, 0, 0.5)';
+      ctx.lineWidth = 2 / zoom;
+      ctx.setLineDash([4 / zoom, 4 / zoom]);
+      ctx.strokeRect(element.x, element.y, element.width, element.height);
+      ctx.setLineDash([]); // Reset dash
+
       // Position at top-right corner of element
       const iconX = element.x + element.width - iconSize - (4 / zoom);
       const iconY = element.y + (4 / zoom);
 
       // Draw lock icon background (semi-transparent circle)
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
       ctx.strokeStyle = '#666';
       ctx.lineWidth = 1 / zoom;
 
@@ -415,9 +426,9 @@ function renderLockIcons(elements) {
       ctx.stroke();
 
       // Draw lock icon (simplified lock shape)
-      ctx.strokeStyle = '#333';
+      ctx.strokeStyle = '#d97706'; // Orange color to match theme
       ctx.lineWidth = 1.5 / zoom;
-      ctx.fillStyle = '#333';
+      ctx.fillStyle = '#d97706';
 
       const lockX = iconX + iconSize * 0.3;
       const lockY = iconY + iconSize * 0.25;
@@ -589,9 +600,22 @@ export function updateCursorForResizeHandles(x, y) {
   try {
     // FIXED: Convert screen coordinates to world coordinates before hit testing
     const worldPos = screenToWorld(x, y);
-    const element = dependencies.getElementAtPoint(worldPos.x, worldPos.y);
+    const element = dependencies.getElementAtPoint(worldPos.x, worldPos.y, true); // Include locked elements for cursor hints
     const selId = dependencies.getSelectedElementId?.() ?? null;
-    canvas.style.cursor = (element && selId && selId === element.id) ? 'nw-resize' : 'default';
+    
+    if (element) {
+      // Check if element is locked
+      const isLocked = element.data?.locked === true;
+      if (isLocked) {
+        canvas.style.cursor = 'not-allowed';
+      } else if (selId && selId === element.id) {
+        canvas.style.cursor = 'nw-resize';
+      } else {
+        canvas.style.cursor = 'pointer';
+      }
+    } else {
+      canvas.style.cursor = 'default';
+    }
   } catch (e) {
     console.error('Failed to update cursor for resize handles:', e);
   }
