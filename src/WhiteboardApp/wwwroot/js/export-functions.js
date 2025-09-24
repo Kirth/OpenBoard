@@ -197,6 +197,32 @@ window.getCanvasInfo = function() {
   }
 };
 
+window.downloadFromUrl = function(url) {
+  try {
+    // Create a temporary link element and trigger download
+    const link = document.createElement('a');
+    link.href = url;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  } catch (error) {
+    console.error('Error downloading from URL:', error);
+    throw error;
+  }
+};
+
+window.exportBoardAsJson = async function(boardId, imageMode = 'embedded', includeCollaborators = true) {
+  try {
+    const exportUrl = `/api/board/${boardId}/export/json?imageMode=${imageMode}&includeCollaborators=${includeCollaborators}`;
+    await window.downloadFromUrl(exportUrl);
+    return 'JSON export initiated';
+  } catch (error) {
+    console.error('Error exporting board as JSON:', error);
+    throw error;
+  }
+};
+
 
 // Debug: Check if jsPDF is available
 if (typeof window.jspdf !== 'undefined' && typeof window.jspdf.jsPDF !== 'undefined') {

@@ -7,6 +7,8 @@
 @inject IUserService UserService
 @inject NavigationManager Navigation
 @inject IJSRuntime JSRuntime
+@inject HttpClient Http
+@inject BoardImportService ImportService
 
 <PageTitle>OpenBoard</PageTitle>
 
@@ -369,12 +371,33 @@
         <div class="modal-content" @onclick:stopPropagation="true">
             <h3>Create Board</h3>
             
-            <div class="form-group">
-                <label>Title</label>
-                <input type="text" @bind="newBoardTitle" placeholder="My Board" />
-            </div>
-            
-            <div class="form-group">
+            <!-- Tab Navigation (Only for authenticated users) -->
+            <AuthorizeView>
+                <Authorized>
+                    <div class="tab-navigation">
+                        <button class="tab-button @(createModalTab == "new" ? "active" : "")" @onclick="@(() => createModalTab = "new")">
+                            Create New
+                        </button>
+                        <button class="tab-button @(createModalTab == "import" ? "active" : "")" @onclick="@(() => createModalTab = "import")">
+                            Import from JSON
+                        </button>
+                    </div>
+                </Authorized>
+                <NotAuthorized>
+                    <!-- Hidden tab indicator for styling consistency -->
+                    <div class="tab-navigation" style="display: none;"></div>
+                </NotAuthorized>
+            </AuthorizeView>
+
+            <!-- Create New Tab -->
+            @if (createModalTab == "new")
+            {
+                <div class="form-group">
+                    <label>Title</label>
+                    <input type="text" @bind="newBoardTitle" placeholder="My Board" />
+                </div>
+                
+                <div class="form-group">
                 <label>Emoji</label>
                 <div class="emoji-picker-container">
                     <div class="emoji-display" @onclick="ToggleEmojiPicker">
@@ -475,10 +498,153 @@
                     </NotAuthorized>
                 </AuthorizeView>
             </div>
+            }
+
+            <!-- Import from JSON Tab -->
+            @if (createModalTab == "import")
+            {
+                <div class="import-section">
+                    @if (string.IsNullOrEmpty(importJsonContent))
+                    {
+                        <div class="form-group">
+                            <label>Select JSON File</label>
+                            <InputFile @ref="jsonFileInput" accept=".json" OnChange="HandleJsonFileSelected" class="file-input" />
+                            <small class="text-muted">Choose a previously exported board JSON file to import</small>
+                        </div>
+                    }
+                    else if (isValidatingImport)
+                    {
+                        <div class="validation-progress">
+                            <div class="progress-spinner"></div>
+                            <p>Validating JSON file...</p>
+                            <button type="button" class="btn btn-secondary" @onclick="ClearImportData">Cancel</button>
+                        </div>
+                    }
+                    else
+                    {
+                        @if (importValidation != null)
+                        {
+                            <div class="import-preview">
+                                <h4>Import Preview</h4>
+                                <div class="preview-info">
+                                    <div class="preview-item">
+                                        <strong>Board Name:</strong> @importValidation.OriginalBoardName
+                                    </div>
+                                    <div class="preview-item">
+                                        <strong>Elements:</strong> @importValidation.ElementCount
+                                    </div>
+                                    <div class="preview-item">
+                                        <strong>Images:</strong> @importValidation.ImageCount
+                                    </div>
+                                    <div class="preview-item">
+                                        <strong>Exported:</strong> @importValidation.ExportedAt?.ToString("yyyy-MM-dd HH:mm") by @importValidation.ExportedBy
+                                    </div>
+                                </div>
+
+                                @if (importValidation.ValidationWarnings.Any())
+                                {
+                                    <div class="validation-warnings">
+                                        <h5>⚠️ Warnings:</h5>
+                                        @foreach (var warning in importValidation.ValidationWarnings)
+                                        {
+                                            <div class="warning-item">@warning</div>
+                                        }
+                                    </div>
+                                }
+
+                                @if (importValidation.ValidationErrors.Any())
+                                {
+                                    <div class="validation-errors">
+                                        <h5>❌ Errors:</h5>
+                                        @foreach (var error in importValidation.ValidationErrors)
+                                        {
+                                            <div class="error-item">@error</div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+
+                            @if (importValidation.IsValidJson && importValidation.HasRequiredFields)
+                            {
+                                <div class="form-group">
+                                    <label>New Board Name (Optional)</label>
+                                    <input type="text" @bind="importBoardName" placeholder="@($"{importValidation.OriginalBoardName} (Imported)")" />
+                                    <small class="text-muted">Leave empty to use: "@importValidation.OriginalBoardName (Imported)"</small>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label>Board Visibility</label>
+                                    <AuthorizeView>
+                                        <Authorized>
+                                            <div class="radio-group">
+                                                <div class="radio-option @(importAccessLevel == BoardAccessLevel.Private ? "selected" : "")">
+                                                    <label>
+                                                        <input type="radio" name="importVisibility" @onchange="@(() => importAccessLevel = BoardAccessLevel.Private)" checked="@(importAccessLevel == BoardAccessLevel.Private)" />
+                                                        <div class="radio-content">
+                                                            <span class="radio-title">Private</span>
+                                                            <small class="radio-description">Only you and invited collaborators</small>
+                                                        </div>
+                                                    </label>
+                                                </div>
+                                                <div class="radio-option @(importAccessLevel == BoardAccessLevel.Unlisted ? "selected" : "")">
+                                                    <label>
+                                                        <input type="radio" name="importVisibility" @onchange="@(() => importAccessLevel = BoardAccessLevel.Unlisted)" checked="@(importAccessLevel == BoardAccessLevel.Unlisted)" />
+                                                        <div class="radio-content">
+                                                            <span class="radio-title">Unlisted</span>
+                                                            <small class="radio-description">Anyone with board ID</small>
+                                                        </div>
+                                                    </label>
+                                                </div>
+                                                <div class="radio-option @(importAccessLevel == BoardAccessLevel.Public ? "selected" : "")">
+                                                    <label>
+                                                        <input type="radio" name="importVisibility" @onchange="@(() => importAccessLevel = BoardAccessLevel.Public)" checked="@(importAccessLevel == BoardAccessLevel.Public)" />
+                                                        <div class="radio-content">
+                                                            <span class="radio-title">Public</span>
+                                                            <small class="radio-description">Listed publicly</small>
+                                                        </div>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        </Authorized>
+                                    </AuthorizeView>
+                                </div>
+                            }
+
+                            <div class="import-actions">
+                                <button @onclick="ClearImportData">Choose Different File</button>
+                            </div>
+                        }
+                        else if (isValidatingImport)
+                        {
+                            <div class="validation-loading">
+                                <span>Validating JSON file...</span>
+                            </div>
+                        }
+                    }
+                </div>
+            }
             
             <div class="modal-actions">
                 <button @onclick="HideCreateModal">Cancel</button>
-                <button @onclick="CreateNewBoard" disabled="@string.IsNullOrWhiteSpace(newBoardTitle)" class="primary">Create</button>
+                @if (createModalTab == "new")
+                {
+                    <button @onclick="CreateNewBoard" disabled="@string.IsNullOrWhiteSpace(newBoardTitle)" class="primary">Create</button>
+                }
+                else if (createModalTab == "import")
+                {
+                    <button @onclick="ImportBoard" 
+                            disabled="@(importValidation == null || !importValidation.IsValidJson || !importValidation.HasRequiredFields || importValidation.ValidationErrors.Any() || isImporting)" 
+                            class="primary">
+                        @if (isImporting)
+                        {
+                            <span>Importing...</span>
+                        }
+                        else
+                        {
+                            <span>Import Board</span>
+                        }
+                    </button>
+                }
             </div>
         </div>
     </div>
@@ -500,6 +666,16 @@
     private string activeTab = "my";
     private string searchQuery = "";
     private string sortOrder = "updated";
+    
+    // Import functionality variables
+    private string createModalTab = "new";
+    private InputFile? jsonFileInput;
+    private string importJsonContent = "";
+    private string importBoardName = "";
+    private BoardAccessLevel importAccessLevel = BoardAccessLevel.Private;
+    private ImportValidationResult? importValidation;
+    private bool isValidatingImport = false;
+    private bool isImporting = false;
     
     private List<WhiteboardApp.Models.Board>? publicBoards;
     private List<WhiteboardApp.Models.Board>? activeBoards;
@@ -770,10 +946,21 @@
 
     private void ShowCreateModal()
     {
+        // Reset new board state
         newBoardTitle = "";
         selectedEmoji = "📋";
         selectedAccessLevel = BoardAccessLevel.Private;
         showEmojiPicker = false;
+        
+        // Reset import state
+        createModalTab = "new";
+        importJsonContent = "";
+        importBoardName = "";
+        importAccessLevel = BoardAccessLevel.Private;
+        importValidation = null;
+        isValidatingImport = false;
+        isImporting = false;
+        
         showCreateModal = true;
     }
 
@@ -781,6 +968,13 @@
     {
         showCreateModal = false;
         newBoardTitle = "";
+        
+        // Clear import state
+        importJsonContent = "";
+        importBoardName = "";
+        importValidation = null;
+        isValidatingImport = false;
+        isImporting = false;
         selectedEmoji = "📋";
         selectedAccessLevel = BoardAccessLevel.Private;
         showEmojiPicker = false;
@@ -889,5 +1083,187 @@
             BoardAccessLevel.Unlisted => "Unlisted",
             _ => ""
         };
+    }
+
+    // Import functionality methods
+    private async Task HandleJsonFileSelected(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var file = e.File;
+            if (file == null) return;
+
+            // Check file size (10MB limit)
+            if (file.Size > 10 * 1024 * 1024)
+            {
+                await ShowToast("File too large. Maximum size is 10MB.");
+                return;
+            }
+
+            // Check file extension
+            if (!file.Name.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+            {
+                await ShowToast("Please select a JSON file.");
+                return;
+            }
+
+            isValidatingImport = true;
+            StateHasChanged();
+
+            // Read file content
+            using var reader = new StreamReader(file.OpenReadStream(10 * 1024 * 1024));
+            importJsonContent = await reader.ReadToEndAsync();
+
+            // Validate the JSON
+            await ValidateImportJson();
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"Error reading file: {ex.Message}");
+            ClearImportData();
+        }
+        finally
+        {
+            isValidatingImport = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ValidateImportJson()
+    {
+        try
+        {
+            // Call the import service directly instead of using HTTP
+            importValidation = await ImportService.ValidateImportDataAsync(importJsonContent);
+            
+            // Show user feedback based on validation results
+            if (importValidation != null)
+            {
+                if (!importValidation.IsValidJson || !importValidation.HasRequiredFields)
+                {
+                    var errorMessages = string.Join(", ", importValidation.ValidationErrors);
+                    await ShowToast($"JSON validation failed: {errorMessages}");
+                }
+                else if (importValidation.ValidationWarnings.Any())
+                {
+                    await ShowToast($"JSON validated with {importValidation.ValidationWarnings.Count} warnings");
+                }
+                else
+                {
+                    await ShowToast("JSON validated successfully");
+                }
+            }
+            
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"Validation error: {ex.Message}");
+            
+            // Create a failed validation result instead of clearing data
+            importValidation = new ImportValidationResult
+            {
+                IsValidJson = false,
+                HasRequiredFields = false,
+                ValidationErrors = new List<string> { $"Validation error: {ex.Message}" }
+            };
+            StateHasChanged();
+        }
+    }
+
+    private async Task ImportBoard()
+    {
+        try
+        {
+            if (importValidation == null) return;
+
+            isImporting = true;
+            StateHasChanged();
+
+            // Get current user for authentication
+            if (AuthenticationStateTask == null)
+            {
+                await ShowToast("Authentication required for import");
+                return;
+            }
+
+            var authState = await AuthenticationStateTask;
+            if (authState.User.Identity?.IsAuthenticated != true)
+            {
+                await ShowToast("Please log in to import boards");
+                return;
+            }
+
+            var currentUser = await UserService.GetOrCreateUserAsync(authState.User);
+            
+            var importOptions = new BoardImportOptions
+            {
+                ValidateHash = true,
+                NewBoardName = string.IsNullOrWhiteSpace(importBoardName) ? null : importBoardName,
+                NewBoardEmoji = null,
+                NewAccessLevel = importAccessLevel,
+                CreateNewIds = true,
+                PreserveTimestamps = false,
+                ProcessImages = true,
+                MaxImageSizeMB = 10
+            };
+
+            // Call the import service directly
+            var result = await ImportService.ImportBoardAsync(importJsonContent, currentUser, importOptions);
+
+            if (result?.Success == true && result.BoardId.HasValue)
+            {
+                await ShowToast($"Board imported successfully! {result.Message}");
+                
+                // Refresh boards list
+                userBoards = await BoardService.GetUserOwnedBoardsAsync(currentUser);
+                UpdateDisplayedBoards();
+
+                HideCreateModal();
+                
+                // Navigate to the new board
+                Navigation.NavigateTo($"/board/{result.BoardId}");
+            }
+            else
+            {
+                var errorMsg = result?.Message ?? "Import failed";
+                if (result?.Errors?.Any() == true)
+                {
+                    errorMsg += ": " + string.Join(", ", result.Errors);
+                }
+                await ShowToast(errorMsg);
+            }
+        }
+        catch (Exception ex)
+        {
+            await ShowToast($"Import error: {ex.Message}");
+        }
+        finally
+        {
+            isImporting = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ClearImportData()
+    {
+        importJsonContent = "";
+        importBoardName = "";
+        importValidation = null;
+        isValidatingImport = false;
+        isImporting = false;
+        StateHasChanged();
+    }
+
+    private async Task ShowToast(string message)
+    {
+        toastMessage = message;
+        showToast = true;
+        StateHasChanged();
+        
+        // Hide toast after 5 seconds
+        await Task.Delay(5000);
+        showToast = false;
+        StateHasChanged();
     }
 }

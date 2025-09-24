@@ -18,6 +18,14 @@ builder.Services.AddControllers();
 // Add HttpClient for Blazor components
 builder.Services.AddHttpClient();
 
+// Configure HttpClient for server-side components
+builder.Services.AddScoped(sp =>
+{
+    var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+    var httpClient = httpClientFactory.CreateClient();
+    return httpClient;
+});
+
 // Add Blazor authentication support  
 builder.Services.AddScoped<AuthenticationStateProvider, ServerAuthenticationStateProvider>();
 
@@ -31,6 +39,7 @@ builder.Services.AddScoped<BoardService>();
 builder.Services.AddScoped<ElementService>();
 builder.Services.AddScoped<ImageService>();
 builder.Services.AddScoped<ExportService>();
+builder.Services.AddScoped<BoardImportService>();
 builder.Services.AddSingleton<IUserSessionManager, UserSessionManager>();
 
 // Add memory cache for session management
@@ -180,11 +189,11 @@ app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
 
+app.MapControllers(); // Map API controllers first
 app.MapRazorPages();
 app.MapBlazorHub();
 app.MapHub<CollaborationHub>("/collaborationhub");
-app.MapControllers();
-app.MapFallbackToPage("/_Host");
+app.MapFallbackToPage("/_Host"); // Fallback should be last
 
 // Ensure database is created
 using (var scope = app.Services.CreateScope())

@@ -157,6 +157,13 @@
                                     <span class="action-btn-icon">🎯</span>
                                     <span class="action-btn-label">High-Res PNG</span>
                                 </button>
+                                @if (currentUser != null && isOwner)
+                                {
+                                    <button class="action-btn" @onclick="ShowJsonExportModal">
+                                        <span class="action-btn-icon">📋</span>
+                                        <span class="action-btn-label">JSON Data</span>
+                                    </button>
+                                }
                             </div>
                         </div>
                     </div>
@@ -224,6 +231,70 @@
     </div>
 }
 
+<!-- JSON Export Modal -->
+@if (showJsonExportModal)
+{
+    <div class="modal" @onclick="HideJsonExportModal">
+        <div class="modal-content" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Export Board as JSON</h3>
+                <button class="modal-close" @onclick="HideJsonExportModal">&times;</button>
+            </div>
+            
+            <div class="modal-body">
+                <p>Export your board data as a structured JSON file with metadata and hash verification.</p>
+                
+                <div class="form-group">
+                    <label><strong>Image Handling</strong></label>
+                    <div class="radio-group">
+                        <label class="radio-option">
+                            <input type="radio" name="imageMode" value="embedded" checked="@(jsonImageMode == "embedded")" @onchange="@(() => jsonImageMode = "embedded")" />
+                            <span>Embed images (larger file, self-contained)</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="imageMode" value="referenced" checked="@(jsonImageMode == "referenced")" @onchange="@(() => jsonImageMode = "referenced")" />
+                            <span>Reference images (smaller file, requires original images)</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="checkbox-option">
+                        <input type="checkbox" @bind="includeCollaborators" />
+                        <span>Include collaborator information</span>
+                    </label>
+                </div>
+                
+                <div class="export-info">
+                    <p><strong>Export will include:</strong></p>
+                    <ul>
+                        <li>Board metadata with hash verification</li>
+                        <li>All board elements and content</li>
+                        <li>Board settings and properties</li>
+                        @if (includeCollaborators)
+                        {
+                            <li>Collaborator information</li>
+                        }
+                        @if (jsonImageMode == "embedded")
+                        {
+                            <li>Image data (Base64 encoded)</li>
+                        }
+                        else
+                        {
+                            <li>Image references (paths only)</li>
+                        }
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="HideJsonExportModal">Cancel</button>
+                <button class="btn btn-primary" @onclick="ExportAsJsonFromModal">Export JSON</button>
+            </div>
+        </div>
+    </div>
+}
+
 <!-- Board Settings Modal -->
 <BoardSettingsModal IsVisible="@showBoardSettingsModal" 
                    BoardId="@BoardId" 
@@ -255,9 +326,12 @@
     private bool showDuplicateModal = false;
     private bool showBoardSettingsModal = false;
     private bool showCollaboratorModal = false;
+    private bool showJsonExportModal = false;
     private BoardStats? boardStats = null;
     private string confirmationBoardName = string.Empty;
     private string newBoardName = string.Empty;
+    private string jsonImageMode = "embedded";
+    private bool includeCollaborators = true;
     private User? currentUser = null;
     private bool isOwner = false;
 
@@ -591,5 +665,47 @@
             "image" => "🖼️",
             _ => "📄"
         };
+    }
+
+    private void ShowJsonExportModal()
+    {
+        showBoardOverviewModal = false;
+        showJsonExportModal = true;
+    }
+
+    private void HideJsonExportModal()
+    {
+        showJsonExportModal = false;
+    }
+
+    private async Task ExportAsJsonFromModal()
+    {
+        showJsonExportModal = false;
+        try
+        {
+            if (Guid.TryParse(BoardId, out var boardGuid))
+            {
+                var exportUrl = $"/api/board/{boardGuid}/export/json?imageMode={jsonImageMode}&includeCollaborators={includeCollaborators}";
+                
+                // Use a more direct approach to trigger download
+                await JSRuntime.InvokeVoidAsync("eval", $@"
+                    (function() {{
+                        const link = document.createElement('a');
+                        link.href = '{exportUrl}';
+                        link.style.display = 'none';
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                    }})();
+                ");
+                
+                await JSRuntime.InvokeVoidAsync("showNotification", "Board exported as JSON successfully!", "success");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error exporting JSON: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("showNotification", "Failed to export board as JSON", "error");
+        }
     }
 }
