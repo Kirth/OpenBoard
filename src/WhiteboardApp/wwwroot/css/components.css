@@ -77,20 +77,7 @@
     transform: rotate(180deg);
 }
 
-.user-dropdown {
-    position: absolute;
-    top: 100%;
-    right: 0;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    min-width: 220px;
-    z-index: 1000;
-    margin-top: var(--space-xs);
-    overflow: hidden;
-}
+/* User dropdown styles moved to app.css for global availability */
 
 .dropdown-header {
     padding: 1rem 1.25rem;

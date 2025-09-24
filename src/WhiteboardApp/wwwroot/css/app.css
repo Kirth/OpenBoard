@@ -570,3 +570,76 @@ div[onclick],
 #blazor-error-ui .dismiss:hover {
   background: rgba(255, 255, 255, 0.1);
 }
+
+/* ===== User Menu Component (Global Styles) ===== */
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: var(--chip);
+  display: grid;
+  place-items: center;
+  font-weight: var(--font-weight-bold);
+  color: var(--text);
+  font-size: var(--font-size-sm);
+}
+
+/* User dropdown */
+.user-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 1000;
+  margin-top: 8px;
+  min-width: 220px;
+  background: var(--surface);
+  border: 1px solid var(--chip-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-2);
+  padding: 6px;
+}
+
+.user-dropdown-header {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--chip-border);
+}
+
+.user-dropdown-name {
+  font-weight: var(--font-weight-semibold);
+  color: var(--text);
+}
+
+.user-dropdown-email {
+  font-size: var(--font-size-sm);
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+.user-dropdown-menu {
+  padding: 6px;
+}
+
+.user-dropdown-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  background: none;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.2s ease;
+}
+
+.user-dropdown-item:hover {
+  background: var(--muted);
+  text-decoration: none;
+}
+
+.user-dropdown-divider {
+  height: 1px;
+  background: var(--chip-border);
+  margin: 6px 0;
+}

@@ -125,7 +125,8 @@ else
             BoardId="@BoardId"
             IsConnected="@signalRConnected"
             OnClearBoard="ClearBoard"
-            OnDuplicateBoard="DuplicateBoard" />
+            OnDuplicateBoard="DuplicateBoard"
+            OnBoardSettingsChanged="RefreshBoardInfo" />
         
         <!-- Canvas Component -->
         <BoardCanvas 
@@ -681,5 +682,26 @@ else
     private void NavigateToHome()
     {
         Navigation.NavigateTo("/");
+    }
+
+    private async Task RefreshBoardInfo()
+    {
+        // Refresh board information after settings are changed
+        try 
+        {
+            if (Guid.TryParse(BoardId, out var boardGuid))
+            {
+                var board = await BoardService.GetBoardAsync(boardGuid);
+                if (board != null)
+                {
+                    boardName = board.Name;
+                    StateHasChanged(); // Trigger re-render to update page title
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error refreshing board info: {ex.Message}");
+        }
     }
 }

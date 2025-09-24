@@ -255,7 +255,7 @@ export class ElementFactory {
         endX: x2,
         endY: y2,
         locked: false,
-        rotation: 0,
+        // Lines don't need rotation property - endpoints define the line direction
         // Arrow head properties
         startArrow: style.startArrow || 'none',
         endArrow: style.endArrow || 'none',
@@ -1253,6 +1253,12 @@ export function rotateElement(elementId, rotation) {
     return;
   }
 
+  // Lines should not be rotatable - users should move endpoints instead
+  if (element.type === 'Line') {
+    console.log('Cannot rotate line elements - move endpoints instead');
+    return;
+  }
+
   // Check if element is locked
   if (isElementLocked(element)) {
     if (dependencies.showNotification) {
@@ -1750,6 +1756,9 @@ export function getResizeHandleAt(x, y, selectionRect) {
 // Get rotation handle at point (in world coordinates)
 export function getRotationHandleAt(x, y, element) {
   if (!element) return null;
+  
+  // Lines should not have rotation handles - users should move endpoints instead
+  if (element.type === 'Line') return null;
 
   const zoom = dependencies.getZoomLevel ? dependencies.getZoomLevel() : 1;
   const handleSize = 8 / zoom;

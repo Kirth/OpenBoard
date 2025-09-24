@@ -298,7 +298,6 @@ public class UserService : IUserService
 
     public async Task<List<Board>> GetUserRecentBoardsAsync(Guid userId, int limit = 10)
     {
-        System.Console.WriteLine($"GetUserRecentBoardsAsync called for user {userId}");
         try
         {
             // Get boards based on actual user access tracking (simplified query to avoid concurrency issues)
@@ -322,17 +321,11 @@ public class UserService : IUserService
                 .Select(boardId => recentBoards.First(b => b.Id == boardId))
                 .ToList();
 
-            System.Console.WriteLine($"GetUserRecentBoardsAsync returning {recentBoards.Count} boards for user {userId}");
-            foreach (var board in recentBoards)
-            {
-                System.Console.WriteLine($"  - Board: {board.Name} (ID: {board.Id})");
-            }
             return recentBoards;
         }
         catch (Exception ex)
         {
             // Fallback to old behavior if UserBoardAccesses table doesn't exist yet
-            System.Console.WriteLine($"GetUserRecentBoardsAsync fell back to old behavior: {ex.Message}");
             var user = await _context.Users
                 .Include(u => u.OwnedBoards)
                 .Include(u => u.BoardCollaborations)

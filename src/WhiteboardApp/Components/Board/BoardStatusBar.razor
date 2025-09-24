@@ -228,7 +228,7 @@
 <BoardSettingsModal IsVisible="@showBoardSettingsModal" 
                    BoardId="@BoardId" 
                    OnClose="HideBoardSettingsModal"
-                   OnSettingsSaved="OnBoardSettingsChanged" />
+                   OnSettingsSaved="HandleBoardSettingsChanged" />
 
 <!-- Collaborator Management Modal -->
 <CollaboratorManagementModal IsVisible="@showCollaboratorModal" 
@@ -248,6 +248,7 @@
     [Parameter] public bool IsConnected { get; set; } = false;
     [Parameter] public EventCallback OnClearBoard { get; set; }
     [Parameter] public EventCallback<string> OnDuplicateBoard { get; set; }
+    [Parameter] public EventCallback OnBoardSettingsChanged { get; set; }
 
     private bool showBoardOverviewModal = false;
     private bool showClearConfirmModal = false;
@@ -536,10 +537,10 @@
         showBoardSettingsModal = false;
     }
 
-    private async Task OnBoardSettingsChanged()
+    private async Task HandleBoardSettingsChanged()
     {
-        // Optionally refresh board data or notify parent component
-        // This could trigger a board name refresh in the parent component
+        // Notify parent component that board settings have changed
+        await OnBoardSettingsChanged.InvokeAsync();
         StateHasChanged();
     }
 
