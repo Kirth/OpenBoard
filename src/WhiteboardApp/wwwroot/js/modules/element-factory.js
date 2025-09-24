@@ -41,12 +41,20 @@ const STYLE_UPDATE_DEBOUNCE_MS = 200; // 200ms debounce delay
 
 // Helper function to sync element changes to server after undo/redo
 async function syncElementChangesToServer(oldElements, newElements) {
+  console.log('[UNDO-SYNC] Starting sync to server with', newElements.length, 'new elements and', oldElements.length, 'old elements');
+  
   if (!dependencies.currentBoardId) {
-    console.warn("No current board ID available for undo/redo sync");
+    console.error('[UNDO-SYNC] No currentBoardId function available in dependencies');
     return;
   }
-
-  const boardId = dependencies.currentBoardId;
+  
+  const boardId = dependencies.currentBoardId();
+  if (!boardId) {
+    console.warn('[UNDO-SYNC] No current board ID available for undo/redo sync');
+    return;
+  }
+  
+  console.log('[UNDO-SYNC] Using board ID:', boardId);
 
   try {
     // Compare old and new states to find changes
@@ -61,9 +69,13 @@ async function syncElementChangesToServer(oldElements, newElements) {
       const oldElement = oldElementsMap.get(id);
 
       if (!oldElement) {
-        // Element was added - send to server
+        // Element was added/restored - send to server
+        console.log('[UNDO-SYNC] Detected restored element:', id, 'type:', newElement.type);
         if (dependencies.sendElement) {
+          console.log('[UNDO-SYNC] Sending restored element to server:', id);
           promises.push(dependencies.sendElement(boardId, newElement, id));
+        } else {
+          console.error('[UNDO-SYNC] sendElement function not available in dependencies');
         }
       } else {
         // Check for changes and sync accordingly
@@ -117,12 +129,20 @@ async function syncElementChangesToServer(oldElements, newElements) {
 
     // Wait for all sync operations to complete
     if (promises.length > 0) {
+      console.log(`[UNDO-SYNC] Executing ${promises.length} sync operations...`);
       await Promise.all(promises);
-      console.log(`Synced ${promises.length} element changes to server after undo/redo`);
+      console.log(`[UNDO-SYNC] Successfully synced ${promises.length} element changes to server after undo/redo`);
+    } else {
+      console.log('[UNDO-SYNC] No sync operations needed');
     }
 
   } catch (error) {
-    console.error('Failed to sync undo/redo changes to server:', error);
+    console.error('[UNDO-SYNC] Failed to sync undo/redo changes to server:', error);
+    
+    // Add user notification for sync failures
+    if (dependencies.showNotification) {
+      dependencies.showNotification('Failed to sync changes to server. Other users may not see your restored elements.', 'error');
+    }
   }
 }
 
@@ -2293,7 +2313,9 @@ export async function undo() {
     }
 
     // Sync changes to server
+    console.log('[UNDO] About to sync element changes to server');
     await syncElementChangesToServer(currentState.elements, previousState.elements);
+    console.log('[UNDO] Completed server sync');
 
     if (dependencies.redrawCanvas) {
       dependencies.redrawCanvas();
