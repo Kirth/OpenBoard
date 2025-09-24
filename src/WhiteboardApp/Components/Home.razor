@@ -80,7 +80,7 @@
     </div>
 </section>
 
-<main class="container" role="main" @onclick="@(() => { if (showTemplateMenu) showTemplateMenu = false; })">
+<main class="container" role="main" @onclick="@(() => { if (showTemplateMenu) showTemplateMenu = false; if (showImportEmojiPicker) showImportEmojiPicker = false; })">
     <!-- Active Now Section -->
     @if (activeBoards != null && activeBoards.Count > 0)
     {
@@ -369,26 +369,29 @@
 {
     <div class="modal" @onclick="HideCreateModal">
         <div class="modal-content" @onclick:stopPropagation="true">
-            <h3>Create Board</h3>
-            
-            <!-- Tab Navigation (Only for authenticated users) -->
-            <AuthorizeView>
-                <Authorized>
-                    <div class="tab-navigation">
-                        <button class="tab-button @(createModalTab == "new" ? "active" : "")" @onclick="@(() => createModalTab = "new")">
-                            Create New
-                        </button>
-                        <button class="tab-button @(createModalTab == "import" ? "active" : "")" @onclick="@(() => createModalTab = "import")">
-                            Import from JSON
-                        </button>
-                    </div>
-                </Authorized>
-                <NotAuthorized>
-                    <!-- Hidden tab indicator for styling consistency -->
-                    <div class="tab-navigation" style="display: none;"></div>
-                </NotAuthorized>
-            </AuthorizeView>
+            <div class="modal-header">
+                <h3>@(createModalTab == "import" ? "Import Board" : "Create Board")</h3>
+                <AuthorizeView>
+                    <Authorized>
+                        @if (createModalTab == "new")
+                        {
+                            <button class="import-toggle-link" @onclick="@(() => createModalTab = "import")">
+                                <i class="fas fa-download"></i>
+                                Import from JSON
+                            </button>
+                        }
+                        else
+                        {
+                            <button class="import-toggle-link" @onclick="@(() => createModalTab = "new")">
+                                <i class="fas fa-plus"></i>
+                                Create New
+                            </button>
+                        }
+                    </Authorized>
+                </AuthorizeView>
+            </div>
 
+            <div class="modal-content-transition">
             <!-- Create New Tab -->
             @if (createModalTab == "new")
             {
@@ -567,9 +570,31 @@
                             @if (importValidation.IsValidJson && importValidation.HasRequiredFields)
                             {
                                 <div class="form-group">
-                                    <label>New Board Name (Optional)</label>
+                                    <label>New Board Name</label>
                                     <input type="text" @bind="importBoardName" placeholder="@($"{importValidation.OriginalBoardName} (Imported)")" />
                                     <small class="text-muted">Leave empty to use: "@importValidation.OriginalBoardName (Imported)"</small>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label>Emoji</label>
+                                    <div class="emoji-picker-container @(showImportEmojiPicker ? "open" : "")">
+                                        <div class="emoji-display" @onclick="ToggleImportEmojiPicker">
+                                            <span class="selected-emoji">@importBoardEmoji</span>
+                                            <i class="fas fa-chevron-down"></i>
+                                        </div>
+                                        @if (showImportEmojiPicker)
+                                        {
+                                            <div class="emoji-grid" @onclick:stopPropagation="true">
+                                                @foreach (var emoji in availableEmojis)
+                                                {
+                                                    <button type="button" class="emoji-option @(importBoardEmoji == emoji ? "selected" : "")" 
+                                                            @onclick="@(() => SelectImportEmoji(emoji))">
+                                                        @emoji
+                                                    </button>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
                                 </div>
                                 
                                 <div class="form-group">
@@ -623,6 +648,7 @@
                     }
                 </div>
             }
+            </div>
             
             <div class="modal-actions">
                 <button @onclick="HideCreateModal">Cancel</button>
@@ -672,6 +698,8 @@
     private InputFile? jsonFileInput;
     private string importJsonContent = "";
     private string importBoardName = "";
+    private string importBoardEmoji = "📋";
+    private bool showImportEmojiPicker = false;
     private BoardAccessLevel importAccessLevel = BoardAccessLevel.Private;
     private ImportValidationResult? importValidation;
     private bool isValidatingImport = false;
@@ -946,6 +974,9 @@
 
     private void ShowCreateModal()
     {
+        // Always start in "create new" mode
+        createModalTab = "new";
+        
         // Reset new board state
         newBoardTitle = "";
         selectedEmoji = "📋";
@@ -953,9 +984,10 @@
         showEmojiPicker = false;
         
         // Reset import state
-        createModalTab = "new";
         importJsonContent = "";
         importBoardName = "";
+        importBoardEmoji = "📋";
+        showImportEmojiPicker = false;
         importAccessLevel = BoardAccessLevel.Private;
         importValidation = null;
         isValidatingImport = false;
@@ -972,6 +1004,8 @@
         // Clear import state
         importJsonContent = "";
         importBoardName = "";
+        importBoardEmoji = "📋";
+        showImportEmojiPicker = false;
         importValidation = null;
         isValidatingImport = false;
         isImporting = false;
@@ -1144,13 +1178,25 @@
                     var errorMessages = string.Join(", ", importValidation.ValidationErrors);
                     await ShowToast($"JSON validation failed: {errorMessages}");
                 }
-                else if (importValidation.ValidationWarnings.Any())
+                else 
                 {
-                    await ShowToast($"JSON validated with {importValidation.ValidationWarnings.Count} warnings");
-                }
-                else
-                {
-                    await ShowToast("JSON validated successfully");
+                    // Pre-fill form fields from imported data
+                    if (!string.IsNullOrEmpty(importValidation.OriginalBoardName))
+                    {
+                        importBoardName = $"{importValidation.OriginalBoardName} (Imported)";
+                    }
+                    
+                    // Try to extract emoji from imported board data
+                    await TryExtractEmojiFromImportData();
+                    
+                    if (importValidation.ValidationWarnings.Any())
+                    {
+                        await ShowToast($"JSON validated with {importValidation.ValidationWarnings.Count} warnings");
+                    }
+                    else
+                    {
+                        await ShowToast("JSON validated successfully");
+                    }
                 }
             }
             
@@ -1200,7 +1246,7 @@
             {
                 ValidateHash = true,
                 NewBoardName = string.IsNullOrWhiteSpace(importBoardName) ? null : importBoardName,
-                NewBoardEmoji = null,
+                NewBoardEmoji = importBoardEmoji,
                 NewAccessLevel = importAccessLevel,
                 CreateNewIds = true,
                 PreserveTimestamps = false,
@@ -1249,10 +1295,53 @@
     {
         importJsonContent = "";
         importBoardName = "";
+        importBoardEmoji = "📋";
+        showImportEmojiPicker = false;
         importValidation = null;
         isValidatingImport = false;
         isImporting = false;
         StateHasChanged();
+    }
+
+    private async Task TryExtractEmojiFromImportData()
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(importJsonContent)) return;
+            
+            var jsonOptions = new System.Text.Json.JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            };
+            
+            var jsonDoc = System.Text.Json.JsonDocument.Parse(importJsonContent);
+            if (jsonDoc.RootElement.TryGetProperty("boardData", out var boardDataElement) &&
+                boardDataElement.TryGetProperty("board", out var boardElement) &&
+                boardElement.TryGetProperty("emoji", out var emojiElement))
+            {
+                var emoji = emojiElement.GetString();
+                if (!string.IsNullOrEmpty(emoji))
+                {
+                    importBoardEmoji = emoji;
+                }
+            }
+        }
+        catch
+        {
+            // If extraction fails, keep default emoji
+        }
+        await Task.CompletedTask;
+    }
+
+    private void SelectImportEmoji(string emoji)
+    {
+        importBoardEmoji = emoji;
+        showImportEmojiPicker = false;
+    }
+    
+    private void ToggleImportEmojiPicker()
+    {
+        showImportEmojiPicker = !showImportEmojiPicker;
     }
 
     private async Task ShowToast(string message)
