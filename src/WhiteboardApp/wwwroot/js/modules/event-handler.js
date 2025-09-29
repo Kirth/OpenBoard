@@ -289,6 +289,9 @@ function handleMouseMove(event) {
         // Draw connection point preview if in world space
         const tempCtx = dependencies.canvasManager.getTempContext();
         if (tempCtx && window.connectionManager) {
+          // Clear temp canvas to prevent trail of snapping circles
+          tempCtx.clearRect(0, 0, tempCtx.canvas.width, tempCtx.canvas.height);
+
           tempCtx.save();
           if (dependencies.canvasManager.applyViewportTransform) {
             dependencies.canvasManager.applyViewportTransform(tempCtx);
@@ -531,6 +534,12 @@ function handleMouseUp(event) {
             element.x + element.width, element.y + element.height
           );
         }
+      }
+
+      // Clear temp canvas to remove any remaining snapping circle artifacts
+      const tempCtx = dependencies.canvasManager.getTempContext();
+      if (tempCtx) {
+        tempCtx.clearRect(0, 0, tempCtx.canvas.width, tempCtx.canvas.height);
       }
 
       // Reset line handle dragging state
