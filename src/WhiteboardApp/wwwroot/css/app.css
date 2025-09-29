@@ -184,7 +184,6 @@ textarea {
 }
 
 html, body {
-  height: 100% !important;
   margin: 0 !important;
   padding: 0 !important;
 }
@@ -194,12 +193,13 @@ body {
   font-size: var(--font-size-base) !important;
   line-height: 1.45 !important;
   color: var(--text) !important;
-  background: radial-gradient(1200px 600px at 20% -10%, rgba(124,77,255,.20), transparent 60%), 
-              radial-gradient(800px 400px at 90% 0%, rgba(34,211,238,.14), transparent 60%), 
+  background: radial-gradient(1200px 600px at 20% -10%, rgba(124,77,255,.20), transparent 60%),
+              radial-gradient(800px 400px at 90% 0%, rgba(34,211,238,.14), transparent 60%),
               var(--bg) !important;
   -webkit-font-smoothing: antialiased !important;
   text-rendering: optimizeLegibility !important;
   min-height: 100vh !important;
+  background-attachment: fixed !important;
   transition: background-color 0.3s ease, color 0.3s ease !important;
 }
 
