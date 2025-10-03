@@ -212,7 +212,8 @@ function setupModuleDependencies() {
     get selectedElementIds() { return interactionManager.getSelectedElementIds(); },
     toggleDarkMode: uiFeatures.toggleDarkMode,
     toggleElementLockAction: uiFeatures.toggleElementLockAction,
-    showContextMenu: uiFeatures.showContextMenu
+    showContextMenu: uiFeatures.showContextMenu,
+    showNotification: uiFeatures.showNotification
   });
 
   // Set up interaction manager dependencies

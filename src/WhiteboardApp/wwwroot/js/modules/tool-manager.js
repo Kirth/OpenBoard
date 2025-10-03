@@ -409,9 +409,9 @@ export function handleKeyDown(event) {
           break;
 
         case 'v':
-          event.preventDefault();
-          // Ctrl+V = Paste
-          if (dependencies.pasteElement) dependencies.pasteElement();
+          // Don't preventDefault here - let the paste event fire first
+          // The paste event handler will check for images and fall back to element paste
+          // Note: pasteElement is called from the paste event handler if no images found
           break;
 
         case 'd':

@@ -87,6 +87,9 @@ export function setupEventHandlers() {
   canvas.addEventListener('dragleave', handleDragLeave);
   canvas.addEventListener('drop', handleDrop);
 
+  // Set up paste handler for images
+  document.addEventListener('paste', handlePaste);
+
   console.log('Event handlers set up');
 }
 
@@ -1521,5 +1524,103 @@ function handleDrop(event) {
     }
   } catch (error) {
     console.error('Error handling drop:', error);
+  }
+}
+
+// Paste handler for images from clipboard
+function handlePaste(event) {
+  console.log('Paste event fired');
+
+  // Don't interfere if user is editing text
+  if (dependencies.elementFactory?.editorManager?.state === 'editing') {
+    console.log('User is editing text, allowing default paste');
+    return;
+  }
+
+  const clipboardItems = event.clipboardData?.items;
+  if (!clipboardItems) {
+    console.log('No clipboard items found');
+    return;
+  }
+
+  console.log('Clipboard items:', Array.from(clipboardItems).map(item => item.type));
+
+  // Look for image items in clipboard
+  const imageItems = Array.from(clipboardItems).filter(item => item.type.startsWith('image/'));
+
+  if (imageItems.length === 0) {
+    console.log('No images in clipboard, attempting element paste');
+    // No images found - fall back to element paste (Ctrl+V for whiteboard elements)
+    if (dependencies.elementFactory?.pasteElement) {
+      event.preventDefault();
+      dependencies.elementFactory.pasteElement();
+    }
+    return;
+  }
+
+  console.log(`Found ${imageItems.length} image(s) in clipboard, processing...`);
+
+  // Prevent default paste behavior - we're handling images
+  event.preventDefault();
+
+  // Get viewport center for paste position
+  const viewportInfo = dependencies.viewportManager.getViewportInfo();
+  const canvas = dependencies.canvasManager.getCanvas();
+  const rect = canvas.getBoundingClientRect();
+
+  // Use center of visible viewport
+  const centerScreenX = rect.width / 2 / (window.devicePixelRatio || 1);
+  const centerScreenY = rect.height / 2 / (window.devicePixelRatio || 1);
+  const worldPos = dependencies.canvasManager.screenToWorld(centerScreenX, centerScreenY);
+
+  // Process each image
+  imageItems.forEach((item, index) => {
+    const blob = item.getAsFile();
+    if (!blob) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const img = new Image();
+        img.onload = function() {
+          // Calculate position with offset for multiple images
+          let x = worldPos.x + (index * 20);
+          let y = worldPos.y + (index * 20);
+
+          // Apply snap-to-grid if enabled
+          if (dependencies.canvasManager.isSnapToGridEnabled()) {
+            const snapped = dependencies.canvasManager.snapToGridPoint(x, y);
+            x = snapped.x;
+            y = snapped.y;
+          }
+
+          // Create image element
+          const element = dependencies.elementFactory.createImageElement(x, y, img.width, img.height, e.target.result);
+
+          // Send to server
+          if (dependencies.signalrClient.isConnected() && dependencies.signalrClient.getCurrentBoardId()) {
+            dependencies.signalrClient.sendElement(dependencies.signalrClient.getCurrentBoardId(), element, element.id);
+          }
+
+          // Redraw canvas
+          dependencies.canvasManager.redrawCanvas();
+        };
+        img.src = e.target.result;
+      } catch (error) {
+        console.error('Error processing pasted image:', error);
+        if (dependencies.showNotification) {
+          dependencies.showNotification('Error processing pasted image', 'error');
+        }
+      }
+    };
+    reader.readAsDataURL(blob);
+  });
+
+  // Show notification
+  if (dependencies.showNotification && imageItems.length > 0) {
+    const message = imageItems.length === 1
+      ? 'Image pasted successfully'
+      : `${imageItems.length} images pasted successfully`;
+    dependencies.showNotification(message, 'success');
   }
 }
