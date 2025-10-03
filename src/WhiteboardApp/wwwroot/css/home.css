@@ -845,7 +845,7 @@ footer a:hover {
 .emoji-display {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
   padding: var(--space-sm) var(--space-md);
   border: 1px solid var(--chip-border);
   border-radius: var(--radius-md);
@@ -853,6 +853,7 @@ footer a:hover {
   cursor: pointer;
   transition: border-color 0.2s ease;
   min-height: 40px;
+  width: 100%;
 }
 
 .emoji-display:hover {
@@ -883,7 +884,6 @@ footer a:hover {
   position: absolute;
   top: 100%;
   left: 0;
-  right: 0;
   background: var(--surface);
   border: 1px solid var(--chip-border);
   border-radius: var(--radius-md);
@@ -896,6 +896,8 @@ footer a:hover {
   gap: 4px;
   max-height: 200px;
   overflow-y: auto;
+  min-width: 280px;
+  width: max-content;
 }
 
 .emoji-option {
