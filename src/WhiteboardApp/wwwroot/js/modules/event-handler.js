@@ -1548,79 +1548,127 @@ function handlePaste(event) {
   // Look for image items in clipboard
   const imageItems = Array.from(clipboardItems).filter(item => item.type.startsWith('image/'));
 
-  if (imageItems.length === 0) {
-    console.log('No images in clipboard, attempting element paste');
-    // No images found - fall back to element paste (Ctrl+V for whiteboard elements)
-    if (dependencies.elementFactory?.pasteElement) {
-      event.preventDefault();
-      dependencies.elementFactory.pasteElement();
+  if (imageItems.length > 0) {
+    console.log(`Found ${imageItems.length} image(s) in clipboard, processing...`);
+
+    // Prevent default paste behavior - we're handling images
+    event.preventDefault();
+
+    // Get viewport center for paste position
+    const viewportInfo = dependencies.viewportManager.getViewportInfo();
+    const canvas = dependencies.canvasManager.getCanvas();
+    const rect = canvas.getBoundingClientRect();
+
+    // Use center of visible viewport
+    const centerScreenX = rect.width / 2 / (window.devicePixelRatio || 1);
+    const centerScreenY = rect.height / 2 / (window.devicePixelRatio || 1);
+    const worldPos = dependencies.canvasManager.screenToWorld(centerScreenX, centerScreenY);
+
+    // Process each image
+    imageItems.forEach((item, index) => {
+      const blob = item.getAsFile();
+      if (!blob) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const img = new Image();
+          img.onload = function() {
+            // Calculate position with offset for multiple images
+            let x = worldPos.x + (index * 20);
+            let y = worldPos.y + (index * 20);
+
+            // Apply snap-to-grid if enabled
+            if (dependencies.canvasManager.isSnapToGridEnabled()) {
+              const snapped = dependencies.canvasManager.snapToGridPoint(x, y);
+              x = snapped.x;
+              y = snapped.y;
+            }
+
+            // Create image element
+            const element = dependencies.elementFactory.createImageElement(x, y, img.width, img.height, e.target.result);
+
+            // Send to server
+            if (dependencies.signalrClient.isConnected() && dependencies.signalrClient.getCurrentBoardId()) {
+              dependencies.signalrClient.sendElement(dependencies.signalrClient.getCurrentBoardId(), element, element.id);
+            }
+
+            // Redraw canvas
+            dependencies.canvasManager.redrawCanvas();
+          };
+          img.src = e.target.result;
+        } catch (error) {
+          console.error('Error processing pasted image:', error);
+          if (dependencies.showNotification) {
+            dependencies.showNotification('Error processing pasted image', 'error');
+          }
+        }
+      };
+      reader.readAsDataURL(blob);
+    });
+
+    // Show notification
+    if (dependencies.showNotification && imageItems.length > 0) {
+      const message = imageItems.length === 1
+        ? 'Image pasted successfully'
+        : `${imageItems.length} images pasted successfully`;
+      dependencies.showNotification(message, 'success');
     }
     return;
   }
 
-  console.log(`Found ${imageItems.length} image(s) in clipboard, processing...`);
+  // Check for text in clipboard
+  const text = event.clipboardData.getData('text/plain');
+  if (text && text.trim().length > 0) {
+    console.log('Found text in clipboard, creating sticky note');
 
-  // Prevent default paste behavior - we're handling images
-  event.preventDefault();
+    // Prevent default paste behavior
+    event.preventDefault();
 
-  // Get viewport center for paste position
-  const viewportInfo = dependencies.viewportManager.getViewportInfo();
-  const canvas = dependencies.canvasManager.getCanvas();
-  const rect = canvas.getBoundingClientRect();
+    // Get viewport center for paste position
+    const canvas = dependencies.canvasManager.getCanvas();
+    const rect = canvas.getBoundingClientRect();
 
-  // Use center of visible viewport
-  const centerScreenX = rect.width / 2 / (window.devicePixelRatio || 1);
-  const centerScreenY = rect.height / 2 / (window.devicePixelRatio || 1);
-  const worldPos = dependencies.canvasManager.screenToWorld(centerScreenX, centerScreenY);
+    // Use center of visible viewport
+    const centerScreenX = rect.width / 2 / (window.devicePixelRatio || 1);
+    const centerScreenY = rect.height / 2 / (window.devicePixelRatio || 1);
+    const worldPos = dependencies.canvasManager.screenToWorld(centerScreenX, centerScreenY);
 
-  // Process each image
-  imageItems.forEach((item, index) => {
-    const blob = item.getAsFile();
-    if (!blob) return;
+    // Apply snap-to-grid if enabled
+    let x = worldPos.x;
+    let y = worldPos.y;
+    if (dependencies.canvasManager.isSnapToGridEnabled()) {
+      const snapped = dependencies.canvasManager.snapToGridPoint(x, y);
+      x = snapped.x;
+      y = snapped.y;
+    }
 
-    const reader = new FileReader();
-    reader.onload = function(e) {
-      try {
-        const img = new Image();
-        img.onload = function() {
-          // Calculate position with offset for multiple images
-          let x = worldPos.x + (index * 20);
-          let y = worldPos.y + (index * 20);
+    // Create sticky note with pasted text
+    const element = dependencies.elementFactory.createStickyNote(x, y);
+    if (element) {
+      // Set the content
+      element.data.content = text.trim();
 
-          // Apply snap-to-grid if enabled
-          if (dependencies.canvasManager.isSnapToGridEnabled()) {
-            const snapped = dependencies.canvasManager.snapToGridPoint(x, y);
-            x = snapped.x;
-            y = snapped.y;
-          }
-
-          // Create image element
-          const element = dependencies.elementFactory.createImageElement(x, y, img.width, img.height, e.target.result);
-
-          // Send to server
-          if (dependencies.signalrClient.isConnected() && dependencies.signalrClient.getCurrentBoardId()) {
-            dependencies.signalrClient.sendElement(dependencies.signalrClient.getCurrentBoardId(), element, element.id);
-          }
-
-          // Redraw canvas
-          dependencies.canvasManager.redrawCanvas();
-        };
-        img.src = e.target.result;
-      } catch (error) {
-        console.error('Error processing pasted image:', error);
-        if (dependencies.showNotification) {
-          dependencies.showNotification('Error processing pasted image', 'error');
-        }
+      // Send to server
+      if (dependencies.signalrClient.isConnected() && dependencies.signalrClient.getCurrentBoardId()) {
+        dependencies.signalrClient.sendElement(dependencies.signalrClient.getCurrentBoardId(), element, element.id);
       }
-    };
-    reader.readAsDataURL(blob);
-  });
 
-  // Show notification
-  if (dependencies.showNotification && imageItems.length > 0) {
-    const message = imageItems.length === 1
-      ? 'Image pasted successfully'
-      : `${imageItems.length} images pasted successfully`;
-    dependencies.showNotification(message, 'success');
+      // Redraw canvas
+      dependencies.canvasManager.redrawCanvas();
+
+      // Show notification
+      if (dependencies.showNotification) {
+        dependencies.showNotification('Sticky note created with pasted text', 'success');
+      }
+    }
+    return;
+  }
+
+  // No images or text found - fall back to element paste (Ctrl+V for whiteboard elements)
+  console.log('No images or text in clipboard, attempting element paste');
+  if (dependencies.elementFactory?.pasteElement) {
+    event.preventDefault();
+    dependencies.elementFactory.pasteElement();
   }
 }
