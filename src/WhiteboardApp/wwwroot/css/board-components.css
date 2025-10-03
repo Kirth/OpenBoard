@@ -255,7 +255,36 @@
 /* Near snap zone - visual feedback */
 .floating-toolbar.near-snap {
     box-shadow: 0 12px 48px var(--shadow-heavy), 0 0 0 2px var(--accent-primary);
-    opacity: 0.9;
+    opacity: 0.95;
+    animation: snap-pulse 0.8s ease-in-out infinite;
+}
+
+@keyframes snap-pulse {
+    0%, 100% {
+        box-shadow: 0 12px 48px var(--shadow-heavy), 0 0 0 2px var(--accent-primary);
+        transform: translate(-50%, -50%) scale(1);
+    }
+    50% {
+        box-shadow: 0 12px 48px var(--shadow-heavy), 0 0 0 3px var(--accent-primary), 0 0 20px rgba(59, 130, 246, 0.3);
+        transform: translate(-50%, -50%) scale(1.02);
+    }
+}
+
+/* Directional snap hints - subtle glow indicating snap direction */
+.floating-toolbar.snap-left {
+    box-shadow: 0 12px 48px var(--shadow-heavy), -6px 0 0 2px var(--accent-primary), -10px 0 20px rgba(59, 130, 246, 0.4);
+}
+
+.floating-toolbar.snap-right {
+    box-shadow: 0 12px 48px var(--shadow-heavy), 6px 0 0 2px var(--accent-primary), 10px 0 20px rgba(59, 130, 246, 0.4);
+}
+
+.floating-toolbar.snap-top {
+    box-shadow: 0 12px 48px var(--shadow-heavy), 0 -6px 0 2px var(--accent-primary), 0 -10px 20px rgba(59, 130, 246, 0.4);
+}
+
+.floating-toolbar.snap-bottom {
+    box-shadow: 0 12px 48px var(--shadow-heavy), 0 6px 0 2px var(--accent-primary), 0 10px 20px rgba(59, 130, 246, 0.4);
 }
 
 /* Position: Bottom (default) */

@@ -86,14 +86,31 @@ function handleDragStart(event) {
 function handleDragMove(event) {
     if (!isDragging) return;
 
-    const x = event.clientX - dragOffset.x;
-    const y = event.clientY - dragOffset.y;
+    let x = event.clientX - dragOffset.x;
+    let y = event.clientY - dragOffset.y;
+
+    // Check if near any edge for visual feedback
+    const snapPos = checkSnapZone(event.clientX, event.clientY);
+
+    // Apply magnetic effect when near snap zone
+    if (snapPos) {
+        const magnetStrength = 0.3; // How much to pull toward snap position (0-1)
+        const windowWidth = window.innerWidth;
+        const windowHeight = window.innerHeight;
+
+        if (snapPos === SNAP_POSITIONS.LEFT) {
+            x = x + (50 - x) * magnetStrength; // Pull toward left
+        } else if (snapPos === SNAP_POSITIONS.RIGHT) {
+            x = x + ((windowWidth - 50) - x) * magnetStrength; // Pull toward right
+        } else if (snapPos === SNAP_POSITIONS.TOP) {
+            y = y + (90 - y) * magnetStrength; // Pull toward top (below status bar)
+        } else if (snapPos === SNAP_POSITIONS.BOTTOM) {
+            y = y + ((windowHeight - 50) - y) * magnetStrength; // Pull toward bottom
+        }
+    }
 
     // Update position immediately (free-floating)
     updateFreeFloatingPosition(x, y);
-
-    // Check if near any edge for visual feedback
-    checkSnapZone(event.clientX, event.clientY);
 }
 
 /**
@@ -103,8 +120,7 @@ function handleDragEnd(event) {
     if (!isDragging) return;
 
     isDragging = false;
-    toolbar.classList.remove('dragging');
-    toolbar.classList.remove('near-snap');
+    toolbar.classList.remove('dragging', 'near-snap', 'snap-left', 'snap-right', 'snap-top', 'snap-bottom');
     document.body.style.cursor = '';
 
     // Check if should snap to edge
@@ -155,11 +171,30 @@ function handleTouchMove(event) {
     event.preventDefault();
 
     const touch = event.touches[0];
-    const x = touch.clientX - dragOffset.x;
-    const y = touch.clientY - dragOffset.y;
+    let x = touch.clientX - dragOffset.x;
+    let y = touch.clientY - dragOffset.y;
+
+    // Check if near any edge for visual feedback
+    const snapPos = checkSnapZone(touch.clientX, touch.clientY);
+
+    // Apply magnetic effect when near snap zone
+    if (snapPos) {
+        const magnetStrength = 0.3; // How much to pull toward snap position (0-1)
+        const windowWidth = window.innerWidth;
+        const windowHeight = window.innerHeight;
+
+        if (snapPos === SNAP_POSITIONS.LEFT) {
+            x = x + (50 - x) * magnetStrength; // Pull toward left
+        } else if (snapPos === SNAP_POSITIONS.RIGHT) {
+            x = x + ((windowWidth - 50) - x) * magnetStrength; // Pull toward right
+        } else if (snapPos === SNAP_POSITIONS.TOP) {
+            y = y + (90 - y) * magnetStrength; // Pull toward top (below status bar)
+        } else if (snapPos === SNAP_POSITIONS.BOTTOM) {
+            y = y + ((windowHeight - 50) - y) * magnetStrength; // Pull toward bottom
+        }
+    }
 
     updateFreeFloatingPosition(x, y);
-    checkSnapZone(touch.clientX, touch.clientY);
 }
 
 /**
@@ -169,8 +204,7 @@ function handleTouchEnd(event) {
     if (!isDragging) return;
 
     isDragging = false;
-    toolbar.classList.remove('dragging');
-    toolbar.classList.remove('near-snap');
+    toolbar.classList.remove('dragging', 'near-snap', 'snap-left', 'snap-right', 'snap-top', 'snap-bottom');
 
     const touch = event.changedTouches[0];
     const snapPosition = checkShouldSnap(touch.clientX, touch.clientY);
@@ -311,6 +345,7 @@ function updateFreeFloatingPosition(x, y) {
 
 /**
  * Check if near snap zone and provide visual feedback
+ * Returns the snap position if near an edge, null otherwise
  */
 function checkSnapZone(x, y) {
     const windowWidth = window.innerWidth;
@@ -327,13 +362,23 @@ function checkSnapZone(x, y) {
         toolbar.classList.add('near-snap');
 
         // Track which edge we're near
-        if (minDistance === distanceToLeft) nearEdge = SNAP_POSITIONS.LEFT;
-        else if (minDistance === distanceToRight) nearEdge = SNAP_POSITIONS.RIGHT;
-        else if (minDistance === distanceToTop) nearEdge = SNAP_POSITIONS.TOP;
-        else nearEdge = SNAP_POSITIONS.BOTTOM;
+        let snapPos;
+        if (minDistance === distanceToLeft) snapPos = SNAP_POSITIONS.LEFT;
+        else if (minDistance === distanceToRight) snapPos = SNAP_POSITIONS.RIGHT;
+        else if (minDistance === distanceToTop) snapPos = SNAP_POSITIONS.TOP;
+        else snapPos = SNAP_POSITIONS.BOTTOM;
+
+        nearEdge = snapPos;
+
+        // Add direction-specific class for enhanced visual feedback
+        toolbar.classList.remove('snap-left', 'snap-right', 'snap-top', 'snap-bottom');
+        toolbar.classList.add(`snap-${snapPos}`);
+
+        return snapPos;
     } else {
-        toolbar.classList.remove('near-snap');
+        toolbar.classList.remove('near-snap', 'snap-left', 'snap-right', 'snap-top', 'snap-bottom');
         nearEdge = null;
+        return null;
     }
 }
 
