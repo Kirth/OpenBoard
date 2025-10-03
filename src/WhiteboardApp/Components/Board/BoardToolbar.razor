@@ -1,6 +1,9 @@
 @using WhiteboardApp.Components.Board
 
-<div class="floating-toolbar">
+<div class="floating-toolbar" id="floating-toolbar">
+    <div class="toolbar-drag-handle" id="toolbar-drag-handle" title="Drag to reposition toolbar">
+        <span class="drag-dots">⋮</span>
+    </div>
     <div class="toolbar-section">
         <div class="tool-group">
             <button class="tool-btn @(CurrentTool == "select" ? "active" : "")" @onclick="@(() => OnToolSelected.InvokeAsync("select"))" title="Select">

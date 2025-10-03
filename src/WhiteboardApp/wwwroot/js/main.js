@@ -15,6 +15,7 @@ import * as eventHandler from './modules/event-handler.js';
 import * as interactionManager from './modules/interaction-manager.js';
 import * as uiFeatures from './modules/ui-features.js';
 import * as blazorIntegration from './modules/blazor-integration.js';
+import * as toolbarManager from './modules/toolbar-manager.js';
 import groupManager from './modules/group-manager.js';
 
 // User menu state
@@ -97,6 +98,9 @@ export async function initializeApplication() {
 
     // Initialize dark mode
     uiFeatures.initializeDarkMode();
+
+    // Initialize toolbar manager
+    toolbarManager.initialize();
 
     // Setup global exposure for Blazor integration
     blazorIntegration.setupGlobalExposure();
@@ -345,7 +349,8 @@ export const modules = {
   eventHandler,
   interactionManager,
   uiFeatures,
-  blazorIntegration
+  blazorIntegration,
+  toolbarManager
 };
 
 console.log('Main module loaded - streamlined coordination layer');

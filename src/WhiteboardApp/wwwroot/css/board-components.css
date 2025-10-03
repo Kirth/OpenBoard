@@ -205,9 +205,6 @@
 /* Toolbar Styles */
 .floating-toolbar {
     position: absolute;
-    bottom: 15px;
-    left: 50%;
-    transform: translateX(-50%);
     background: var(--toolbar-bg);
     backdrop-filter: blur(10px);
     border-radius: 50px;
@@ -218,7 +215,103 @@
     align-items: center;
     gap: 8px;
     z-index: 200;
-    transition: background 0.3s ease, border-color 0.3s ease;
+    transition: background 0.3s ease, border-color 0.3s ease; /* Only transition colors, not position */
+}
+
+/* Toolbar drag handle */
+.toolbar-drag-handle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: grab;
+    user-select: none;
+    padding: 0 4px;
+    color: var(--text-secondary);
+    opacity: 0.6;
+    transition: opacity 0.2s ease;
+}
+
+.toolbar-drag-handle:hover {
+    opacity: 1;
+}
+
+.toolbar-drag-handle:active {
+    cursor: grabbing;
+}
+
+.drag-dots {
+    font-size: 18px;
+    line-height: 1;
+}
+
+/* Dragging state */
+.floating-toolbar.dragging {
+    opacity: 0.8;
+    cursor: grabbing;
+    box-shadow: 0 12px 48px var(--shadow-heavy);
+    transition: opacity 0.1s ease, box-shadow 0.1s ease; /* Fast transitions only for visual feedback */
+}
+
+/* Near snap zone - visual feedback */
+.floating-toolbar.near-snap {
+    box-shadow: 0 12px 48px var(--shadow-heavy), 0 0 0 2px var(--accent-primary);
+    opacity: 0.9;
+}
+
+/* Position: Bottom (default) */
+.floating-toolbar.toolbar-bottom {
+    bottom: 15px;
+    left: 50%;
+    transform: translateX(-50%);
+    flex-direction: row;
+    transition: bottom 0.3s ease, left 0.3s ease, transform 0.3s ease, background 0.3s ease, border-color 0.3s ease;
+}
+
+/* Position: Top */
+.floating-toolbar.toolbar-top {
+    top: 75px; /* Below status bar */
+    left: 50%;
+    transform: translateX(-50%);
+    flex-direction: row;
+    transition: top 0.3s ease, left 0.3s ease, transform 0.3s ease, background 0.3s ease, border-color 0.3s ease;
+}
+
+/* Position: Left */
+.floating-toolbar.toolbar-left {
+    left: 15px;
+    top: 50%;
+    transform: translateY(-50%);
+    flex-direction: column;
+    border-radius: 50px;
+    padding: 20px 12px;
+    transition: left 0.3s ease, top 0.3s ease, transform 0.3s ease, background 0.3s ease, border-color 0.3s ease;
+}
+
+.floating-toolbar.toolbar-left .toolbar-drag-handle {
+    padding: 4px 0;
+}
+
+.floating-toolbar.toolbar-left .drag-dots {
+    transform: rotate(90deg);
+}
+
+/* Position: Right */
+.floating-toolbar.toolbar-right {
+    right: 15px;
+    top: 50%;
+    transform: translateY(-50%);
+    flex-direction: column;
+    border-radius: 50px;
+    padding: 20px 12px;
+    transition: right 0.3s ease, top 0.3s ease, transform 0.3s ease, background 0.3s ease, border-color 0.3s ease;
+}
+
+.floating-toolbar.toolbar-right .toolbar-drag-handle {
+    padding: 4px 0;
+}
+
+.floating-toolbar.toolbar-right .drag-dots {
+    transform: rotate(90deg);
 }
 
 .toolbar-section {
@@ -634,32 +727,74 @@
         padding: 0 10px;
         height: 45px;
     }
-    
+
     .board-title {
         font-size: 16px;
     }
-    
+
     .canvas-container {
         top: 0;
         bottom: 0;
     }
-    
+
     .floating-toolbar {
-        bottom: 15px;
-        left: 8px;
-        right: 8px;
-        transform: none;
         padding: 6px 10px;
         border-radius: 25px;
-        height: 50px;
         box-sizing: border-box;
-        overflow-x: auto;
-        overflow-y: hidden;
-        white-space: nowrap;
         background: var(--toolbar-bg-mobile);
         backdrop-filter: blur(12px);
         box-shadow: 0 4px 20px var(--shadow-heavy);
         z-index: 200;
+    }
+
+    /* Mobile: Bottom position */
+    .floating-toolbar.toolbar-bottom {
+        bottom: 15px;
+        left: 8px;
+        right: 8px;
+        width: auto;
+        transform: none;
+        flex-direction: row;
+        overflow-x: auto;
+        overflow-y: hidden;
+        white-space: nowrap;
+    }
+
+    /* Mobile: Top position */
+    .floating-toolbar.toolbar-top {
+        top: 60px;
+        left: 8px;
+        right: 8px;
+        width: auto;
+        transform: none;
+        flex-direction: row;
+        overflow-x: auto;
+        overflow-y: hidden;
+        white-space: nowrap;
+    }
+
+    /* Mobile: Left position */
+    .floating-toolbar.toolbar-left {
+        left: 8px;
+        top: 50%;
+        width: auto;
+        transform: translateY(-50%);
+        flex-direction: column;
+        overflow-y: auto;
+        overflow-x: hidden;
+        max-height: 70vh;
+    }
+
+    /* Mobile: Right position */
+    .floating-toolbar.toolbar-right {
+        right: 8px;
+        top: 50%;
+        width: auto;
+        transform: translateY(-50%);
+        flex-direction: column;
+        overflow-y: auto;
+        overflow-x: hidden;
+        max-height: 70vh;
     }
     
     .toolbar-section {
@@ -740,21 +875,45 @@
         padding: 0 8px;
         height: 40px;
     }
-    
+
     .board-title {
         font-size: 14px;
     }
-    
+
     .canvas-container {
         top: 0;
         bottom: 0;
     }
-    
+
     .floating-toolbar {
-        bottom: 15px;
-        height: 45px;
         padding: 4px 8px;
         z-index: 200;
+    }
+
+    /* Extra small: Bottom position */
+    .floating-toolbar.toolbar-bottom {
+        bottom: 15px;
+        left: 8px;
+        right: 8px;
+    }
+
+    /* Extra small: Top position */
+    .floating-toolbar.toolbar-top {
+        top: 55px;
+        left: 8px;
+        right: 8px;
+    }
+
+    /* Extra small: Left position */
+    .floating-toolbar.toolbar-left {
+        left: 8px;
+        max-height: 65vh;
+    }
+
+    /* Extra small: Right position */
+    .floating-toolbar.toolbar-right {
+        right: 8px;
+        max-height: 65vh;
     }
     
     .tool-btn {
