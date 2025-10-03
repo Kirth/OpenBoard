@@ -30,146 +30,105 @@
 {
     <div class="modal board-overview-modal" @onclick="HideBoardOverviewModal">
         <div class="modal-content board-overview-content" @onclick:stopPropagation="true">
-            <div class="modal-header">
-                <h3>@boardStats.BoardName</h3>
-                <button class="modal-close" @onclick="HideBoardOverviewModal">&times;</button>
-            </div>
-            
-            <div class="modal-body">
-                <!-- Board Statistics Hero Section -->
-                <div class="overview-section stats-hero-section">
-                    <div class="stats-hero">
-                        <div class="main-stat">
-                            <span class="main-stat-number">@boardStats.TotalElements</span>
-                            <span class="main-stat-label">Total Elements</span>
-                        </div>
-                        <div class="sub-stats">
-                            <div class="sub-stat">
-                                <span class="sub-stat-label">Created</span>
-                                <span class="sub-stat-value">@boardStats.CreatedAt.ToString("MMM dd, yyyy")</span>
-                            </div>
-                            <div class="sub-stat">
-                                <span class="sub-stat-label">Last Modified</span>
-                                <span class="sub-stat-value">@boardStats.UpdatedAt.ToString("MMM dd, yyyy")</span>
-                            </div>
-                            <div class="sub-stat">
-                                <span class="sub-stat-label">Visibility</span>
-                                <span class="sub-stat-value">@GetBoardAccessLevelDisplay(boardStats)</span>
-                            </div>
+            <div class="modal-header board-info-header">
+                <div class="board-title-row">
+                    <span class="board-emoji">@boardStats.BoardEmoji</span>
+                    <div class="board-title-info">
+                        <h3>@boardStats.BoardName</h3>
+                        <div class="board-meta">
+                            <span class="meta-item">@boardStats.TotalElements @(boardStats.TotalElements == 1 ? "element" : "elements")</span>
+                            <span class="meta-separator">•</span>
+                            <span class="meta-item">@GetBoardAccessLevelDisplay(boardStats)</span>
                         </div>
                     </div>
                 </div>
+                <button class="modal-close" @onclick="HideBoardOverviewModal">&times;</button>
+            </div>
 
-                <!-- Content Breakdown Statistics -->
+            <div class="modal-body">
+                <!-- Simple Stats -->
+                <div class="board-stats-simple">
+                    <div class="stat-row">
+                        <span class="stat-label">Created</span>
+                        <span class="stat-value">@boardStats.CreatedAt.ToString("MMM dd, yyyy")</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Last modified</span>
+                        <span class="stat-value">@boardStats.UpdatedAt.ToString("MMM dd, yyyy")</span>
+                    </div>
+                </div>
+
+                <!-- Content Breakdown -->
                 @if (boardStats.ElementsByType.Any())
                 {
-                    <div class="overview-section content-stats-section">
-                        <div class="section-header">
-                            <span class="section-icon">📊</span>
-                            <h4>Content Breakdown</h4>
-                        </div>
-                        <div class="content-stats-grid">
+                    <div class="content-breakdown">
+                        <h4>Content</h4>
+                        <div class="content-items">
                             @foreach (var elementType in boardStats.ElementsByType.OrderByDescending(kvp => kvp.Value))
                             {
-                                <div class="content-stat-card">
-                                    <div class="content-stat-icon">@GetElementTypeIcon(elementType.Key)</div>
-                                    <div class="content-stat-info">
-                                        <span class="content-stat-number">@elementType.Value</span>
-                                        <span class="content-stat-type">@elementType.Key</span>
-                                    </div>
-                                    <div class="content-stat-bar">
-                                        <div class="content-stat-progress" style="width: @(Math.Round((double)elementType.Value / boardStats.TotalElements * 100, 1))%"></div>
-                                    </div>
+                                <div class="content-item">
+                                    <span class="content-type">@elementType.Key</span>
+                                    <span class="content-count">@elementType.Value</span>
                                 </div>
                             }
                         </div>
                     </div>
                 }
 
-                <!-- Manage Board Row -->
-                <div class="overview-section manage-row-section">
-                    <div class="section-header">
-                        <span class="section-icon">⚙️</span>
-                        <h4>Manage Board</h4>
-                    </div>
-                    <div class="actions-row">
-                        <!-- General Management -->
-                        <div class="action-group">
-                            <span class="action-group-label">General</span>
-                            <div class="action-buttons">
-                                <button class="action-btn" @onclick="DuplicateBoardFromOverview">
-                                    <span class="action-btn-icon">📋</span>
-                                    <span class="action-btn-label">Duplicate Board</span>
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- Owner Management (Owner Only) -->
+                <!-- Actions -->
+                <div class="board-actions">
+                    <h4>Actions</h4>
+                    <div class="action-grid">
+                        <!-- Export group -->
+                        <button class="action-button" @onclick="ExportAsHighResPngFromOverview">
+                            <span class="action-icon">🖼️</span>
+                            Export as PNG
+                        </button>
+                        <button class="action-button" @onclick="ExportAsPdfFromOverview">
+                            <span class="action-icon">📄</span>
+                            Export as PDF
+                        </button>
                         @if (currentUser != null && isOwner)
                         {
-                            <div class="action-group">
-                                <span class="action-group-label">Owner Controls</span>
-                                <div class="action-buttons">
-                                    <button class="action-btn" @onclick="ShowBoardSettingsFromOverview">
-                                        <span class="action-btn-icon">⚙️</span>
-                                        <span class="action-btn-label">Board Settings</span>
-                                    </button>
-                                    <button class="action-btn" @onclick="ShowCollaboratorManagementFromOverview">
-                                        <span class="action-btn-icon">👥</span>
-                                        <span class="action-btn-label">Manage Collaborators</span>
-                                    </button>
-                                </div>
-                            </div>
+                            <button class="action-button" @onclick="ShowJsonExportModal">
+                                <span class="action-icon">📋</span>
+                                Export as JSON
+                            </button>
+                        }
 
-                            <!-- Danger Zone (Owner Only) -->
-                            <div class="action-group danger-group">
-                                <span class="action-group-label">Danger Zone</span>
-                                <div class="action-buttons">
-                                    <button class="action-btn danger" @onclick="ShowClearConfirmationFromOverview">
-                                        <span class="action-btn-icon">🗑️</span>
-                                        <span class="action-btn-label">Clear All Content</span>
-                                    </button>
-                                </div>
-                            </div>
+                        <!-- Spacer -->
+                        <div class="action-spacer"></div>
+                        <div class="action-spacer"></div>
+
+                        <!-- Board management -->
+                        <button class="action-button" @onclick="DuplicateBoardFromOverview">
+                            <span class="action-icon">📑</span>
+                            Duplicate Board
+                        </button>
+                        @if (currentUser != null && isOwner)
+                        {
+                            <button class="action-button" @onclick="ShowBoardSettingsFromOverview">
+                                <span class="action-icon">⚙️</span>
+                                Board Settings
+                            </button>
+                            <button class="action-button" @onclick="ShowCollaboratorManagementFromOverview">
+                                <span class="action-icon">👥</span>
+                                Manage Collaborators
+                            </button>
+
+                            <!-- Spacer -->
+                            <div class="action-spacer"></div>
+
+                            <!-- Danger zone -->
+                            <button class="action-button action-danger" @onclick="ShowClearConfirmationFromOverview">
+                                <span class="action-icon">🗑️</span>
+                                Clear All Content
+                            </button>
                         }
                     </div>
                 </div>
-
-                <!-- Export Board Row -->
-                <div class="overview-section export-row-section">
-                    <div class="section-header">
-                        <span class="section-icon">📤</span>
-                        <h4>Export Board</h4>
-                    </div>
-                    <div class="actions-row">
-                        <div class="action-group export-group">
-                            <span class="action-group-label">Export Board to...</span>
-                            <div class="action-buttons horizontal">
-                                <button class="action-btn" @onclick="ExportAsPngFromOverview">
-                                    <span class="action-btn-icon">🖼️</span>
-                                    <span class="action-btn-label">PNG Image</span>
-                                </button>
-                                <button class="action-btn" @onclick="ExportAsPdfFromOverview">
-                                    <span class="action-btn-icon">📄</span>
-                                    <span class="action-btn-label">PDF Document</span>
-                                </button>
-                                <button class="action-btn" @onclick="ExportAsHighResPngFromOverview">
-                                    <span class="action-btn-icon">🎯</span>
-                                    <span class="action-btn-label">High-Res PNG</span>
-                                </button>
-                                @if (currentUser != null && isOwner)
-                                {
-                                    <button class="action-btn" @onclick="ShowJsonExportModal">
-                                        <span class="action-btn-icon">📋</span>
-                                        <span class="action-btn-label">JSON Data</span>
-                                    </button>
-                                }
-                            </div>
-                        </div>
-                    </div>
-                </div>
             </div>
-            
+
             <div class="modal-footer">
                 <button class="btn btn-secondary" @onclick="HideBoardOverviewModal">Close</button>
             </div>

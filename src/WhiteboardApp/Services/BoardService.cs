@@ -163,6 +163,7 @@ public class BoardService
         {
             BoardId = board.Id,
             BoardName = board.Name,
+            BoardEmoji = board.Emoji ?? "📋",
             CreatedAt = board.CreatedAt,
             UpdatedAt = board.UpdatedAt,
             IsPublic = board.IsPublic, // Legacy field for backward compatibility
@@ -490,6 +491,7 @@ public class BoardStats
 {
     public Guid BoardId { get; set; }
     public string BoardName { get; set; } = string.Empty;
+    public string BoardEmoji { get; set; } = "📋";
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public bool IsPublic { get; set; } // Legacy field for backward compatibility
