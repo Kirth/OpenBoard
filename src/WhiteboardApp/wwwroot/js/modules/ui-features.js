@@ -288,19 +288,26 @@ function createElementContextMenu(element) {
   const hasStylng = isShape || isLine;
   console.log('isPath:', isPath, 'hasStylng:', hasStylng);
 
+  const lockIcon = getLockButtonText(element).includes('Unlock') ? '🔓' : '🔒';
+
   let menuHTML = `
-        <div class="context-menu-section">
-            <div class="context-menu-title">${element.type}</div>
-        </div>
-        <div class="context-menu-section">
-            <button class="context-menu-item" onclick="toggleElementLockAction('${element.id}')">
-                ${getLockButtonText(element)}
+        <div class="context-menu-title">${element.type}</div>
+        <div class="context-menu-ribbon">
+            <button class="ribbon-btn" onclick="toggleElementLockAction('${element.id}')" title="Lock/Unlock">
+                ${lockIcon}
             </button>
-            <button class="context-menu-item" onclick="bringElementToFront('${element.id}')">
-                📤 Bring to Front
+            <button class="ribbon-btn" onclick="window.duplicateSelectedElement(); hideContextMenu();" title="Duplicate">
+                📋
             </button>
-            <button class="context-menu-item" onclick="sendElementToBack('${element.id}')">
-                📥 Send to Back
+            <button class="ribbon-btn" onclick="bringElementToFront('${element.id}')" title="Bring to Front">
+                ⬆️
+            </button>
+            <button class="ribbon-btn" onclick="sendElementToBack('${element.id}')" title="Send to Back">
+                ⬇️
+            </button>
+            <div class="ribbon-divider"></div>
+            <button class="ribbon-btn ribbon-danger" onclick="deleteElement('${element.id}')" title="Delete">
+                🗑️
             </button>
         </div>
     `;
@@ -514,11 +521,6 @@ function createElementContextMenu(element) {
     }
   }
 
-  menuHTML += `
-        <button class="context-menu-item context-menu-delete" onclick="deleteElement('${element.id}')">
-            🗑️ Delete
-        </button>
-    `;
 
   console.log('Final complete menu HTML length:', menuHTML.length);
   console.log('Final complete menu HTML:', menuHTML);
@@ -956,8 +958,9 @@ export function sendElementToBack(elementId) {
 
 export function deleteElement(elementId) {
   hideContextMenu();
-  if (dependencies.elementFactory) {
-    dependencies.elementFactory.deleteElement(elementId);
+  if (dependencies.elementFactory && dependencies.elementFactory.deleteMultipleElements) {
+    // Use deleteMultipleElements with a Set containing just this element
+    dependencies.elementFactory.deleteMultipleElements(new Set([elementId]));
   }
 }
 

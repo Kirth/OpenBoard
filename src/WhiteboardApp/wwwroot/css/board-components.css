@@ -506,6 +506,58 @@
     margin-top: 4px;
 }
 
+/* Context Menu Ribbon */
+.context-menu-ribbon {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-sm);
+    margin-bottom: 4px;
+}
+
+.ribbon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: transparent;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 16px;
+    transition: background 0.15s ease;
+    flex-shrink: 0;
+}
+
+.ribbon-btn:hover {
+    background: var(--muted);
+}
+
+.ribbon-btn.ribbon-danger:hover {
+    background: var(--error-bg);
+    color: var(--error);
+}
+
+.ribbon-divider {
+    width: 1px;
+    height: 20px;
+    background: var(--border-light);
+    margin: 0 2px;
+}
+
+.context-menu-title {
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 4px 8px;
+    margin-bottom: 4px;
+}
+
 /* Minimap Styles */
 .minimap-container {
     position: absolute;
@@ -663,7 +715,13 @@
         font-size: 12px;
         padding: 3px 8px;
     }
-    
+
+    .ribbon-btn {
+        width: 36px;
+        height: 36px;
+        font-size: 18px;
+    }
+
     .color-option {
         width: 28px;
         height: 28px;

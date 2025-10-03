@@ -1514,6 +1514,20 @@ export function duplicateSelectedElement() {
 
   saveCanvasState('Duplicate Element');
 
+  // Send to server for persistence and synchronization
+  if (dependencies.sendElement && dependencies.currentBoardId) {
+    const boardId = dependencies.currentBoardId();
+    if (boardId) {
+      dependencies.sendElement(boardId, duplicate, duplicate.id)
+        .catch(error => {
+          console.error('Failed to save duplicated element to server:', error);
+          if (dependencies.showNotification) {
+            dependencies.showNotification('Failed to save duplicate - other clients may not see it', 'warning');
+          }
+        });
+    }
+  }
+
   if (dependencies.redrawCanvas) {
     dependencies.redrawCanvas();
   }

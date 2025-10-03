@@ -1,32 +1,21 @@
 <div id="contextMenu" class="context-menu hidden">
-    <div class="context-menu-item" onclick="undoAction()">
-        <div class="context-item-content">
-            <span class="context-icon">↶</span>
-            Undo
-        </div>
-        <span class="context-hotkey">Ctrl+Z</span>
+    <!-- Ribbon for quick actions -->
+    <div class="context-menu-ribbon">
+        <button class="ribbon-btn" onclick="duplicateSelected()" title="Duplicate">
+            📋
+        </button>
+        <button class="ribbon-btn" onclick="bringSelectedToFront()" title="Bring to Front">
+            ⬆️
+        </button>
+        <button class="ribbon-btn" onclick="sendSelectedToBack()" title="Send to Back">
+            ⬇️
+        </button>
+        <div class="ribbon-divider"></div>
+        <button class="ribbon-btn ribbon-danger" onclick="deleteSelected()" title="Delete">
+            🗑️
+        </button>
     </div>
-    <div class="context-menu-item" onclick="redoAction()">
-        <div class="context-item-content">
-            <span class="context-icon">↷</span>
-            Redo
-        </div>
-        <span class="context-hotkey">Ctrl+Shift+Z</span>
-    </div>
-    <div class="context-menu-divider"></div>
-    
-    <div class="context-menu-item" onclick="bringSelectedToFront()">
-        <div class="context-item-content">
-            <span class="context-icon">⬆️</span>
-            Bring to Front
-        </div>
-    </div>
-    <div class="context-menu-item" onclick="sendSelectedToBack()">
-        <div class="context-item-content">
-            <span class="context-icon">⬇️</span>
-            Send to Back
-        </div>
-    </div>
+
     <div class="context-menu-divider"></div>
     
     <!-- Style options for shapes -->
@@ -134,18 +123,21 @@
         </div>
     </div>
     <div id="groupDivider" class="context-menu-divider hidden"></div>
-    
-    <div class="context-menu-item" onclick="duplicateSelected()">
+
+    <!-- Undo/Redo at bottom -->
+    <div class="context-menu-item" style="margin-top: 4px;" onclick="undoAction()">
         <div class="context-item-content">
-            <span class="context-icon">📋</span>
-            Duplicate
+            <span class="context-icon">↶</span>
+            Undo
         </div>
+        <span class="context-hotkey">Ctrl+Z</span>
     </div>
-    <div class="context-menu-item delete-item" onclick="deleteSelected()">
+    <div class="context-menu-item" onclick="redoAction()">
         <div class="context-item-content">
-            <span class="context-icon">🗑️</span>
-            Delete
+            <span class="context-icon">↷</span>
+            Redo
         </div>
+        <span class="context-hotkey">Ctrl+Shift+Z</span>
     </div>
 </div>
 
