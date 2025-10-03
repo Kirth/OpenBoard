@@ -290,7 +290,7 @@ function createElementContextMenu(element) {
 
   let menuHTML = `
         <div class="context-menu-section">
-            <div class="context-menu-title">Element: ${element.type}</div>
+            <div class="context-menu-title">${element.type}</div>
         </div>
         <div class="context-menu-section">
             <button class="context-menu-item" onclick="toggleElementLockAction('${element.id}')">
@@ -515,11 +515,9 @@ function createElementContextMenu(element) {
   }
 
   menuHTML += `
-        <div class="context-menu-section">
-            <button class="context-menu-item context-menu-delete" onclick="deleteElement('${element.id}')">
-                🗑️ Delete
-            </button>
-        </div>
+        <button class="context-menu-item context-menu-delete" onclick="deleteElement('${element.id}')">
+            🗑️ Delete
+        </button>
     `;
 
   console.log('Final complete menu HTML length:', menuHTML.length);
