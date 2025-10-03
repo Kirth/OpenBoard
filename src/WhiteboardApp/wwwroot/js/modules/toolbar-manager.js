@@ -59,6 +59,9 @@ export function initialize() {
     document.addEventListener('touchmove', handleTouchMove, { passive: false });
     document.addEventListener('touchend', handleTouchEnd);
 
+    // Window resize handler to keep toolbar accessible
+    window.addEventListener('resize', handleWindowResize);
+
     console.log('Toolbar manager initialized');
 }
 
@@ -192,6 +195,58 @@ function handleTouchEnd(event) {
 
     nearEdge = null;
     savePosition();
+}
+
+/**
+ * Handle window resize to keep toolbar accessible
+ */
+function handleWindowResize() {
+    // Only adjust free-floating toolbars (snapped ones adjust via CSS automatically)
+    if (!isSnapped && freeFloatingX !== null && freeFloatingY !== null) {
+        const rect = toolbar.getBoundingClientRect();
+        const windowWidth = window.innerWidth;
+        const windowHeight = window.innerHeight;
+
+        const margin = 20; // Minimum margin from edges
+        let newX = freeFloatingX;
+        let newY = freeFloatingY;
+        let needsUpdate = false;
+
+        // Check if toolbar is off-screen or too close to edges
+        const toolbarHalfWidth = rect.width / 2;
+        const toolbarHalfHeight = rect.height / 2;
+
+        // Clamp X position
+        const minX = toolbarHalfWidth + margin;
+        const maxX = windowWidth - toolbarHalfWidth - margin;
+        if (newX < minX) {
+            newX = minX;
+            needsUpdate = true;
+        } else if (newX > maxX) {
+            newX = maxX;
+            needsUpdate = true;
+        }
+
+        // Clamp Y position
+        const minY = toolbarHalfHeight + margin;
+        const maxY = windowHeight - toolbarHalfHeight - margin;
+        if (newY < minY) {
+            newY = minY;
+            needsUpdate = true;
+        } else if (newY > maxY) {
+            newY = maxY;
+            needsUpdate = true;
+        }
+
+        // Update position if needed
+        if (needsUpdate) {
+            freeFloatingX = newX;
+            freeFloatingY = newY;
+            updateFreeFloatingPosition(newX, newY);
+            savePosition();
+            console.log('Toolbar repositioned to stay accessible after resize');
+        }
+    }
 }
 
 /**
@@ -459,4 +514,5 @@ export function cleanup() {
     document.removeEventListener('mouseup', handleDragEnd);
     document.removeEventListener('touchmove', handleTouchMove);
     document.removeEventListener('touchend', handleTouchEnd);
+    window.removeEventListener('resize', handleWindowResize);
 }
