@@ -202,6 +202,7 @@ function setupModuleDependencies() {
     createStickyNoteAtPosition: interactionManager.createStickyNoteAtPosition,
     triggerImageUpload: interactionManager.triggerImageUpload,
     handleImageUpload: interactionManager.handleImageUpload,
+    handleImageDrop: interactionManager.handleImageDrop,
     updateCursorForHover: interactionManager.updateCursorForHover,
     startSelectionRectangle: interactionManager.startSelectionRectangle,
     updateSelectionRectangle: interactionManager.updateSelectionRectangle,

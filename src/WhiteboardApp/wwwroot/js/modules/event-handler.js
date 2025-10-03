@@ -82,6 +82,11 @@ export function setupEventHandlers() {
     console.warn('Image upload input not found');
   }
 
+  // Set up drag-and-drop handlers for images
+  canvas.addEventListener('dragover', handleDragOver);
+  canvas.addEventListener('dragleave', handleDragLeave);
+  canvas.addEventListener('drop', handleDrop);
+
   console.log('Event handlers set up');
 }
 
@@ -1455,4 +1460,66 @@ function getLineHandleAt(element, x, y) {
     return 'end';
   }
   return null;
+}
+
+// Drag-and-drop handlers for images
+function handleDragOver(event) {
+  event.preventDefault();
+  event.stopPropagation();
+
+  // Check if dragging files
+  if (event.dataTransfer && event.dataTransfer.types.includes('Files')) {
+    event.dataTransfer.dropEffect = 'copy';
+
+    // Add visual feedback
+    const canvas = event.target;
+    canvas.style.outline = '2px dashed var(--accent-primary)';
+    canvas.style.outlineOffset = '-2px';
+  }
+}
+
+function handleDragLeave(event) {
+  event.preventDefault();
+  event.stopPropagation();
+
+  // Remove visual feedback
+  const canvas = event.target;
+  canvas.style.outline = '';
+  canvas.style.outlineOffset = '';
+}
+
+function handleDrop(event) {
+  event.preventDefault();
+  event.stopPropagation();
+
+  try {
+    // Remove visual feedback
+    const canvas = event.target;
+    canvas.style.outline = '';
+    canvas.style.outlineOffset = '';
+
+    // Get dropped files
+    const files = event.dataTransfer?.files;
+    if (!files || files.length === 0) {
+      return;
+    }
+
+    // Calculate drop position
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const scaleX = rect.width / (canvas.width / dpr);
+    const scaleY = rect.height / (canvas.height / dpr);
+    const screenX = (event.clientX - rect.left) / scaleX;
+    const screenY = (event.clientY - rect.top) / scaleY;
+
+    // Convert to world coordinates
+    const worldPos = dependencies.canvasManager.screenToWorld(screenX, screenY);
+
+    // Handle the dropped images
+    if (dependencies.handleImageDrop) {
+      dependencies.handleImageDrop(files, worldPos.x, worldPos.y);
+    }
+  } catch (error) {
+    console.error('Error handling drop:', error);
+  }
 }

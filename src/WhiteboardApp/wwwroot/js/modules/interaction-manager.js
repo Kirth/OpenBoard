@@ -233,7 +233,7 @@ export function handleImageUpload(event) {
         // Apply snap-to-grid if enabled
         let x = dependencies.pendingImagePosition.x;
         let y = dependencies.pendingImagePosition.y;
-        
+
         if (dependencies.canvasManager.isSnapToGridEnabled()) {
           const snapped = dependencies.canvasManager.snapToGridPoint(x, y);
           x = snapped.x;
@@ -242,18 +242,18 @@ export function handleImageUpload(event) {
 
         // Create image element
         const element = dependencies.elementFactory.createImageElement(x, y, img.width, img.height, e.target.result);
-        
+
         // Send to server
         if (dependencies.signalrClient.isConnected() && dependencies.signalrClient.getCurrentBoardId()) {
           dependencies.signalrClient.sendElement(dependencies.signalrClient.getCurrentBoardId(), element, element.id);
         }
-        
+
         // Clear pending position
         dependencies.pendingImagePosition = null;
-        
+
         // Redraw canvas
         dependencies.canvasManager.redrawCanvas();
-        
+
         if (dependencies.showNotification) {
           dependencies.showNotification('Image added successfully', 'success');
         }
@@ -267,9 +267,76 @@ export function handleImageUpload(event) {
     }
   };
   reader.readAsDataURL(file);
-  
+
   // Clear the input
   event.target.value = '';
+}
+
+// Handle drag-and-drop image upload
+export function handleImageDrop(files, dropX, dropY) {
+  if (!files || files.length === 0) {
+    console.warn('No files to process');
+    return;
+  }
+
+  // Filter for image files only
+  const imageFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
+
+  if (imageFiles.length === 0) {
+    console.warn('No valid image files found');
+    if (dependencies.showNotification) {
+      dependencies.showNotification('Please drop valid image files', 'error');
+    }
+    return;
+  }
+
+  // Process each image file
+  imageFiles.forEach((file, index) => {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const img = new Image();
+        img.onload = function() {
+          // Calculate position with offset for multiple files
+          let x = dropX + (index * 20);
+          let y = dropY + (index * 20);
+
+          // Apply snap-to-grid if enabled
+          if (dependencies.canvasManager.isSnapToGridEnabled()) {
+            const snapped = dependencies.canvasManager.snapToGridPoint(x, y);
+            x = snapped.x;
+            y = snapped.y;
+          }
+
+          // Create image element
+          const element = dependencies.elementFactory.createImageElement(x, y, img.width, img.height, e.target.result);
+
+          // Send to server
+          if (dependencies.signalrClient.isConnected() && dependencies.signalrClient.getCurrentBoardId()) {
+            dependencies.signalrClient.sendElement(dependencies.signalrClient.getCurrentBoardId(), element, element.id);
+          }
+
+          // Redraw canvas
+          dependencies.canvasManager.redrawCanvas();
+        };
+        img.src = e.target.result;
+      } catch (error) {
+        console.error('Error processing dropped image:', error);
+        if (dependencies.showNotification) {
+          dependencies.showNotification('Error processing image', 'error');
+        }
+      }
+    };
+    reader.readAsDataURL(file);
+  });
+
+  // Show notification
+  if (dependencies.showNotification) {
+    const message = imageFiles.length === 1
+      ? 'Image added successfully'
+      : `${imageFiles.length} images added successfully`;
+    dependencies.showNotification(message, 'success');
+  }
 }
 
 // Selection and interaction handling for select tool
