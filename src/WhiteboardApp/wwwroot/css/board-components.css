@@ -314,6 +314,86 @@
     transform: rotate(90deg);
 }
 
+/* Layout Modes */
+
+/* Horizontal Layout (default) */
+.floating-toolbar.layout-horizontal {
+    flex-direction: row;
+}
+
+.floating-toolbar.layout-horizontal .toolbar-section {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+}
+
+.floating-toolbar.layout-horizontal .tool-group {
+    flex-direction: row;
+}
+
+/* Vertical Layout */
+.floating-toolbar.layout-vertical {
+    flex-direction: column;
+}
+
+.floating-toolbar.layout-vertical .toolbar-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+.floating-toolbar.layout-vertical .tool-group {
+    flex-direction: column;
+}
+
+.floating-toolbar.layout-vertical .drag-dots {
+    transform: rotate(90deg);
+}
+
+/* Blob Layout (grid with 3 columns) */
+.floating-toolbar.layout-blob {
+    flex-direction: column;
+    padding: 16px;
+    border-radius: var(--radius-lg);
+    max-width: 180px;
+}
+
+.floating-toolbar.layout-blob .toolbar-section {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+.floating-toolbar.layout-blob .tool-group {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    width: 100%;
+}
+
+.floating-toolbar.layout-blob .tool-btn {
+    width: 44px;
+    height: 44px;
+}
+
+/* Adjust drag handle for blob mode */
+.floating-toolbar.layout-blob .toolbar-drag-handle {
+    width: 100%;
+    text-align: center;
+    margin-bottom: 6px;
+    padding: 2px 0;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.floating-toolbar.layout-blob .drag-dots {
+    transform: rotate(90deg);
+}
+
 .toolbar-section {
     display: flex;
     align-items: center;
@@ -867,6 +947,21 @@
         gap: 8px;
         padding: 12px;
     }
+
+    /* Mobile: Blob layout adjustments */
+    .floating-toolbar.layout-blob {
+        max-width: 160px;
+        padding: 12px;
+    }
+
+    .floating-toolbar.layout-blob .tool-group {
+        gap: 4px;
+    }
+
+    .floating-toolbar.layout-blob .tool-btn {
+        width: 40px;
+        height: 40px;
+    }
 }
 
 /* Extra small devices */
@@ -915,7 +1010,18 @@
         right: 8px;
         max-height: 65vh;
     }
-    
+
+    /* Extra small: Blob layout adjustments */
+    .floating-toolbar.layout-blob {
+        max-width: 140px;
+        padding: 10px;
+    }
+
+    .floating-toolbar.layout-blob .tool-btn {
+        width: 36px;
+        height: 36px;
+    }
+
     .tool-btn {
         width: 36px;
         height: 36px;
