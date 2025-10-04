@@ -22,6 +22,7 @@ public class BoardElement
     public double? Width { get; set; }
     public double? Height { get; set; }
     public int ZIndex { get; set; } = 0;
+    public long SequenceNumber { get; set; } = 0;
     [Obsolete("Use CreatedByUserId instead. Maintained for backward compatibility.")]
     public string? CreatedBy { get; set; }
     

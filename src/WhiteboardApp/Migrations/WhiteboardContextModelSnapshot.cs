@@ -169,6 +169,9 @@ namespace WhiteboardApp.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("modifiedbyuserid");
 
+                    b.Property<long>("SequenceNumber")
+                        .HasColumnType("bigint");
+
                     b.Property<string>("Type")
                         .IsRequired()
                         .HasMaxLength(50)

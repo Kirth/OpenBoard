@@ -403,6 +403,9 @@ public class CollaborationHub : Hub
                 : (await _userService.GetAnonymousUserAsync()).Id;
             element.ModifiedAt = DateTime.UtcNow;
 
+            // Increment sequence number for operation ordering
+            element.SequenceNumber++;
+
             // For lines, also update endpoint coordinates in the data
             if (element.Type == ElementType.Line && element.Data != null)
             {
@@ -420,10 +423,10 @@ public class CollaborationHub : Hub
 
             await _elementService.UpdateElementAsync(element);
 
-            // Broadcast to all users in the board
-            await Clients.Group($"Board_{boardId}").SendAsync("ElementMoved", elementId, newX, newY);
+            // Broadcast to all users in the board (including sequence number for ordering)
+            await Clients.Group($"Board_{boardId}").SendAsync("ElementMoved", elementId, newX, newY, element.SequenceNumber);
 
-            return OperationResult.Ok(new { elementId, x = newX, y = newY });
+            return OperationResult.Ok(new { elementId, x = newX, y = newY, sequence = element.SequenceNumber });
         }
         catch (Exception ex)
         {

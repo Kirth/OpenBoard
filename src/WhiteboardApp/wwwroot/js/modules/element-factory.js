@@ -7,6 +7,12 @@ export let elements = new Map();
 export let selectedElementId = null;
 export let elementsToSelect = new Set();
 
+// Operation sequence tracking (for out-of-order update rejection)
+let operationSequence = 0;
+export function getNextSequence() {
+  return ++operationSequence;
+}
+
 // Collaborative selections tracking - Map<elementId, Map<connectionId, {userName, color}>>
 export let collaborativeSelections = new Map();
 
@@ -1278,8 +1284,12 @@ export function updateElementPosition(id, newX, newY) {
     newY = snapped.y;
   }
 
+  // Get next sequence number for this operation
+  const sequence = getNextSequence();
+
   element.x = newX;
   element.y = newY;
+  element._sequence = sequence; // Track sequence for out-of-order rejection
 
   // Path elements now use relative coordinates, so no need to update path data
   // Line elements use x,y,width,height so they move correctly by default
@@ -1295,7 +1305,7 @@ export function updateElementPosition(id, newX, newY) {
   if (dependencies.sendElementMove && dependencies.currentBoardId) {
     const boardId = dependencies.currentBoardId();
     if (boardId) {
-      dependencies.sendElementMove(boardId, id, newX, newY);
+      dependencies.sendElementMove(boardId, id, newX, newY, sequence);
     }
   }
 

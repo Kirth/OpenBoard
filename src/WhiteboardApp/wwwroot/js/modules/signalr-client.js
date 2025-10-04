@@ -376,9 +376,29 @@ function setupEventHandlers() {
         }
     });
 
-    // Element moved handler
-    signalRConnection.on("ElementMoved", (elementId, newX, newY) => {
+    // Element moved handler with sequence validation
+    signalRConnection.on("ElementMoved", (elementId, newX, newY, sequence) => {
         try {
+            const element = dependencies.elements?.get(elementId);
+            if (!element) {
+                console.warn(`ElementMoved: element ${elementId} not found`);
+                return;
+            }
+
+            // Reject stale updates (out-of-order arrival)
+            if (sequence !== undefined && element._sequence !== undefined && sequence <= element._sequence) {
+                console.warn(
+                    `[SEQUENCE] Rejected stale position update for ${elementId}:`,
+                    `incoming seq=${sequence}, current seq=${element._sequence}`
+                );
+                return;
+            }
+
+            // Update sequence tracking
+            if (sequence !== undefined) {
+                element._sequence = sequence;
+            }
+
             // Use updateElementPositionLocal to avoid infinite loop
             // (updateElementPosition would call sendElementMove again)
             if (dependencies.updateElementPositionLocal) {
@@ -393,7 +413,7 @@ function setupEventHandlers() {
                 dependencies.updateMinimapImmediate();
             }
 
-            console.log(`Element ${elementId} moved to (${newX}, ${newY})`);
+            console.log(`Element ${elementId} moved to (${newX}, ${newY}) [seq: ${sequence}]`);
         } catch (error) {
             console.error('Error handling ElementMoved:', error);
         }
@@ -1214,7 +1234,7 @@ export async function sendElement(boardId, elementData, tempId) {
     }
 }
 
-export async function sendElementMove(boardId, elementId, newX, newY) {
+export async function sendElementMove(boardId, elementId, newX, newY, clientSequence) {
     try {
         if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
             // Don't throw or notify for move operations (too noisy during drag)
@@ -1222,9 +1242,10 @@ export async function sendElementMove(boardId, elementId, newX, newY) {
             return false;
         }
 
-        console.log(`Sending element move: ${elementId} to (${newX}, ${newY})`);
+        console.log(`Sending element move: ${elementId} to (${newX}, ${newY}) [client seq: ${clientSequence}]`);
 
         // Use invokeWithTimeout with shorter timeout for frequent operations (3 seconds)
+        // Note: Server generates authoritative sequence number, clientSequence is for local tracking only
         const response = await invokeWithTimeout("MoveElement", 3000, boardId, elementId, newX, newY);
 
         if (!response || !response.success) {
