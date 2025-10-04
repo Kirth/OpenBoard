@@ -106,6 +106,7 @@ export function setupDependencies() {
     signalrClient: signalrClient,
     copySelectedElement: elementFactory.copySelectedElement,
     pasteElement: elementFactory.pasteElement,
+    pasteElementFromText: elementFactory.pasteElementFromText,
     duplicateSelectedElement: elementFactory.duplicateSelectedElement,
     undo: elementFactory.undo,
     redo: elementFactory.redo,

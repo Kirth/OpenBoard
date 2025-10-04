@@ -26,8 +26,7 @@ let activeResizeHandle = null;
 let resizeStartBounds = null;
 let hasResized = false;
 
-// Copy/paste system
-let copiedElement = null;
+// Copy/paste system - now uses OS clipboard exclusively (no internal clipboard)
 
 // Undo/redo system
 let undoStack = [];
@@ -2202,47 +2201,143 @@ export function getActiveResizeHandle() {
   return activeResizeHandle;
 }
 
-// Copy/paste operations
-export function copySelectedElement() {
+// Copy/paste operations using OS clipboard exclusively
+// Special marker to identify whiteboard elements in clipboard
+const WHITEBOARD_MARKER = '__WHITEBOARD_ELEMENT__:';
+
+export async function copySelectedElement() {
   if (!selectedElementId) return;
 
   const element = elements.get(selectedElementId);
-  if (element) {
-    copiedElement = JSON.parse(JSON.stringify(element));
+  if (!element) return;
+
+  try {
+    // For images: copy both the image AND element data
+    if (element.type === 'Image' && element.data?.imageData) {
+      const imageData = element.data.imageData;
+
+      if (imageData.startsWith('data:image/')) {
+        // Convert data URL to blob
+        const response = await fetch(imageData);
+        const imageBlob = await response.blob();
+
+        // Create HTML with both image and element data embedded
+        const elementJson = JSON.stringify(element);
+        const htmlContent = `<img src="${imageData}" data-whiteboard-element='${elementJson.replace(/'/g, '&apos;')}'>`;
+
+        const clipboardItems = {
+          [imageBlob.type]: imageBlob,
+          'text/html': new Blob([htmlContent], { type: 'text/html' }),
+          'text/plain': new Blob([WHITEBOARD_MARKER + elementJson], { type: 'text/plain' })
+        };
+
+        const item = new ClipboardItem(clipboardItems);
+        await navigator.clipboard.write([item]);
+
+        if (dependencies.showNotification) {
+          dependencies.showNotification('Image element copied', 'success');
+        }
+        return;
+      }
+    }
+
+    // For all other elements: use text/plain with special marker
+    const elementJson = JSON.stringify(element);
+    const markedText = WHITEBOARD_MARKER + elementJson;
+
+    await navigator.clipboard.writeText(markedText);
+
     if (dependencies.showNotification) {
       dependencies.showNotification('Element copied', 'success');
+    }
+  } catch (error) {
+    console.error('Error copying to clipboard:', error);
+
+    // Fallback for browsers without Clipboard API
+    try {
+      const elementJson = JSON.stringify(element);
+      const textArea = document.createElement('textarea');
+      textArea.value = WHITEBOARD_MARKER + elementJson;
+      textArea.style.position = 'fixed';
+      textArea.style.opacity = '0';
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+
+      if (dependencies.showNotification) {
+        dependencies.showNotification('Element copied (legacy mode)', 'success');
+      }
+    } catch (fallbackError) {
+      console.error('Fallback copy also failed:', fallbackError);
+      if (dependencies.showNotification) {
+        dependencies.showNotification('Failed to copy element', 'error');
+      }
     }
   }
 }
 
-export function pasteElement() {
-  if (!copiedElement) return;
-
-  const duplicate = JSON.parse(JSON.stringify(copiedElement));
-  duplicate.id = ElementFactory.createTempId();
-  duplicate.x += 20;
-  duplicate.y += 20;
-
-  elements.set(duplicate.id, duplicate);
-  selectedElementId = duplicate.id;
-
-  saveCanvasState('Paste Element');
-
-  // Send element to server for persistence and synchronization
-  if (dependencies.sendElement && dependencies.currentBoardId) {
-    const boardId = dependencies.currentBoardId();
-    if (boardId) {
-      dependencies.sendElement(boardId, duplicate, duplicate.id);
-      markElementForSelection(duplicate.id);
+// Paste element from clipboard text (used by event handler)
+export function pasteElementFromText(text) {
+  try {
+    // Check if text contains whiteboard element marker
+    if (!text || !text.startsWith(WHITEBOARD_MARKER)) {
+      return false;
     }
-  }
 
-  if (dependencies.redrawCanvas) {
-    dependencies.redrawCanvas();
-  }
+    const elementJson = text.substring(WHITEBOARD_MARKER.length);
+    const element = JSON.parse(elementJson);
 
-  if (dependencies.showNotification) {
-    dependencies.showNotification('Element pasted', 'success');
+    // Create duplicate with new ID and offset position
+    const duplicate = JSON.parse(JSON.stringify(element));
+    duplicate.id = ElementFactory.createTempId();
+    duplicate.x += 20;
+    duplicate.y += 20;
+
+    elements.set(duplicate.id, duplicate);
+    selectedElementId = duplicate.id;
+
+    saveCanvasState('Paste Element');
+
+    // Send element to server for persistence and synchronization
+    if (dependencies.sendElement && dependencies.currentBoardId) {
+      const boardId = dependencies.currentBoardId();
+      if (boardId) {
+        dependencies.sendElement(boardId, duplicate, duplicate.id);
+        markElementForSelection(duplicate.id);
+      }
+    }
+
+    if (dependencies.redrawCanvas) {
+      dependencies.redrawCanvas();
+    }
+
+    if (dependencies.showNotification) {
+      dependencies.showNotification('Element pasted', 'success');
+    }
+
+    return true; // Successfully pasted
+  } catch (error) {
+    console.error('Error pasting whiteboard element:', error);
+    return false;
+  }
+}
+
+// Legacy async paste function (kept for compatibility, uses Clipboard API)
+export async function pasteElement() {
+  try {
+    // Check if Clipboard API is available
+    if (!navigator.clipboard || !navigator.clipboard.readText) {
+      console.warn('Clipboard API not available for reading');
+      return false;
+    }
+
+    // Try to read text from clipboard
+    const text = await navigator.clipboard.readText();
+    return pasteElementFromText(text);
+  } catch (error) {
+    console.error('Error pasting from clipboard:', error);
+    return false;
   }
 }
 
@@ -2717,6 +2812,7 @@ if (typeof window !== 'undefined') {
   window.duplicateSelectedElement = duplicateSelectedElement;
   window.copySelectedElement = copySelectedElement;
   window.pasteElement = pasteElement;
+  window.pasteElementFromText = pasteElementFromText;
   window.undo = undo;
   window.redo = redo;
   window.saveCanvasState = saveCanvasState;

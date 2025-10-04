@@ -277,6 +277,7 @@ export function setupGlobalExposure() {
   window.deleteSelectedElement = dependencies.elementFactory.deleteSelectedElement;
   window.copySelectedElement = dependencies.elementFactory.copySelectedElement;
   window.pasteElement = dependencies.elementFactory.pasteElement;
+  window.pasteElementFromText = dependencies.elementFactory.pasteElementFromText;
   window.duplicateSelectedElement = dependencies.elementFactory.duplicateSelectedElement;
   window.undo = dependencies.elementFactory.undo;
   window.redo = dependencies.elementFactory.redo;

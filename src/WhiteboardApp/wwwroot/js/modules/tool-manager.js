@@ -404,14 +404,13 @@ export function handleKeyDown(event) {
 
         case 'c':
           event.preventDefault();
-          // Ctrl+C = Copy
+          // Ctrl+C = Copy selected element to OS clipboard using Clipboard API
           if (dependencies.copySelectedElement) dependencies.copySelectedElement();
           break;
 
         case 'v':
           // Don't preventDefault here - let the paste event fire first
-          // The paste event handler will check for images and fall back to element paste
-          // Note: pasteElement is called from the paste event handler if no images found
+          // The paste event handler will read from OS clipboard and handle whiteboard elements, images, or text
           break;
 
         case 'd':
