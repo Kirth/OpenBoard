@@ -500,7 +500,8 @@ export function handleSelectMouseDown(x, y, event) {
       }
 
       // Resize / drag fallbacks...
-      const resizeHandle = dependencies.elementFactory.getResizeHandleAt(x, y, element);
+      const rotation = element.data?.rotation || 0;
+      const resizeHandle = dependencies.elementFactory.getResizeHandleAt(x, y, element, rotation);
       if (resizeHandle) {
         console.log(`[SELECT MOUSE] Starting resize with handle: ${resizeHandle}`);
         isResizing = true;
@@ -606,11 +607,12 @@ export function updateCursorForHover(worldX, worldY) {
         return;
       }
       // Resize handles
-      const resizeHandle = dependencies.elementFactory.getResizeHandleAt(worldX, worldY, element);
+      const rotation = element.data?.rotation || 0;
+      const resizeHandle = dependencies.elementFactory.getResizeHandleAt(worldX, worldY, element, rotation);
       if (resizeHandle) {
         const cursorMap = {
           'nw': 'nw-resize',
-          'ne': 'ne-resize', 
+          'ne': 'ne-resize',
           'sw': 'sw-resize',
           'se': 'se-resize',
           'n': 'n-resize',

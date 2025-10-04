@@ -1347,7 +1347,8 @@ function handleSelectTouchStart(x, y, event) {
       }
 
       // Check for resize handles
-      const resizeHandle = dependencies.elementFactory.getResizeHandleAt(x, y, element);
+      const rotation = element.data?.rotation || 0;
+      const resizeHandle = dependencies.elementFactory.getResizeHandleAt(x, y, element, rotation);
       if (resizeHandle) {
         console.log(`[SELECT TOUCH] Starting resize with handle: ${resizeHandle}`);
         dependencies.setResizing(true);

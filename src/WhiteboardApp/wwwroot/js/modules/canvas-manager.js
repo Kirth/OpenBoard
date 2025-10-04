@@ -720,7 +720,7 @@ function drawSingleSelectionHandles(el) {
 
           // Save context for rotation transforms
           ctx.save();
-          
+
           // Apply rotation for selection UI if element is rotated
           if (rotation !== 0) {
             const centerX = el.x + el.width / 2;
@@ -739,8 +739,24 @@ function drawSingleSelectionHandles(el) {
             el.height + 2 * inflate
           );
 
-          // Draw resize handles as small rectangles in world space
-          const handles = [
+          // Restore context before drawing handles (so they're not rotated with the box)
+          ctx.restore();
+
+          // Helper function to rotate a point around center
+          const rotatePoint = (x, y, centerX, centerY, rotation) => {
+            if (rotation === 0) return { x, y };
+            const cos = Math.cos((rotation * Math.PI) / 180);
+            const sin = Math.sin((rotation * Math.PI) / 180);
+            const relativeX = x - centerX;
+            const relativeY = y - centerY;
+            return {
+              x: centerX + relativeX * cos - relativeY * sin,
+              y: centerY + relativeX * sin + relativeY * cos
+            };
+          };
+
+          // Calculate handle positions (unrotated)
+          const unrotatedHandles = [
             { x: el.x, y: el.y }, // Top-left
             { x: el.x + el.width, y: el.y }, // Top-right
             { x: el.x, y: el.y + el.height }, // Bottom-left
@@ -751,25 +767,35 @@ function drawSingleSelectionHandles(el) {
             { x: el.x + el.width, y: el.y + el.height / 2 } // Right-center
           ];
 
+          // Rotate handles if element is rotated
+          const centerX = el.x + el.width / 2;
+          const centerY = el.y + el.height / 2;
+          const handles = unrotatedHandles.map(h => rotatePoint(h.x, h.y, centerX, centerY, rotation));
+
+          // Draw resize handles at rotated positions
           ctx.fillStyle = '#ffffff';
           ctx.strokeStyle = '#007bff';
           for (const handle of handles) {
             ctx.fillRect(handle.x - handleSize / 2, handle.y - handleSize / 2, handleSize, handleSize);
             ctx.strokeRect(handle.x - handleSize / 2, handle.y - handleSize / 2, handleSize, handleSize);
           }
-          
+
           // Draw rotation handle (small circle above the element)
           const rotationHandleY = el.y - 30 / zoom;
           const rotationHandleX = el.x + el.width / 2;
-          
+
+          // Rotate the rotation handle position if element is rotated
+          const rotatedRotationHandle = rotatePoint(rotationHandleX, rotationHandleY, centerX, centerY, rotation);
+          const rotatedTopCenter = rotatePoint(el.x + el.width / 2, el.y, centerX, centerY, rotation);
+
           // Draw line from top-center handle to rotation handle
           ctx.strokeStyle = '#007bff';
           ctx.lineWidth = 1 / zoom;
           ctx.beginPath();
-          ctx.moveTo(el.x + el.width / 2, el.y);
-          ctx.lineTo(rotationHandleX, rotationHandleY);
+          ctx.moveTo(rotatedTopCenter.x, rotatedTopCenter.y);
+          ctx.lineTo(rotatedRotationHandle.x, rotatedRotationHandle.y);
           ctx.stroke();
-          
+
           // Draw rotation handle as a larger circle
           ctx.fillStyle = '#ffffff';
           ctx.strokeStyle = '#007bff';
@@ -777,7 +803,7 @@ function drawSingleSelectionHandles(el) {
           ctx.beginPath();
           // Make the rotation handle visually bigger
           const rotationHandleRadius = Math.max(handleSize / 2, 6 / zoom);
-          ctx.arc(rotationHandleX, rotationHandleY, rotationHandleRadius, 0, Math.PI * 2);
+          ctx.arc(rotatedRotationHandle.x, rotatedRotationHandle.y, rotationHandleRadius, 0, Math.PI * 2);
           ctx.fill();
           ctx.stroke();
           

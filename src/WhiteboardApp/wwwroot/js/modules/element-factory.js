@@ -1756,13 +1756,30 @@ export function isElementResizable(element) {
   ].includes(element.type);
 }
 
+// Helper function to transform a point by rotation around a center
+function rotatePoint(x, y, centerX, centerY, rotation) {
+  if (rotation === 0) return { x, y };
+
+  const cos = Math.cos((rotation * Math.PI) / 180);
+  const sin = Math.sin((rotation * Math.PI) / 180);
+
+  const relativeX = x - centerX;
+  const relativeY = y - centerY;
+
+  return {
+    x: centerX + relativeX * cos - relativeY * sin,
+    y: centerY + relativeX * sin + relativeY * cos
+  };
+}
+
 // Get resize handle at point (in screen coordinates)
-export function getResizeHandleAt(x, y, selectionRect) {
+export function getResizeHandleAt(x, y, selectionRect, rotation = 0) {
   if (!selectionRect) return null;
 
   const handleSize = 8;
   const tolerance = handleSize / 2 + 2 + 20; // Larger padding for easier targeting (21px total)
 
+  // Calculate unrotated handle positions
   const handles = [
     { type: 'nw', x: selectionRect.x, y: selectionRect.y }, // Top-left
     { type: 'ne', x: selectionRect.x + selectionRect.width, y: selectionRect.y }, // Top-right
@@ -1773,6 +1790,18 @@ export function getResizeHandleAt(x, y, selectionRect) {
     { type: 'w', x: selectionRect.x, y: selectionRect.y + selectionRect.height / 2 }, // Left-center
     { type: 'e', x: selectionRect.x + selectionRect.width, y: selectionRect.y + selectionRect.height / 2 } // Right-center
   ];
+
+  // If element is rotated, transform handle positions
+  if (rotation !== 0) {
+    const centerX = selectionRect.x + selectionRect.width / 2;
+    const centerY = selectionRect.y + selectionRect.height / 2;
+
+    for (const handle of handles) {
+      const rotated = rotatePoint(handle.x, handle.y, centerX, centerY, rotation);
+      handle.x = rotated.x;
+      handle.y = rotated.y;
+    }
+  }
 
   for (const handle of handles) {
     const dx = x - handle.x;
