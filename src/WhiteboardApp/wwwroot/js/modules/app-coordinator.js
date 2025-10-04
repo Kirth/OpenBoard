@@ -187,6 +187,7 @@ export function setupDependencies() {
     showNotification: uiFeatures.showNotification,
     screenToWorld: canvasManager.screenToWorld,
     editorManager: elementFactory.editorManager,
+    remapElementId: elementFactory.remapElementId, // Comprehensive ID remapping for temp ID fix
     addSparkleEffectsToElements: sparkleEffects.addSparkleEffectsToElements,
     addPoofEffectToElement: sparkleEffects.addPoofEffectToElement,
     addPoofEffectsToElements: sparkleEffects.addPoofEffectsToElements,

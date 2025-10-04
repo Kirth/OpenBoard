@@ -110,6 +110,32 @@ class GroupManager {
         return this.elementGroups.get(elementId) || null;
     }
 
+    // Remap element ID when server assigns real ID (fixes temp ID race condition)
+    remapElementId(oldId, newId) {
+        const groupId = this.elementGroups.get(oldId);
+        if (!groupId) {
+            return false; // Element not in any group
+        }
+
+        console.log(`[GROUP-MANAGER] Remapping element in group ${groupId}: ${oldId} → ${newId}`);
+
+        // Update element-to-group mapping
+        this.elementGroups.delete(oldId);
+        this.elementGroups.set(newId, groupId);
+
+        // Update group's element list
+        const group = this.groups.get(groupId);
+        if (group && group.elementIds) {
+            const index = group.elementIds.indexOf(oldId);
+            if (index !== -1) {
+                group.elementIds[index] = newId;
+                console.log(`[GROUP-MANAGER] Updated group elementIds array`);
+            }
+        }
+
+        return true; // Successfully remapped
+    }
+
     getGroupById(groupId) {
         return this.groups.get(groupId) || null;
     }

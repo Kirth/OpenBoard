@@ -847,6 +847,75 @@ export function markElementForSelection(tempId) {
   elementsToSelect.add(tempId);
 }
 
+// Comprehensive ID remapping to fix temp ID race conditions
+// Atomically updates all references when server returns real ID
+export function remapElementId(oldId, newId) {
+  if (!oldId || !newId || oldId === newId) {
+    console.warn('Invalid ID remapping request:', {oldId, newId});
+    return false;
+  }
+
+  const element = elements.get(oldId);
+  if (!element) {
+    console.warn(`Cannot remap: element with ID ${oldId} not found`);
+    return false;
+  }
+
+  console.log(`[ID-REMAP] Starting comprehensive remap: ${oldId} → ${newId}`);
+
+  // 1. Update elements map
+  elements.delete(oldId);
+  element.id = newId;
+  elements.set(newId, element);
+  console.log(`[ID-REMAP] ✓ Updated elements map`);
+
+  // 2. Update selection tracking
+  if (elementsToSelect.has(oldId)) {
+    elementsToSelect.delete(oldId);
+    elementsToSelect.add(newId);
+    console.log(`[ID-REMAP] ✓ Updated elementsToSelect`);
+  }
+
+  // 3. Update current selection
+  if (selectedElementId === oldId) {
+    selectedElementId = newId;
+    console.log(`[ID-REMAP] ✓ Updated selectedElementId`);
+  }
+
+  // 4. Update editor if editing this element
+  if (dependencies.editorManager) {
+    const editingId = dependencies.editorManager.getCurrentEditingElementId?.();
+    if (editingId === oldId) {
+      dependencies.editorManager.updateEditingElementId(newId);
+      console.log(`[ID-REMAP] ✓ Updated editor manager`);
+    }
+  }
+
+  // 5. Update collaborative selections
+  let collaborativeSelectionsUpdated = 0;
+  for (let [connId, selection] of collaborativeSelections) {
+    if (selection.elementIds && selection.elementIds.has(oldId)) {
+      selection.elementIds.delete(oldId);
+      selection.elementIds.add(newId);
+      collaborativeSelectionsUpdated++;
+    }
+  }
+  if (collaborativeSelectionsUpdated > 0) {
+    console.log(`[ID-REMAP] ✓ Updated ${collaborativeSelectionsUpdated} collaborative selections`);
+  }
+
+  // 6. Update groups if element is grouped
+  if (dependencies.groupManager && typeof dependencies.groupManager.remapElementId === 'function') {
+    const wasInGroup = dependencies.groupManager.remapElementId(oldId, newId);
+    if (wasInGroup) {
+      console.log(`[ID-REMAP] ✓ Updated group membership`);
+    }
+  }
+
+  console.log(`[ID-REMAP] ✅ Complete: All references updated from ${oldId} to ${newId}`);
+  return true;
+}
+
 // Element selection and highlighting
 export function highlightElement(id) {
   // Deselect previous element first if there was one

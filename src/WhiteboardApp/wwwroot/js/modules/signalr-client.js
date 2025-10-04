@@ -33,7 +33,8 @@ let dependencies = {
     updateMinimapImmediate: null,
     showNotification: null,
     screenToWorld: null,
-    groupManager: null
+    groupManager: null,
+    remapElementId: null // Comprehensive ID remapping for temp ID fix
 };
 
 // Set dependencies from other modules
@@ -157,18 +158,31 @@ function setupEventHandlers() {
             // Extract tempId from elementData if not provided as separate parameter
             const actualTempId = tempId || elementData.tempId;
             console.log('Received element via SignalR:', elementData, 'tempId parameter:', tempId, 'tempId in data:', elementData.tempId);
-            
+
             // Handle ID remapping if tempId is provided
             if (actualTempId && dependencies.elements && dependencies.elements.has(actualTempId)) {
-                console.log(`Remapping element ID from ${actualTempId} to ${elementData.id}`);
-                
-                // Remove the temporary element
-                dependencies.elements.delete(actualTempId);
-                
-                // Update editor manager if it's editing this element
-                if (dependencies.editorManager && dependencies.editorManager.getCurrentEditingElementId() === actualTempId) {
-                    console.log('Updating editor manager with new element ID');
-                    dependencies.editorManager.updateEditingElementId(elementData.id);
+                console.log(`[SIGNALR] Temp element exists, initiating comprehensive ID remap: ${actualTempId} → ${elementData.id}`);
+
+                // Use comprehensive remapping function to update ALL references atomically
+                if (dependencies.remapElementId) {
+                    const remapped = dependencies.remapElementId(actualTempId, elementData.id);
+                    if (remapped) {
+                        console.log(`[SIGNALR] ✅ Comprehensive remap successful`);
+                        // Element already in map with correct ID, just need to redraw
+                        if (dependencies.redrawCanvas) {
+                            dependencies.redrawCanvas();
+                        }
+                        return; // Skip drawElement since element is already updated
+                    } else {
+                        console.warn(`[SIGNALR] ⚠️ Remap failed, falling back to standard element add`);
+                    }
+                } else {
+                    console.warn('[SIGNALR] remapElementId function not available, using legacy partial remap');
+                    // Fallback to partial remap (old behavior)
+                    dependencies.elements.delete(actualTempId);
+                    if (dependencies.editorManager && dependencies.editorManager.getCurrentEditingElementId() === actualTempId) {
+                        dependencies.editorManager.updateEditingElementId(elementData.id);
+                    }
                 }
             }
             
