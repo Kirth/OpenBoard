@@ -42,6 +42,87 @@ export function setDependencies(deps) {
     Object.assign(dependencies, deps);
 }
 
+/**
+ * Invoke a SignalR hub method with timeout protection
+ * @param {string} method - Hub method name
+ * @param {number} timeout - Timeout in milliseconds
+ * @param {...any} args - Method arguments
+ * @returns {Promise<any>} - Method result or timeout error
+ */
+function invokeWithTimeout(method, timeout, ...args) {
+    if (!signalRConnection) {
+        return Promise.reject(new Error('SignalR connection not initialized'));
+    }
+
+    if (signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
+        return Promise.reject(new Error('SignalR not connected'));
+    }
+
+    const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => {
+            reject(new Error(`Operation timeout: ${method} took longer than ${timeout}ms`));
+        }, timeout);
+    });
+
+    const invokePromise = signalRConnection.invoke(method, ...args);
+
+    return Promise.race([invokePromise, timeoutPromise]);
+}
+
+/**
+ * Rollback failed element creation
+ * @param {string} tempId - Temporary element ID to remove
+ */
+function rollbackElement(tempId) {
+    try {
+        console.warn(`[ROLLBACK] Removing failed element: ${tempId}`);
+
+        // Remove from elements map
+        if (dependencies.elements) {
+            dependencies.elements.delete(tempId);
+        }
+
+        // Clear selection if this element was selected
+        if (dependencies.selectedElementId === tempId && dependencies.clearSelection) {
+            dependencies.clearSelection();
+        }
+
+        // Redraw canvas to remove visual representation
+        if (dependencies.redrawCanvas) {
+            dependencies.redrawCanvas();
+        }
+
+        console.log(`[ROLLBACK] ✓ Element ${tempId} rolled back successfully`);
+    } catch (error) {
+        console.error('[ROLLBACK] Error during element rollback:', error);
+    }
+}
+
+/**
+ * Rollback failed element deletion (restore deleted element)
+ * @param {string} elementId - Element ID that failed to delete
+ * @param {object} elementSnapshot - Snapshot of element before deletion
+ */
+function rollbackElementDelete(elementId, elementSnapshot) {
+    try {
+        console.warn(`[ROLLBACK] Restoring failed deletion: ${elementId}`);
+
+        // Restore element to elements map
+        if (dependencies.elements && elementSnapshot) {
+            dependencies.elements.set(elementId, elementSnapshot);
+        }
+
+        // Redraw canvas to show restored element
+        if (dependencies.redrawCanvas) {
+            dependencies.redrawCanvas();
+        }
+
+        console.log(`[ROLLBACK] ✓ Element ${elementId} restored successfully`);
+    } catch (error) {
+        console.error('[ROLLBACK] Error during delete rollback:', error);
+    }
+}
+
 // Wait for SignalR to be available
 function waitForSignalR() {
     return new Promise((resolve) => {
@@ -149,6 +230,24 @@ function setupEventHandlers() {
             }
         } catch (error) {
             console.error('Error handling ActiveUsersUpdated:', error);
+        }
+    });
+
+    // Error handler - server-sent errors
+    signalRConnection.on("Error", (errorMessage) => {
+        try {
+            console.error('[SERVER ERROR]', errorMessage);
+
+            // Show notification to user if available
+            if (dependencies.showNotification) {
+                dependencies.showNotification(
+                    `Server error: ${errorMessage}`,
+                    'error',
+                    5000 // 5 second display
+                );
+            }
+        } catch (error) {
+            console.error('Error handling Error event:', error);
         }
     });
 
@@ -1051,32 +1150,85 @@ export async function sendElement(boardId, elementData, tempId) {
     try {
         if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
             console.warn("SignalR not connected, cannot send element");
-            return false;
+
+            // Rollback optimistic update
+            if (tempId) {
+                rollbackElement(tempId);
+            }
+
+            // Notify user
+            if (dependencies.showNotification) {
+                dependencies.showNotification(
+                    'Cannot save element: Not connected to server',
+                    'error'
+                );
+            }
+
+            throw new Error('SignalR not connected');
         }
 
         // Include tempId in elementData if provided
         const elementDataWithTempId = tempId ? { ...elementData, tempId: tempId } : elementData;
         console.log('Sending element to server:', elementDataWithTempId);
-        await signalRConnection.invoke("AddElement", boardId, elementDataWithTempId);
-        console.log('Element sent successfully');
-        return true;
+
+        // Use invokeWithTimeout for critical operation (5 second timeout)
+        const response = await invokeWithTimeout("AddElement", 5000, boardId, elementDataWithTempId);
+
+        if (!response || !response.success) {
+            throw new Error(response?.error || 'Server rejected element creation');
+        }
+
+        console.log('Element added, server confirmed:', response.data);
+
+        // Return real element ID from server
+        return response.data?.elementId || true;
+
     } catch (error) {
         console.error("Failed to send element:", error);
-        return false;
+
+        // Rollback optimistic update
+        if (tempId) {
+            rollbackElement(tempId);
+        }
+
+        // Notify user
+        if (dependencies.showNotification) {
+            dependencies.showNotification(
+                `Failed to save element: ${error.message}`,
+                'error',
+                5000
+            );
+        }
+
+        throw error; // Re-throw for caller to handle
     }
 }
 
 export async function sendElementMove(boardId, elementId, newX, newY) {
     try {
         if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
+            // Don't throw or notify for move operations (too noisy during drag)
+            // User will see connection status indicator
             return false;
         }
 
         console.log(`Sending element move: ${elementId} to (${newX}, ${newY})`);
-        await signalRConnection.invoke("MoveElement", boardId, elementId, newX, newY);
-        console.log('Element move sent successfully');
+
+        // Use invokeWithTimeout with shorter timeout for frequent operations (3 seconds)
+        const response = await invokeWithTimeout("MoveElement", 3000, boardId, elementId, newX, newY);
+
+        if (!response || !response.success) {
+            // Log but don't throw (move operations are frequent, failures are recoverable)
+            console.warn('Server rejected move operation:', response?.error);
+            return false;
+        }
+
+        console.log('Element move confirmed by server');
         return true;
+
     } catch (error) {
+        // Log but don't notify user (too noisy during drag operations)
+        // Final position on mouseup will retry if needed
         console.error("Failed to send element move:", error);
         return false;
     }
@@ -1218,19 +1370,66 @@ export async function sendElementToBack(boardId, elementId) {
 }
 
 export async function sendElementDelete(boardId, elementId) {
+    // Capture element snapshot BEFORE deletion (for potential rollback)
+    let elementSnapshot = null;
+    if (dependencies.elements) {
+        elementSnapshot = dependencies.elements.get(elementId);
+        if (elementSnapshot) {
+            // Deep clone to preserve state
+            elementSnapshot = JSON.parse(JSON.stringify(elementSnapshot));
+        }
+    }
+
     try {
         if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
             console.warn("SignalR not connected, cannot delete element");
-            return false;
+
+            // Restore element if it was deleted locally
+            if (elementSnapshot) {
+                rollbackElementDelete(elementId, elementSnapshot);
+            }
+
+            // Notify user
+            if (dependencies.showNotification) {
+                dependencies.showNotification(
+                    'Cannot delete element: Not connected to server',
+                    'error'
+                );
+            }
+
+            throw new Error('SignalR not connected');
         }
 
         console.log(`Deleting element ${elementId} from board ${boardId}`);
-        await signalRConnection.invoke("DeleteElement", boardId, elementId);
-        console.log('Element deletion sent successfully');
+
+        // Use invokeWithTimeout for critical operation (5 second timeout)
+        const response = await invokeWithTimeout("DeleteElement", 5000, boardId, elementId);
+
+        if (!response || !response.success) {
+            throw new Error(response?.error || 'Server rejected element deletion');
+        }
+
+        console.log('Element deletion confirmed by server:', response.data);
         return true;
+
     } catch (error) {
         console.error("Failed to send element deletion:", error);
-        return false;
+
+        // Restore element if deletion failed
+        if (elementSnapshot) {
+            rollbackElementDelete(elementId, elementSnapshot);
+        }
+
+        // Notify user
+        if (dependencies.showNotification) {
+            dependencies.showNotification(
+                `Failed to delete element: ${error.message}`,
+                'error',
+                5000
+            );
+        }
+
+        throw error; // Re-throw for caller to handle
     }
 }
 

@@ -275,12 +275,16 @@ public class CollaborationHub : Hub
         }
     }
 
-    public async Task AddElement(string boardId, object elementData)
+    public async Task<OperationResult> AddElement(string boardId, object elementData)
     {
         try
         {
             if (!await ValidateBoardAccess(boardId))
-                return;
+            {
+                var errorMsg = "Access denied or invalid board ID";
+                await Clients.Caller.SendAsync("Error", errorMsg); // Backward compatibility
+                return OperationResult.Failure(errorMsg);
+            }
 
             var jsonString = JsonSerializer.Serialize(elementData);
             var elementObj = JsonSerializer.Deserialize<JsonElement>(jsonString);
@@ -339,11 +343,16 @@ public class CollaborationHub : Hub
 
             // Broadcast to all users in the board
             await Clients.Group($"Board_{boardId}").SendAsync("ElementAdded", CreateElementResponse(savedElement, tempId));
+
+            // Return success with real element ID
+            return OperationResult.Ok(new { elementId = savedElement.Id.ToString(), tempId });
         }
         catch (Exception ex)
         {
+            var errorMsg = "Failed to add element";
             _logger.LogError(ex, "Error adding element to board {BoardId}", boardId);
-            await Clients.Caller.SendAsync("Error", "Failed to add element");
+            await Clients.Caller.SendAsync("Error", errorMsg); // Backward compatibility
+            return OperationResult.Failure($"{errorMsg}: {ex.Message}");
         }
     }
 
@@ -364,18 +373,23 @@ public class CollaborationHub : Hub
         }
     }
 
-    public async Task MoveElement(string boardId, string elementId, double newX, double newY)
+    public async Task<OperationResult> MoveElement(string boardId, string elementId, double newX, double newY)
     {
         try
         {
             if (!await ValidateBoardAccess(boardId) || !Guid.TryParse(elementId, out var elementGuid))
-                return;
+            {
+                var errorMsg = "Access denied or invalid element ID";
+                await Clients.Caller.SendAsync("Error", errorMsg); // Backward compatibility
+                return OperationResult.Failure(errorMsg);
+            }
 
             var element = await _elementService.GetElementAsync(elementGuid);
             if (element == null)
             {
-                await Clients.Caller.SendAsync("Error", "Element not found");
-                return;
+                var errorMsg = "Element not found";
+                await Clients.Caller.SendAsync("Error", errorMsg); // Backward compatibility
+                return OperationResult.Failure(errorMsg);
             }
 
             // Calculate the offset for line endpoint translation
@@ -396,9 +410,9 @@ public class CollaborationHub : Hub
             }
 
             // For drawings, we used to also update path coordinates in the data
-            // this lead to a bug after refreshing 
+            // this lead to a bug after refreshing
             // where the path's bounding box would still be in the right place
-            // but the drawing itself would be double-off distance-wise 
+            // but the drawing itself would be double-off distance-wise
             //if (element.Type == ElementType.Drawing && element.Data != null)
             //{
             //                UpdateDrawingPathCoordinates(element, deltaX, deltaY);
@@ -408,11 +422,15 @@ public class CollaborationHub : Hub
 
             // Broadcast to all users in the board
             await Clients.Group($"Board_{boardId}").SendAsync("ElementMoved", elementId, newX, newY);
+
+            return OperationResult.Ok(new { elementId, x = newX, y = newY });
         }
         catch (Exception ex)
         {
+            var errorMsg = "Failed to move element";
             _logger.LogError(ex, "Error moving element {ElementId} in board {BoardId}", elementId, boardId);
-            await Clients.Caller.SendAsync("Error", "Failed to move element");
+            await Clients.Caller.SendAsync("Error", errorMsg); // Backward compatibility
+            return OperationResult.Failure($"{errorMsg}: {ex.Message}");
         }
     }
 
@@ -517,29 +535,38 @@ public class CollaborationHub : Hub
         });
     }
 
-    // removed [Authorize]; can unauth ppl delete from others' boards? 
-    public async Task DeleteElement(string boardId, string elementId)
+    // removed [Authorize]; can unauth ppl delete from others' boards?
+    public async Task<OperationResult> DeleteElement(string boardId, string elementId)
     {
         try
         {
             if (!await ValidateBoardAccess(boardId) || !Guid.TryParse(elementId, out var elementGuid))
-                return;
+            {
+                var errorMsg = "Access denied or invalid element ID";
+                await Clients.Caller.SendAsync("Error", errorMsg); // Backward compatibility
+                return OperationResult.Failure(errorMsg);
+            }
 
             var success = await _elementService.DeleteElementAsync(elementGuid);
             if (success)
             {
                 await Clients.Group($"Board_{boardId}").SendAsync("ElementDeleted", elementId);
                 _logger.LogInformation("Element {ElementId} deleted from board {BoardId}", elementId, boardId);
+                return OperationResult.Ok(new { elementId });
             }
             else
             {
-                await Clients.Caller.SendAsync("Error", "Element not found or could not be deleted");
+                var errorMsg = "Element not found or could not be deleted";
+                await Clients.Caller.SendAsync("Error", errorMsg); // Backward compatibility
+                return OperationResult.Failure(errorMsg);
             }
         }
         catch (Exception ex)
         {
+            var errorMsg = "Failed to delete element";
             _logger.LogError(ex, "Error deleting element {ElementId} from board {BoardId}", elementId, boardId);
-            await Clients.Caller.SendAsync("Error", "Failed to delete element");
+            await Clients.Caller.SendAsync("Error", errorMsg); // Backward compatibility
+            return OperationResult.Failure($"{errorMsg}: {ex.Message}");
         }
     }
 
