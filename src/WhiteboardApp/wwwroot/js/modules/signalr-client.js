@@ -267,6 +267,16 @@ function setupEventHandlers() {
                     const remapped = dependencies.remapElementId(actualTempId, elementData.id);
                     if (remapped) {
                         console.log(`[SIGNALR] ✅ Comprehensive remap successful`);
+
+                        // Add sparkle effect for newly created element
+                        if (dependencies.addSparkleEffectToElement && dependencies.elements) {
+                            const element = dependencies.elements.get(elementData.id);
+                            if (element) {
+                                console.log(`Adding sparkle effect for newly created element ${elementData.id} (${elementData.type})`);
+                                dependencies.addSparkleEffectToElement(element);
+                            }
+                        }
+
                         // Element already in map with correct ID, just need to redraw
                         if (dependencies.redrawCanvas) {
                             dependencies.redrawCanvas();
@@ -1460,6 +1470,40 @@ export async function sendLineEndpointUpdate(boardId, elementId, startX, startY,
         return true;
     } catch (error) {
         console.error("Failed to send line endpoint update:", error);
+        return false;
+    }
+}
+
+/**
+ * Send batched line endpoint updates to reduce network flooding
+ * @param {string} boardId - Board ID
+ * @param {Array} updates - Array of {id, x, y, endX, endY} objects
+ * @returns {Promise<boolean>}
+ */
+export async function sendBatchLineUpdates(boardId, updates) {
+    try {
+        if (!signalRConnection || signalRConnection.state !== window.signalR.HubConnectionState.Connected) {
+            console.warn("SignalR not connected, cannot send batched line updates");
+            return false;
+        }
+
+        if (!updates || updates.length === 0) {
+            return true; // Nothing to send
+        }
+
+        console.log(`Sending batched line updates: ${updates.length} lines`);
+
+        // Send all updates in parallel (they're independent operations)
+        const promises = updates.map(update =>
+            signalRConnection.invoke("UpdateLineEndpoints", boardId, update.id, update.x, update.y, update.endX, update.endY)
+        );
+
+        await Promise.all(promises);
+        console.log(`Batched line updates sent successfully (${updates.length} lines)`);
+        return true;
+
+    } catch (error) {
+        console.error("Failed to send batched line updates:", error);
         return false;
     }
 }

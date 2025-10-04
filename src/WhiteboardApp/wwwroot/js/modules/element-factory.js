@@ -380,8 +380,79 @@ export class EditorManager {
 
   updateEditingElementId(newId) {
     if (this.editingElementId && this.state === 'EDITING') {
-      console.log(`Updating editing element ID from ${this.editingElementId} to ${newId}`);
+      const oldId = this.editingElementId;
+      console.log(`[EDITOR] Updating editing element ID from ${oldId} to ${newId}`);
       this.editingElementId = newId;
+
+      // Update the element reference to the remapped element
+      const updatedElement = elements.get(newId);
+      if (updatedElement) {
+        this.element = updatedElement;
+        console.log(`[EDITOR] Updated editor element reference to remapped element ${newId}`);
+        console.log(`[EDITOR] Remapped element content: "${updatedElement.data?.content || ''}"`);
+      } else {
+        console.warn(`[EDITOR] ⚠️ Could not find remapped element ${newId} in elements map!`);
+      }
+
+      // If we're remapping from temp ID to real ID, flush any pending content updates
+      if (oldId.startsWith('temp-') && !newId.startsWith('temp-')) {
+        console.log(`[EDITOR] ID remapped from temp to real, attempting to flush pending content update`);
+        console.log(`[EDITOR] State check - editInput exists: ${!!this.editInput}, element exists: ${!!this.element}, editorState: ${this.state}, hasPendingUpdate: ${!!this.element?.data?.pendingUpdate}`);
+
+        // Determine content source: editInput (if still editing) or element.data (if already stopped)
+        let contentToSend = null;
+
+        if (this.editInput && this.element) {
+          // Editor still active - get content from input
+          contentToSend = this.editInput.value || '';
+          console.log(`[EDITOR] Content source: editInput.value = "${contentToSend}"`);
+        } else if (this.element && this.element.data && (this.element.data.pendingUpdate || this.element.data.content)) {
+          // Editor already closed but we have pending content - get from element.data
+          contentToSend = this.element.data.content || '';
+          console.log(`[EDITOR] Content source: element.data.content = "${contentToSend}" (pendingUpdate: ${!!this.element.data.pendingUpdate})`);
+        }
+
+        if (contentToSend !== null && this.element) {
+          // Update element data
+          if (!this.element.data) {
+            this.element.data = {};
+          }
+          this.element.data.content = contentToSend;
+          delete this.element.data.pendingUpdate; // Clear the pending flag
+          console.log(`[EDITOR] Updated local element.data.content to: "${contentToSend}"`);
+
+          // Send content update to server immediately
+          const hasConnection = !!dependencies.signalRConnection;
+          const isConnected = dependencies.signalRConnection?.state === window.signalR.HubConnectionState.Connected;
+          const hasUpdateFn = !!dependencies.updateStickyNoteContent;
+          console.log(`[EDITOR] Connection check - hasConnection: ${hasConnection}, isConnected: ${isConnected}, hasUpdateFn: ${hasUpdateFn}`);
+
+          if (dependencies.signalRConnection && dependencies.signalRConnection.state === window.signalR.HubConnectionState.Connected) {
+            if (this.element.type === 'StickyNote' && dependencies.updateStickyNoteContent) {
+              console.log(`[EDITOR] ✅ Sending sticky note content update for ${newId}: "${contentToSend}"`);
+              const updatedData = {
+                ...this.element.data,
+                content: contentToSend
+              };
+              dependencies.updateStickyNoteContent(newId, updatedData);
+            } else if (this.element.type === 'Text' && dependencies.updateTextElementContent) {
+              console.log(`[EDITOR] ✅ Sending text element content update for ${newId}: "${contentToSend}"`);
+              const updatedData = {
+                ...this.element.data,
+                content: contentToSend
+              };
+              dependencies.updateTextElementContent(newId, updatedData);
+            } else {
+              console.warn(`[EDITOR] ⚠️ Cannot send update - type: ${this.element.type}, hasStickyFn: ${!!dependencies.updateStickyNoteContent}, hasTextFn: ${!!dependencies.updateTextElementContent}`);
+            }
+          } else {
+            console.warn(`[EDITOR] ⚠️ Cannot send update - connection not ready`);
+          }
+        } else {
+          console.warn(`[EDITOR] ⚠️ Cannot flush content - no content source available (editInput: ${!!this.editInput}, element: ${!!this.element})`);
+        }
+      }
+
       return true;
     }
     return false;
@@ -603,6 +674,14 @@ export class EditorManager {
         }
       }
       e.stopPropagation();
+    });
+
+    // Continuously sync element.data.content with input value to prevent data loss
+    this.editInput.addEventListener('input', () => {
+      if (this.element && this.element.data) {
+        this.element.data.content = this.editInput.value;
+        console.log(`[EDITOR] Content synced to element.data: "${this.editInput.value}"`);
+      }
     });
   }
 
@@ -882,13 +961,19 @@ export function remapElementId(oldId, newId) {
     console.log(`[ID-REMAP] ✓ Updated selectedElementId`);
   }
 
-  // 4. Update editor if editing this element
-  if (dependencies.editorManager) {
-    const editingId = dependencies.editorManager.getCurrentEditingElementId?.();
+  // 4. Update editor if editing this element (use LOCAL editorManager instance)
+  if (editorManager) {
+    const editingId = editorManager.getCurrentEditingElementId?.();
+    console.log(`[ID-REMAP] Checking editor - currently editing: ${editingId}, target: ${oldId}`);
     if (editingId === oldId) {
-      dependencies.editorManager.updateEditingElementId(newId);
-      console.log(`[ID-REMAP] ✓ Updated editor manager`);
+      console.log(`[ID-REMAP] Calling updateEditingElementId(${newId})`);
+      editorManager.updateEditingElementId(newId);
+      console.log(`[ID-REMAP] ✓ Updated editor manager, new editing ID: ${editorManager.getCurrentEditingElementId()}`);
+    } else {
+      console.log(`[ID-REMAP] Skipping editor update - not currently editing this element`);
     }
+  } else {
+    console.warn(`[ID-REMAP] ⚠️ editorManager is not available!`);
   }
 
   // 5. Update collaborative selections

@@ -171,7 +171,7 @@ function isElementInSelection(element, minX, minY, maxX, maxY) {
 }
 
 // Element creation functions
-export function createTextAtPosition(x, y) {
+export async function createTextAtPosition(x, y) {
   // Apply snap-to-grid if enabled
   if (dependencies.canvasManager.isSnapToGridEnabled()) {
     const snapped = dependencies.canvasManager.snapToGridPoint(x, y);
@@ -180,13 +180,24 @@ export function createTextAtPosition(x, y) {
   }
 
   const element = dependencies.elementFactory.createTextElement(x, y);
-  if (dependencies.signalrClient.isConnected() && dependencies.signalrClient.getCurrentBoardId()) {
-    dependencies.signalrClient.sendElement(dependencies.signalrClient.getCurrentBoardId(), element, element.id);
+
+  // Mark element for selection (enables sparkle effects on creation)
+  if (dependencies.elementFactory.markElementForSelection) {
+    dependencies.elementFactory.markElementForSelection(element.id);
   }
-  dependencies.elementFactory.startEditingTextElement(element.id, element);
+
+  // Start editing FIRST to ensure editor is ready before server responds
+  await dependencies.elementFactory.startEditingTextElement(element.id, element);
+
+  // Send to server AFTER editor is ready (reduces race condition)
+  if (dependencies.signalrClient.isConnected() && dependencies.signalrClient.getCurrentBoardId()) {
+    dependencies.signalrClient.sendElement(dependencies.signalrClient.getCurrentBoardId(), element, element.id).catch(error => {
+      console.error('Failed to send text element to server:', error);
+    });
+  }
 }
 
-export function createStickyNoteAtPosition(x, y) {
+export async function createStickyNoteAtPosition(x, y) {
   // Apply snap-to-grid if enabled
   if (dependencies.canvasManager.isSnapToGridEnabled()) {
     const snapped = dependencies.canvasManager.snapToGridPoint(x, y);
@@ -195,10 +206,21 @@ export function createStickyNoteAtPosition(x, y) {
   }
 
   const element = dependencies.elementFactory.createStickyNote(x, y);
-  if (dependencies.signalrClient.isConnected() && dependencies.signalrClient.getCurrentBoardId()) {
-    dependencies.signalrClient.sendElement(dependencies.signalrClient.getCurrentBoardId(), element, element.id);
+
+  // Mark element for selection (enables sparkle effects on creation)
+  if (dependencies.elementFactory.markElementForSelection) {
+    dependencies.elementFactory.markElementForSelection(element.id);
   }
-  dependencies.elementFactory.startEditingStickyNote(element.id, element);
+
+  // Start editing FIRST to ensure editor is ready before server responds
+  await dependencies.elementFactory.startEditingStickyNote(element.id, element);
+
+  // Send to server AFTER editor is ready (reduces race condition)
+  if (dependencies.signalrClient.isConnected() && dependencies.signalrClient.getCurrentBoardId()) {
+    dependencies.signalrClient.sendElement(dependencies.signalrClient.getCurrentBoardId(), element, element.id).catch(error => {
+      console.error('Failed to send sticky note to server:', error);
+    });
+  }
 }
 
 // Image upload handling

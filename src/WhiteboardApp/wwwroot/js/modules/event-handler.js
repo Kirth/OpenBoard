@@ -7,6 +7,10 @@ let dependencies = {};
 // Shift key state tracking for rotation snapping
 let shiftKeyPressed = false;
 
+// Throttling for network updates to reduce flooding
+const CURSOR_SEND_INTERVAL = 100; // Max 10 cursor updates/sec (instead of 60/sec)
+let lastCursorSendTime = 0;
+
 export function setDependencies(deps) {
   dependencies = deps;
 }
@@ -477,9 +481,13 @@ function handleMouseMove(event) {
         break;
     }
 
-    // Send cursor position for collaborative features
-    if (dependencies.signalrClient.getConnection() && dependencies.signalrClient.getConnection().state === 'Connected') {
-      dependencies.signalrClient.sendCursorUpdate(dependencies.signalrClient.getCurrentBoardId(), worldPos.x, worldPos.y);
+    // Send cursor position for collaborative features (throttled to reduce network traffic)
+    const now = Date.now();
+    if (now - lastCursorSendTime >= CURSOR_SEND_INTERVAL) {
+      if (dependencies.signalrClient.getConnection() && dependencies.signalrClient.getConnection().state === 'Connected') {
+        dependencies.signalrClient.sendCursorUpdate(dependencies.signalrClient.getCurrentBoardId(), worldPos.x, worldPos.y);
+        lastCursorSendTime = now;
+      }
     }
 
   } catch (error) {
@@ -685,12 +693,19 @@ function handleMouseUp(event) {
               endX,
               endY
             );
-            
+
+            // Mark element for selection (enables sparkle effects on creation)
+            if (element && dependencies.elementFactory.markElementForSelection) {
+              dependencies.elementFactory.markElementForSelection(element.id);
+            }
+
             // Send to server
             if (dependencies.signalrClient.isConnected() && dependencies.signalrClient.getCurrentBoardId()) {
-              dependencies.signalrClient.sendElement(dependencies.signalrClient.getCurrentBoardId(), element, element.id);
+              dependencies.signalrClient.sendElement(dependencies.signalrClient.getCurrentBoardId(), element, element.id).catch(error => {
+                console.error('Failed to send shape to server:', error);
+              });
             }
-            
+
             // Auto-select the newly created shape and switch to select tool
             if (element) {
               dependencies.elementFactory.highlightElement(element.id);
@@ -761,12 +776,19 @@ function handleMouseUp(event) {
               endY,
               lineStyle
             );
-            
+
+            // Mark element for selection (enables sparkle effects on creation)
+            if (element && dependencies.elementFactory.markElementForSelection) {
+              dependencies.elementFactory.markElementForSelection(element.id);
+            }
+
             // Send to server
             if (dependencies.signalrClient.isConnected() && dependencies.signalrClient.getCurrentBoardId()) {
-              dependencies.signalrClient.sendElement(dependencies.signalrClient.getCurrentBoardId(), element, element.id);
+              dependencies.signalrClient.sendElement(dependencies.signalrClient.getCurrentBoardId(), element, element.id).catch(error => {
+                console.error('Failed to send line to server:', error);
+              });
             }
-            
+
             // Auto-select the newly created line and switch to select tool
             if (element) {
               dependencies.elementFactory.highlightElement(element.id);

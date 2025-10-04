@@ -21,11 +21,17 @@ const CONNECTION_POINT_HOVER_COLOR = '#0056b3';
 // Connection point types
 export const CONNECTION_POINTS = {
   TOP: 'top',
-  RIGHT: 'right', 
+  RIGHT: 'right',
   BOTTOM: 'bottom',
   LEFT: 'left',
   CENTER: 'center'
 };
+
+// Batching configuration to prevent network flooding
+const LINE_UPDATE_DEBOUNCE_MS = 100; // Batch line updates every 100ms
+const MAX_CASCADE_DEPTH = 3;         // Prevent deep recursion chains
+let pendingLineUpdates = new Map();  // lineId → {x, y, endX, endY}
+let lineUpdateTimeout = null;
 
 // Set dependencies from other modules
 export function setDependencies(deps) {
@@ -367,9 +373,9 @@ export function updateLineConnections(lineElement) {
 }
 
 // Update all lines connected to a specific element (with recursion protection)
-export function updateConnectedLines(elementId, visited = new Set()) {
-  console.log(`[CONNECTION] Checking for lines connected to element ${elementId}`);
-  
+export function updateConnectedLines(elementId, visited = new Set(), depth = 0) {
+  console.log(`[CONNECTION] Checking for lines connected to element ${elementId} (depth: ${depth})`);
+
   if (!dependencies.elements) {
     console.warn('[CONNECTION] No elements dependency available');
     return [];
@@ -379,6 +385,13 @@ export function updateConnectedLines(elementId, visited = new Set()) {
   if (visited.has(elementId)) {
     return [];
   }
+
+  // Limit cascade depth to prevent explosion
+  if (depth >= MAX_CASCADE_DEPTH) {
+    console.warn(`[CONNECTION] Max cascade depth (${MAX_CASCADE_DEPTH}) reached for element ${elementId}`);
+    return [];
+  }
+
   visited.add(elementId);
 
   const updatedLines = [];
@@ -403,38 +416,105 @@ export function updateConnectedLines(elementId, visited = new Set()) {
         const wasUpdated = updateLineConnections(element);
         if (wasUpdated) {
           updatedLines.push(element.id);
-          
-          // Recursively update lines connected to this line (cascade update with protection)
-          const cascadeUpdates = updateConnectedLines(element.id, visited);
+
+          // Calculate endpoints for batching
+          const endX = element.x + element.width;
+          const endY = element.y + element.height;
+
+          // Batch line update instead of sending immediately
+          pendingLineUpdates.set(element.id, {
+            x: element.x,
+            y: element.y,
+            endX: endX,
+            endY: endY
+          });
+
+          // Recursively update lines connected to this line (with depth limit)
+          const cascadeUpdates = updateConnectedLines(element.id, visited, depth + 1);
           updatedLines.push(...cascadeUpdates);
-          
-          // Send line endpoint update to server for synchronization
-          if (dependencies.signalrClient && dependencies.signalrClient.sendLineEndpointUpdate) {
-            const currentBoardId = dependencies.signalrClient.getCurrentBoardId ? dependencies.signalrClient.getCurrentBoardId() : null;
-            if (currentBoardId) {
-              const endX = element.x + element.width;
-              const endY = element.y + element.height;
-              dependencies.signalrClient.sendLineEndpointUpdate(
-                currentBoardId,
-                element.id,
-                element.x, element.y,
-                endX, endY
-              ).catch(error => {
-                console.warn('Failed to sync connected line update to server:', error);
-              });
-            }
-          }
         }
       }
     }
   }
 
+  // Schedule batched send (debounced - only on root call)
+  if (depth === 0 && pendingLineUpdates.size > 0) {
+    scheduleBatchedLineUpdates();
+  }
+
   // Trigger redraw if any lines were updated (only on the root call)
-  if (visited.size === 1 && updatedLines.length > 0 && dependencies.redrawCanvas) {
+  if (depth === 0 && updatedLines.length > 0 && dependencies.redrawCanvas) {
     dependencies.redrawCanvas();
   }
 
   return updatedLines;
+}
+
+/**
+ * Schedule batched line updates to be sent to server (debounced)
+ */
+function scheduleBatchedLineUpdates() {
+  // Clear existing timeout to debounce
+  if (lineUpdateTimeout) {
+    clearTimeout(lineUpdateTimeout);
+  }
+
+  // Schedule flush after debounce interval
+  lineUpdateTimeout = setTimeout(() => {
+    flushLineUpdates();
+  }, LINE_UPDATE_DEBOUNCE_MS);
+}
+
+/**
+ * Flush all pending line updates to server in a single batch
+ */
+function flushLineUpdates() {
+  if (pendingLineUpdates.size === 0) {
+    return;
+  }
+
+  console.log(`[CONNECTION] Flushing ${pendingLineUpdates.size} batched line updates`);
+
+  // Convert map to array of update objects
+  const updates = Array.from(pendingLineUpdates.entries()).map(([id, pos]) => ({
+    id,
+    x: pos.x,
+    y: pos.y,
+    endX: pos.endX,
+    endY: pos.endY
+  }));
+
+  // Send batch to server
+  if (dependencies.signalrClient && dependencies.signalrClient.sendBatchLineUpdates) {
+    const currentBoardId = dependencies.signalrClient.getCurrentBoardId ? dependencies.signalrClient.getCurrentBoardId() : null;
+    if (currentBoardId) {
+      dependencies.signalrClient.sendBatchLineUpdates(currentBoardId, updates).catch(error => {
+        console.warn('Failed to send batched line updates:', error);
+      });
+    }
+  } else {
+    // Fallback: send individually if batch method not available
+    console.warn('[CONNECTION] Batch send not available, falling back to individual sends');
+    for (const update of updates) {
+      if (dependencies.signalrClient && dependencies.signalrClient.sendLineEndpointUpdate) {
+        const currentBoardId = dependencies.signalrClient.getCurrentBoardId ? dependencies.signalrClient.getCurrentBoardId() : null;
+        if (currentBoardId) {
+          dependencies.signalrClient.sendLineEndpointUpdate(
+            currentBoardId,
+            update.id,
+            update.x, update.y,
+            update.endX, update.endY
+          ).catch(error => {
+            console.warn('Failed to sync line update to server:', error);
+          });
+        }
+      }
+    }
+  }
+
+  // Clear pending updates
+  pendingLineUpdates.clear();
+  lineUpdateTimeout = null;
 }
 
 // Remove connections to a deleted element
