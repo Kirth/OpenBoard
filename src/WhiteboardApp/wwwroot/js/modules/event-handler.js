@@ -1289,18 +1289,43 @@ function handleSelectTouchStart(x, y, event) {
       for (let i = ids.length - 1; i >= 0; i--) {
         const el = dependencies.elementFactory.getElementById(ids[i]);
         if (!el) continue;
+        // Check rotation handle first
         if (dependencies.elementFactory.getRotationHandleAt(x, y, el) === 'rotate') {
           console.log(`[SELECT TOUCH] Starting rotation for selected element: ${el.id}`);
           dependencies.setRotating(true);
           dependencies.setDraggedElementId(el.id);
-          
+
           // Calculate initial angle from element center to touch position
           const centerX = el.x + el.width / 2;
           const centerY = el.y + el.height / 2;
           dependencies.setRotationStartAngle(Math.atan2(y - centerY, x - centerX) * 180 / Math.PI);
           dependencies.setRotationElementStartAngle(el.data?.rotation || 0);
-          
+
           return; // start rotation; do not fall through
+        }
+
+        // Check resize handles (even outside element bounds)
+        const rotation = el.data?.rotation || 0;
+        const resizeHandle = dependencies.elementFactory.getResizeHandleAt(x, y, el, rotation);
+        if (resizeHandle) {
+          console.log(`[SELECT TOUCH] Starting resize on selected element with handle: ${resizeHandle}`);
+          dependencies.setResizing(true);
+          dependencies.elementFactory.startElementResize(el.id, resizeHandle, x, y);
+          return;
+        }
+
+        // Check line handles if it's a line
+        if (el.type === 'Line') {
+          const lineHandle = getLineHandleAt(el, x, y);
+          if (lineHandle) {
+            console.log(`[SELECT TOUCH] Starting line handle drag on selected: ${lineHandle}`);
+            dependencies.setDraggingLineHandle(true);
+            dependencies.setDraggedElementId(el.id);
+            dependencies.setDraggedLineHandle(lineHandle);
+            dependencies.setLineOriginalStart({ x: el.x, y: el.y });
+            dependencies.setLineOriginalEnd({ x: el.x + el.width, y: el.y + el.height });
+            return;
+          }
         }
       }
     }

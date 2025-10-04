@@ -345,12 +345,14 @@ export function handleSelectMouseDown(x, y, event) {
     console.log(`[SELECT MOUSE] Starting select interaction at (${x}, ${y})`);
     console.log(`[DEBUG] selectedElementIds before processing: ${selectedElementIds.size} elements:`, Array.from(selectedElementIds));
 
-    // A) First, rotation handle on already selected elements
+    // A) First, check handles on already selected elements (even if click is outside element bounds)
     if (selectedElementIds.size > 0) {
       const ids = Array.from(selectedElementIds);
       for (let i = ids.length - 1; i >= 0; i--) {
         const el = dependencies.elementFactory.getElementById(ids[i]);
         if (!el) continue;
+
+        // Check rotation handle first
         if (dependencies.elementFactory.getRotationHandleAt(x, y, el) === 'rotate') {
           console.log('[ROTATION] start on selected', el.id);
           isRotating = true;
@@ -364,6 +366,30 @@ export function handleSelectMouseDown(x, y, event) {
           dependencies.setRotationStartAngle?.(rotationStartAngle);
           dependencies.setRotationElementStartAngle?.(rotationElementStartAngle);
           return; // start rotation; do not fall through
+        }
+
+        // Check resize handles (even outside element bounds)
+        const rotation = el.data?.rotation || 0;
+        const resizeHandle = dependencies.elementFactory.getResizeHandleAt(x, y, el, rotation);
+        if (resizeHandle) {
+          console.log(`[SELECT MOUSE] Starting resize on selected element with handle: ${resizeHandle}`);
+          isResizing = true;
+          dependencies.elementFactory.startElementResize(el.id, resizeHandle, x, y);
+          return;
+        }
+
+        // Check line handles if it's a line
+        if (el.type === 'Line') {
+          const lineHandle = getLineHandleAt(el, x, y);
+          if (lineHandle) {
+            console.log(`[SELECT MOUSE] Starting line handle drag on selected: ${lineHandle}`);
+            isDraggingLineHandle = true;
+            draggedElementId = el.id;
+            draggedLineHandle = lineHandle;
+            lineOriginalStart = { x: el.x, y: el.y };
+            lineOriginalEnd = { x: el.x + el.width, y: el.y + el.height };
+            return;
+          }
         }
       }
     }
@@ -585,15 +611,44 @@ export function updateCursorForHover(worldX, worldY) {
       return;
     }
 
-    // 1) If we have selected elements, check their rotation handles first (topmost selection first)
+    // 1) If we have selected elements, check their handles first (even outside element bounds)
     if (selectedElementIds.size > 0) {
       const ids = Array.from(selectedElementIds);
       for (let i = ids.length - 1; i >= 0; i--) {
         const el = dependencies.elementFactory.getElementById(ids[i]);
         if (!el) continue;
+
+        // Check rotation handle
         if (dependencies.elementFactory.getRotationHandleAt(worldX, worldY, el) === 'rotate') {
-          dependencies.canvasManager.updateCanvasCursor('alias'); // curved-arrow-ish
+          dependencies.canvasManager.updateCanvasCursor('grab'); // rotation handle
           return;
+        }
+
+        // Check resize handles (even outside element bounds)
+        const rotation = el.data?.rotation || 0;
+        const resizeHandle = dependencies.elementFactory.getResizeHandleAt(worldX, worldY, el, rotation);
+        if (resizeHandle) {
+          const cursorMap = {
+            'nw': 'nw-resize',
+            'ne': 'ne-resize',
+            'sw': 'sw-resize',
+            'se': 'se-resize',
+            'n': 'n-resize',
+            's': 's-resize',
+            'e': 'e-resize',
+            'w': 'w-resize'
+          };
+          dependencies.canvasManager.updateCanvasCursor(cursorMap[resizeHandle] || 'pointer');
+          return;
+        }
+
+        // Check line handles on selected lines
+        if (el.type === 'Line') {
+          const lineHandle = getLineHandleAt(el, worldX, worldY);
+          if (lineHandle) {
+            dependencies.canvasManager.updateCanvasCursor('crosshair');
+            return;
+          }
         }
       }
     }
@@ -603,7 +658,7 @@ export function updateCursorForHover(worldX, worldY) {
     if (element) {
       // Rotation handle (for the hovered element)
       if (dependencies.elementFactory.getRotationHandleAt(worldX, worldY, element) === 'rotate') {
-        dependencies.canvasManager.updateCanvasCursor('alias');
+        dependencies.canvasManager.updateCanvasCursor('grab');
         return;
       }
       // Resize handles

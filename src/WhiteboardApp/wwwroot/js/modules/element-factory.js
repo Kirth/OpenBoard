@@ -1777,7 +1777,7 @@ export function getResizeHandleAt(x, y, selectionRect, rotation = 0) {
   if (!selectionRect) return null;
 
   const handleSize = 8;
-  const tolerance = handleSize / 2 + 2 + 20; // Larger padding for easier targeting (21px total)
+  const tolerance = handleSize / 2 + 2 + 25; // Larger padding for easier targeting (31px total)
 
   // Calculate unrotated handle positions
   const handles = [
