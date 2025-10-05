@@ -54,7 +54,16 @@
                     </div>
                     <div class="stat-row">
                         <span class="stat-label">Last modified</span>
-                        <span class="stat-value">@boardStats.UpdatedAt.ToString("MMM dd, yyyy")</span>
+                        <span class="stat-value">
+                            @if (boardStats.LastContentModifiedAt.HasValue)
+                            {
+                                @boardStats.LastContentModifiedAt.Value.ToString("MMM dd, yyyy HH:mm")
+                            }
+                            else
+                            {
+                                <text>No content yet</text>
+                            }
+                        </span>
                     </div>
                 </div>
 

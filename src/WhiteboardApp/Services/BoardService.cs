@@ -88,6 +88,16 @@ public class BoardService
             .ToListAsync();
     }
 
+    /// <summary>
+    /// Gets the timestamp of the most recently modified element on a board
+    /// </summary>
+    public DateTime? GetLastContentModifiedAt(Board board)
+    {
+        return board.Elements
+            .OrderByDescending(e => e.ModifiedAt)
+            .FirstOrDefault()?.ModifiedAt;
+    }
+
     public async Task<List<Board>> GetPublicBoardsAsync()
     {
         return await _context.Boards
@@ -166,6 +176,7 @@ public class BoardService
             BoardEmoji = board.Emoji ?? "📋",
             CreatedAt = board.CreatedAt,
             UpdatedAt = board.UpdatedAt,
+            LastContentModifiedAt = GetLastContentModifiedAt(board),
             IsPublic = board.IsPublic, // Legacy field for backward compatibility
             AccessLevel = board.AccessLevel, // New access level field
             HasAdminPin = !string.IsNullOrEmpty(board.AdminPin),
@@ -494,6 +505,7 @@ public class BoardStats
     public string BoardEmoji { get; set; } = "📋";
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+    public DateTime? LastContentModifiedAt { get; set; }
     public bool IsPublic { get; set; } // Legacy field for backward compatibility
     public BoardAccessLevel AccessLevel { get; set; } // New access level field
     public bool HasAdminPin { get; set; }

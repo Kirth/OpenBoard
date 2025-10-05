@@ -82,8 +82,17 @@
                                 <span class="info-value">@boardSettings.CreatedAt.ToString("MMM dd, yyyy")</span>
                             </div>
                             <div class="info-item">
-                                <span class="info-label">Last Modified</span>
-                                <span class="info-value">@boardSettings.UpdatedAt.ToString("MMM dd, yyyy")</span>
+                                <span class="info-label">Last Content Update</span>
+                                <span class="info-value">
+                                    @if (boardSettings.LastContentModifiedAt.HasValue)
+                                    {
+                                        @boardSettings.LastContentModifiedAt.Value.ToString("MMM dd, yyyy HH:mm")
+                                    }
+                                    else
+                                    {
+                                        <text>No content yet</text>
+                                    }
+                                </span>
                             </div>
                             <div class="info-item">
                                 <span class="info-label">Collaborators</span>
@@ -348,6 +357,7 @@
                         AccessLevel = board.AccessLevel,
                         CreatedAt = board.CreatedAt,
                         UpdatedAt = board.UpdatedAt,
+                        LastContentModifiedAt = BoardService.GetLastContentModifiedAt(board),
                         IsOwner = board.OwnerId == currentUser?.Id,
                         CollaboratorsCount = board.Collaborators?.Count ?? 0
                     };
@@ -461,6 +471,7 @@
         public BoardAccessLevel AccessLevel { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
+        public DateTime? LastContentModifiedAt { get; set; }
         public bool IsOwner { get; set; }
         public int CollaboratorsCount { get; set; }
     }

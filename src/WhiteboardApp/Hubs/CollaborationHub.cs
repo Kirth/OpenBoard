@@ -587,6 +587,10 @@ public class CollaborationHub : Hub
                 element.Y = y;
                 element.Width = width;
                 element.Height = height;
+                element.ModifiedByUserId = Context.User?.Identity?.IsAuthenticated == true
+                    ? (await _userService.GetOrCreateUserAsync(Context.User!)).Id
+                    : (await _userService.GetAnonymousUserAsync()).Id;
+                element.ModifiedAt = DateTime.UtcNow;
                 await _elementService.UpdateElementAsync(element);
 
                 await Clients.Group($"Board_{boardId}").SendAsync("ElementResized", elementId, x, y, width, height);
@@ -625,6 +629,10 @@ public class CollaborationHub : Hub
                 dataObj["endY"] = endY;
 
                 element.Data = JsonDocument.Parse(JsonSerializer.Serialize(dataObj));
+                element.ModifiedByUserId = Context.User?.Identity?.IsAuthenticated == true
+                    ? (await _userService.GetOrCreateUserAsync(Context.User!)).Id
+                    : (await _userService.GetAnonymousUserAsync()).Id;
+                element.ModifiedAt = DateTime.UtcNow;
 
                 await _elementService.UpdateElementAsync(element);
 
@@ -689,6 +697,11 @@ public class CollaborationHub : Hub
                 UpdateLineBoundingBox(element, existingDataObj);
             }
 
+            element.ModifiedByUserId = Context.User?.Identity?.IsAuthenticated == true
+                ? (await _userService.GetOrCreateUserAsync(Context.User!)).Id
+                : (await _userService.GetAnonymousUserAsync()).Id;
+            element.ModifiedAt = DateTime.UtcNow;
+
             await _elementService.UpdateElementAsync(element);
 
             // Broadcast to all users in the board
@@ -720,6 +733,10 @@ public class CollaborationHub : Hub
             existingDataObj["locked"] = locked;
 
             element.Data = JsonDocument.Parse(JsonSerializer.Serialize(existingDataObj));
+            element.ModifiedByUserId = Context.User?.Identity?.IsAuthenticated == true
+                ? (await _userService.GetOrCreateUserAsync(Context.User!)).Id
+                : (await _userService.GetAnonymousUserAsync()).Id;
+            element.ModifiedAt = DateTime.UtcNow;
 
             await _elementService.UpdateElementAsync(element);
 
@@ -1049,6 +1066,10 @@ public class CollaborationHub : Hub
             if (element != null)
             {
                 element.ZIndex = await getNewZIndex(element);
+                element.ModifiedByUserId = Context.User?.Identity?.IsAuthenticated == true
+                    ? (await _userService.GetOrCreateUserAsync(Context.User!)).Id
+                    : (await _userService.GetAnonymousUserAsync()).Id;
+                element.ModifiedAt = DateTime.UtcNow;
                 await _elementService.UpdateElementAsync(element);
 
                 await Clients.Group($"Board_{boardId}").SendAsync("ElementZIndexUpdated", elementId, element.ZIndex);
